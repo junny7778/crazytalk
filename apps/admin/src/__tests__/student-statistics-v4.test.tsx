@@ -39,7 +39,6 @@ function Page({ mode }: { mode: "statistics" | "courses" | "credits" }) {
       student={student}
       onAction={() => {}}
       onOpen={() => {}}
-      onTasks={() => {}}
     />
   );
 }

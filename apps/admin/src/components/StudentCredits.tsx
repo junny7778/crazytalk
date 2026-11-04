@@ -11,12 +11,10 @@ export default function StudentCredits({
   student,
   onAction,
   onOpen,
-  onTasks,
 }: {
   student: Student;
   onAction: (action: StudentAction) => void;
   onOpen: (target: StudentRecordTarget) => void;
-  onTasks: () => void;
 }) {
   const { data, can, act } = useDemo();
   const toast = useToast();
@@ -244,11 +242,11 @@ export default function StudentCredits({
             。
           </p>
         ) : (
-          <p className="muted">暂无续费明细。</p>
+          <EmptyState
+            title="暂无续费记录"
+            description="登记续费后，可在这里查看最近一次续费信息。"
+          />
         )}
-        <Button size="sm" onClick={onTasks}>
-          查看或登记续费待办
-        </Button>
       </Panel>
     </div>
   );

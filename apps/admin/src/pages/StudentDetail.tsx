@@ -568,7 +568,6 @@ export default function StudentDetail() {
           student={student}
           onAction={openAction}
           onOpen={setRecord}
-          onTasks={() => setTab("tasks")}
         />
       )}
       {tab === "tasks" && (

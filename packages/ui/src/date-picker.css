@@ -1,0 +1,165 @@
+.ct-date-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.ct-date-picker > input {
+  padding-right: 40px;
+  min-height: 36px;
+  height: 36px;
+  font: inherit;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.ct-date-picker .ct-date-trigger {
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--ct-gray-500);
+  background: transparent;
+  cursor: pointer;
+}
+.ct-date-picker .ct-date-trigger:hover:not(:disabled) {
+  background: var(--ct-gray-100);
+  color: var(--ct-brand-700);
+}
+.ct-date-picker[data-disabled] > input {
+  background: var(--ct-gray-100);
+  color: var(--ct-gray-400);
+}
+.ct-date-picker button:disabled {
+  cursor: not-allowed;
+}
+.ct-date-content {
+  z-index: 160;
+  width: 296px;
+  max-width: calc(100vw - 24px);
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--ct-white);
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(31, 35, 41, 0.12);
+  color: var(--ct-gray-900);
+  font-family: inherit;
+  font-size: 14px;
+}
+.ct-date-content button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ct-gray-900);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.ct-date-content button:hover:not(:disabled) {
+  color: var(--ct-brand-700);
+  background: var(--ct-brand-50);
+}
+.ct-date-content button:focus-visible {
+  outline: 2px solid var(--ct-brand-500);
+  outline-offset: -2px;
+}
+.ct-date-content button:disabled {
+  color: var(--ct-gray-300);
+  cursor: not-allowed;
+}
+.ct-date-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ct-date-heading > button {
+  min-width: 32px;
+}
+.ct-date-heading .ct-date-period {
+  flex: 1;
+  font-weight: 500;
+}
+.ct-date-weekdays,
+.ct-date-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.ct-date-weekdays {
+  color: var(--ct-gray-500);
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: 4px;
+  line-height: 28px;
+}
+.ct-date-grid-months,
+.ct-date-grid-years {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.ct-date-content button[data-outside] {
+  color: var(--ct-gray-400);
+}
+.ct-date-content button[aria-current="date"],
+.ct-date-content button[data-today] {
+  color: var(--ct-brand-700);
+  border-color: var(--ct-brand-200);
+}
+.ct-date-content button[aria-pressed="true"]:not(:disabled) {
+  color: var(--ct-white);
+  background: var(--ct-brand-700);
+  border-color: var(--ct-brand-700);
+}
+.ct-date-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--ct-gray-200);
+  margin-top: 12px;
+  padding-top: 8px;
+}
+.ct-date-footer button {
+  color: var(--ct-brand-700);
+  padding: 0 8px;
+}
+.ct-date-time {
+  border-top: 1px solid var(--ct-gray-200);
+  margin-top: 12px;
+}
+.ct-date-time p {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--ct-gray-500);
+}
+.ct-date-time > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  max-height: 116px;
+  overflow-y: auto;
+}
+.field > .ct-date-picker > input {
+  min-height: 48px;
+  height: 48px;
+  font-size: 14px;
+  font-weight: 400;
+}
+.field-error .ct-date-picker > input {
+  border-color: #c42b1c;
+}

@@ -1,0 +1,63 @@
+.student-task-status {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.student-task-status [aria-pressed="true"] {
+  color: var(--ct-brand-700);
+  background: var(--ct-brand-50);
+}
+.student-task-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.student-task-filters > [role="combobox"] {
+  width: 170px;
+  min-width: 140px;
+}
+.student-task-list article {
+  padding: 16px 0;
+  border-top: 1px solid var(--ct-gray-200);
+}
+.student-task-list article > p {
+  margin: 8px 0;
+}
+.student-task-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 8px 0 12px;
+  font-size: 12px;
+}
+.student-task-list summary {
+  cursor: pointer;
+  color: var(--ct-gray-500);
+  font-size: 12px;
+}
+.student-task-list details {
+  margin: 8px 0;
+}
+.student-task-related > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+@media (max-width: 640px) {
+  .student-task-filters > [role="combobox"] {
+    flex: 1;
+    min-width: 120px;
+  }
+}
+.student-task-completed {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ct-gray-200);
+}
+.student-task-completed > strong {
+  margin-right: 12px;
+}

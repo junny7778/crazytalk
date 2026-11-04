@@ -1,0 +1,87 @@
+.ct-time-picker {
+  display: flex;
+  align-items: center;
+  position: relative;
+  flex: 1 1 90px;
+  min-width: 0;
+}
+.ct-time-picker input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 32px;
+  font-variant-numeric: tabular-nums;
+}
+.ct-time-picker > button {
+  position: absolute;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ct-gray-500);
+  cursor: pointer;
+}
+.ct-time-picker > button:hover:not(:disabled) {
+  color: var(--ct-brand-700);
+  background: var(--ct-brand-50);
+}
+.ct-time-picker > button:focus-visible {
+  outline: 2px solid var(--ct-brand-500);
+}
+.ct-time-popup {
+  z-index: 1600;
+  width: 220px;
+  padding: 12px;
+  background: white;
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(31, 35, 41, 0.14);
+}
+.ct-time-popup-heading {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding-bottom: 12px;
+}
+.ct-time-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.ct-time-columns section > strong {
+  display: block;
+  text-align: center;
+  color: var(--ct-gray-500);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.ct-time-options {
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ct-time-options button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ct-gray-700);
+  cursor: pointer;
+}
+.ct-time-options button:hover {
+  background: var(--ct-gray-50);
+}
+.ct-time-options button[aria-pressed="true"] {
+  color: var(--ct-brand-700);
+  background: var(--ct-brand-50);
+  font-weight: 600;
+}
+.ct-time-options button:focus-visible {
+  outline: 2px solid var(--ct-brand-500);
+  outline-offset: -2px;
+}

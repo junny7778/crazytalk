@@ -1,0 +1,28 @@
+{
+  "name": "crazytalk-ops",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.29.2",
+  "scripts": {
+    "dev": "pnpm --filter @crazytalk/admin dev",
+    "dev:teacher": "pnpm --filter @crazytalk/teacher dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test && pnpm check:ui",
+    "check:ui": "node scripts/check-ui.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "format": "prettier --write apps packages scripts"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "18.3.0",
+    "@types/react-dom": "18.3.0",
+    "jsdom": "26.1.0",
+    "prettier": "3.6.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "@crazytalk/admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crazytalk/shared": "workspace:*",
+    "@crazytalk/ui": "workspace:*",
+    "@tanstack/react-query": "^5.96.1",
+    "@tanstack/react-table": "^8.21.3",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1",
+    "recharts": "^2.15.0",
+    "zod": "^3.24.0",
+    "exceljs": "^4.4.0",
+    "html-to-image": "^1.11.13"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^5.4.21",
+    "tailwindcss": "^3.4.17",
+    "postcss": "^8.5.6",
+    "autoprefixer": "^10.4.21"
+  }
+}

@@ -1,0 +1,428 @@
+.sc-courses .panel-heading {
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.sc-view-switch {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--ct-gray-50);
+  border-radius: 999px;
+}
+.sc-filters {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.sc-filters .field {
+  min-width: 145px;
+  flex: 1;
+}
+.sc-caption,
+.sc-courses small,
+.sc-facts dt {
+  color: var(--ct-gray-500);
+  font-size: 12px;
+}
+.sc-caption {
+  margin: 0 0 12px;
+}
+.sc-lesson-table td {
+  vertical-align: top;
+}
+.sc-lesson-table small {
+  display: block;
+  margin-top: 6px;
+}
+.sc-link {
+  border: 0;
+  background: none;
+  color: var(--ct-brand-700);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+}
+.sc-link:hover {
+  text-decoration: underline;
+}
+.sc-week-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.sc-week-toolbar strong {
+  font-size: 14px;
+}
+.sc-calendar-scroll {
+  max-height: 640px;
+  overflow: auto;
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 12px;
+}
+.sc-calendar {
+  min-width: 920px;
+  display: grid;
+  grid-template-columns: 54px repeat(7, minmax(120px, 1fr));
+}
+.sc-time-head,
+.sc-day-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ct-white);
+  border-bottom: 1px solid var(--ct-gray-200);
+  padding: 12px 6px;
+  text-align: center;
+}
+.sc-time-head {
+  font-size: 12px;
+  color: var(--ct-gray-500);
+}
+.sc-day-head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--ct-gray-500);
+  font-size: 12px;
+}
+.sc-today {
+  color: var(--ct-brand-700);
+  background: var(--ct-gray-50);
+}
+.sc-time-axis {
+  position: relative;
+  border-right: 1px solid var(--ct-gray-200);
+}
+.sc-time-axis span {
+  position: absolute;
+  left: 6px;
+  font-size: 11px;
+  color: var(--ct-gray-500);
+}
+.sc-calendar-day {
+  position: relative;
+  border-right: 1px solid var(--ct-gray-200);
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 119px,
+    var(--ct-gray-200) 119px,
+    var(--ct-gray-200) 120px
+  );
+}
+.sc-calendar-day:last-child {
+  border-right: 0;
+}
+.sc-calendar-lesson {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 6px;
+  border: 1px solid var(--ct-gray-200);
+  border-left: 3px solid var(--ct-brand-700);
+  border-radius: 7px;
+  background: var(--ct-gray-50);
+  text-align: left;
+  cursor: pointer;
+  color: var(--ct-gray-900);
+  overflow: hidden;
+  font: inherit;
+}
+.sc-calendar-lesson:hover,
+.sc-calendar-lesson:focus-visible {
+  outline: 2px solid var(--ct-brand-700);
+  outline-offset: 1px;
+}
+.sc-calendar-lesson strong,
+.sc-calendar-lesson span {
+  display: block;
+  font-size: 11px;
+  line-height: 16px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-calendar-lesson-compact {
+  padding-block: 5px;
+}
+.sc-calendar-lesson.sc-cancelled {
+  border-left-color: var(--ct-gray-500);
+}
+.sc-cancelled strong {
+  text-decoration: line-through;
+}
+.sc-current-progress {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sc-current-progress small,
+.sc-current-progress strong {
+  display: block;
+}
+.sc-current-progress strong {
+  margin-top: 8px;
+}
+.sc-progress-list article {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--ct-gray-200);
+}
+.sc-progress-list article:first-child {
+  padding-top: 0;
+}
+.sc-progress-list article:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.sc-progress-list p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sc-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+}
+.sc-facts dt {
+  margin-bottom: 6px;
+}
+.sc-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.sc-lesson-drawer h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.sc-editor {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--ct-gray-50);
+}
+.sc-balance {
+  margin: 0;
+  line-height: 1.7;
+}
+.sc-preserve,
+.sc-report p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.sc-change-list article {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ct-gray-200);
+}
+.sc-change-list article:last-child {
+  border-bottom: 0;
+}
+.sc-change-list p {
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.sc-change-list small {
+  color: var(--ct-gray-500);
+}
+@media (max-width: 640px) {
+  .sc-filters .field {
+    min-width: calc(50% - 12px);
+  }
+  .sc-facts {
+    grid-template-columns: 1fr;
+  }
+  .sc-week-toolbar strong {
+    font-size: 12px;
+  }
+  .sc-current-progress {
+    gap: 18px;
+  }
+}
+
+.sc-arrangement-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 20px 32px;
+  margin: 0;
+}
+.sc-arrangement-summary > div {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.sc-arrangement-summary dt {
+  font-size: 12px;
+  color: var(--ct-gray-500);
+  margin-bottom: 8px;
+}
+.sc-arrangement-summary dd {
+  margin: 0;
+  min-height: 32px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.sc-filters .field > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sc-calendar-filters {
+  align-items: center;
+}
+.sc-calendar-filters .sc-week-toolbar {
+  margin: 0 auto 0 0;
+  justify-content: flex-start;
+}
+.sc-calendar-filters .field {
+  flex: 0 0 160px;
+  min-width: 160px;
+}
+@media (max-width: 900px) {
+  .sc-calendar-filters .sc-week-toolbar {
+    flex-basis: 100%;
+  }
+  .sc-calendar-filters .field {
+    flex: 1 1 145px;
+    min-width: 145px;
+  }
+}
+
+.sc-month-picker {
+  max-width: 100%;
+}
+.sc-monthly-panel > .panel-heading {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.sc-month-picker .field {
+  flex-direction: row;
+  align-items: center;
+  font-weight: 400;
+}
+.sc-month-picker .field > label {
+  white-space: nowrap;
+}
+.sc-month-picker .ct-date-picker {
+  width: 170px;
+  flex: 0 0 auto;
+}
+.sc-month-picker .field input {
+  width: 170px;
+  min-width: 0;
+  min-height: 36px;
+  height: 36px;
+}
+.sc-month-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.sc-month-metric {
+  padding: 12px 0;
+  border-bottom: 2px solid transparent;
+}
+.sc-month-metric.is-active {
+  border-bottom-color: var(--ct-brand-600);
+}
+.sc-month-metric > strong {
+  display: block;
+  margin: 8px 0;
+  font-size: 24px;
+  font-weight: 500;
+}
+.sc-month-metric strong small {
+  font-size: 14px;
+  font-weight: 400;
+}
+.sc-month-metric p {
+  margin: 0 0 8px;
+  color: var(--ct-gray-500);
+  font-size: 12px;
+}
+.sc-month-details {
+  margin-top: 16px;
+}
+.sc-progress-heading {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 0 12px;
+}
+.sc-progress-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--ct-gray-200);
+}
+.sc-progress-summary > strong {
+  font-size: 20px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sc-progress-summary p {
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .sc-month-metrics {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.sc-calendar-lesson[data-status="未开始"] {
+  background: var(--ct-info-bg);
+  border-color: #c5d7fa;
+  border-left-color: var(--ct-info);
+  color: #1e4595;
+}
+.sc-calendar-lesson[data-status="待确认"] {
+  background: var(--ct-warning-bg);
+  border-color: #eed8a2;
+  border-left-color: var(--ct-warning);
+  color: var(--ct-warning);
+}
+.sc-calendar-lesson[data-status="已完成"] {
+  background: var(--ct-success-bg);
+  border-color: #bce3ce;
+  border-left-color: var(--ct-success);
+  color: var(--ct-success);
+}
+.sc-calendar-lesson[data-status="缺席"] {
+  background: var(--ct-danger-bg);
+  border-color: #f0c5bf;
+  border-left-color: var(--ct-danger);
+  color: var(--ct-danger);
+}
+.sc-calendar-lesson[data-status="已取消"] {
+  background: var(--ct-gray-100);
+  border-color: var(--ct-gray-200);
+  border-left-color: var(--ct-gray-500);
+  color: var(--ct-gray-600);
+}
+.sc-calendar-lesson:hover,
+.sc-calendar-lesson:focus-visible {
+  outline-color: currentColor;
+}

@@ -1,0 +1,9 @@
+.btn.data-transfer-button {
+  padding-inline: 8px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.data-transfer-button svg {
+  flex-shrink: 0;
+}

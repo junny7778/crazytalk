@@ -275,11 +275,16 @@ export const lessonSchema = z.object({
     "学员缺席",
     "老师缺席",
     "老师迟到",
+    "老师早退",
+    "学员迟到",
+    "学员早退",
     "无数据",
     "账号待关联",
   ]),
   deducted: z.boolean(),
+  autoSettlementPaused: z.boolean().optional(),
   confirmedUnits: z.number().nonnegative().optional(),
+  plannedUnits: z.number().positive().finite().optional(),
   sync: z.enum(["已同步", "处理中", "未同步"]),
   syncReason: z.string(),
   material: z.string(),
@@ -293,6 +298,17 @@ export const lessonSchema = z.object({
         (tags.length === 1 ||
           tags.every((tag) => tag === "迟到" || tag === "早退")),
       "老师考勤结果不可重复或相互矛盾",
+    )
+    .optional(),
+  studentAttendance: z
+    .array(z.enum(["正常", "迟到", "早退", "缺席", "待核实"]))
+    .min(1)
+    .refine(
+      (tags) =>
+        new Set(tags).size === tags.length &&
+        (tags.length === 1 ||
+          tags.every((tag) => tag === "迟到" || tag === "早退")),
+      "学员考勤结果不可重复或相互矛盾",
     )
     .optional(),
   teacherIn: z.string(),
@@ -457,7 +473,45 @@ export const actionSchema = z.object({
   reason: z.string(),
   status: z.enum(["待确认", "已确认", "已作废"]),
 });
+const payrollBreakdownSchema = z.object({
+  adjustmentNote: z.string(),
+  deductionRows: z.array(
+    z.object({
+      id: z.string(),
+      date: z.string(),
+      reason: z.string(),
+      amount: z.number(),
+      feedbackId: z.string().optional(),
+    }),
+  ),
+
+  opening: z.object({
+    units: z.number(),
+    amount: z.number(),
+    source: z.string(),
+  }),
+  rows: z.array(
+    z.object({
+      lessonId: z.string(),
+      date: z.string(),
+      time: z.string(),
+      studentId: z.string(),
+      duration: z.number(),
+      units: z.number(),
+      rate: z.number(),
+      amount: z.number(),
+    }),
+  ),
+  units: z.number(),
+  base: z.number(),
+  deductions: z.number(),
+  total: z.number(),
+  adjustment: z.number(),
+  frozen: z.boolean(),
+});
 export const payrollSchema = z.object({
+  opening: payrollBreakdownSchema.shape.opening.optional(),
+  breakdownSnapshot: payrollBreakdownSchema.optional(),
   id: z.string(),
   teacherId: z.string(),
   month: z.string(),
@@ -657,6 +711,12 @@ export type Command = { operator?: string } & (
       >;
     }
   | {
+      type: "credit.deduct";
+      studentId: string;
+      units: number;
+      reason: string;
+    }
+  | {
       type: "credit.add";
       studentId: string;
       units: number;
@@ -695,11 +755,13 @@ export type Command = { operator?: string } & (
         fixedOrigin?: { date: string; time: string };
       }[];
       duration: number;
+      plannedUnits?: number;
       kind: Lesson["kind"];
       material: string;
       confirmedTeacher?: boolean;
       confirmationNote?: string;
     }
+  | { type: "lesson.plannedUnits.update"; id: string; plannedUnits: number }
   | {
       type: "lesson.reschedule";
       id: string;

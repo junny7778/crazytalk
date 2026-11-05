@@ -199,15 +199,15 @@
 }
 .feedback-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 190px));
+  gap: 12px;
   margin-bottom: 16px;
 }
 .feedback-filters .field > label {
   font-size: 11px;
 }
-.feedback-filters input,
-.feedback-filters .ct-select-trigger {
+.feedback-filters .field .ct-date-picker > input,
+.feedback-filters .field .ct-select-trigger {
   min-height: 36px;
   height: 36px;
   font-size: 12px;
@@ -243,7 +243,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-top: 6px;
+  margin-top: 0;
 }
 .feedback-related {
   display: flex;
@@ -281,4 +281,101 @@
   .feedback-records-table {
     min-width: 1000px;
   }
+}
+
+.feedback-filters .field {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.feedback-records-table td,
+.feedback-records-table th {
+  white-space: nowrap;
+}
+
+.feedback-list-tools {
+  justify-content: flex-start;
+  gap: 12px;
+}
+.feedback-list-tools .search-input {
+  width: 320px;
+  max-width: 100%;
+}
+.feedback-list-tools > .field {
+  width: 150px;
+  min-width: 0;
+  margin: 0;
+}
+.feedback-list-tools > .row {
+  margin-left: auto;
+}
+.feedback-list-tools .field > label,
+.feedback-filters .field > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.feedback-list-tools .field .ct-select-trigger,
+.feedback-list-tools .search-input,
+.feedback-filters .field .ct-date-picker > input,
+.feedback-filters .field .ct-select-trigger {
+  height: 40px;
+  min-height: 40px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.feedback-records-table th,
+.feedback-records-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+.feedback-records-table .feedback-summary-text {
+  margin-inline: auto;
+}
+.feedback-records-table td:last-child a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feedback-record-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.feedback-record-layout .feedback-value-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px 24px;
+}
+.feedback-detail-tags {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.feedback-category-paths {
+  color: var(--ct-gray-500);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.feedback-context {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.feedback-context details {
+  padding: 16px;
+  background: var(--ct-white);
+  border-radius: 8px;
+}
+.feedback-context summary {
+  cursor: pointer;
+}
+.feedback-context-inline {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ct-gray-200);
+  font-size: 13px;
 }

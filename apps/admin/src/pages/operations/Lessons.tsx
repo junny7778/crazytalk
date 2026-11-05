@@ -1,10 +1,19 @@
-import { lessonSyncReason } from "../../lib/lessonSync";
+import CourseSyncLink from "../../components/CourseSyncLink";
+import { lessonStatusLabel } from "../../lib/lessonStatus";
+import { compareLessonRecords, isOverdueLesson } from "../../lib/lessonOrder";
+import ListPagination from "../../components/ListPagination";
+import {
+  recordAttendance as lessonRecordAttendance,
+  attendanceIssue,
+  personAttendance,
+  attendanceOptions,
+} from "../../lib/lessonAttendance";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../../components/DataTransferButton";
 import { occurred } from "../../lib/dashboard";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, ArrowRight, Clock3 } from "lucide-react";
+import { ArrowRight, Clock3, CalendarDays, CircleCheck, CalendarX2 } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
 import { formatDate, type Lesson } from "@crazytalk/shared";
 import {
@@ -25,10 +34,18 @@ import "./operations.css";
 export default function Lessons() {
   const { data, can } = useDemo();
   const run = useBusinessAction();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const recordAttendance = (lesson: Lesson) =>
+    lessonRecordAttendance(lesson, now);
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "all";
   const view = params.get("view") || "all";
   const query = params.get("q") || "";
+  const statusFilter = lessonStatusLabel(params.get("status") || "");
   const filteredStudentId =
     data.studentIdAliases?.[params.get("student") || ""] ??
     params.get("student");
@@ -41,7 +58,6 @@ export default function Lessons() {
   const [units, setUnits] = useState("");
   const [linkId, setLinkId] = useState("");
   const [linkStudent, setLinkStudent] = useState(data.students[0]?.id || "");
-  const [selected, setSelected] = useState<string[]>([]);
   const [correct, setCorrect] = useState(false);
   const [deduct, setDeduct] = useState(true);
   const [page, setPage] = useState(1);
@@ -67,42 +83,37 @@ export default function Lessons() {
         (!params.get("to") || l.date <= (params.get("to") || "")) &&
         (!params.get("project") ||
           student(l.studentId)?.project === params.get("project")) &&
+        (!params.get("bookingStatus") || l.status === params.get("bookingStatus")) &&
         (!params.get("attendance") ||
-          l.attendance === params.get("attendance")) &&
+          recordAttendance(l).includes(params.get("attendance") || "")) &&
         (view !== "attendance" ||
           (l.status !== "已取消" &&
             (Boolean(l.studentIn) || l.attendance === "学员缺席"))) &&
         (view !== "unsynced" || l.sync === "未同步") &&
         (view !== "conflict" || l.conflict) &&
         (!query ||
-          `${student(l.studentId)?.name} ${student(l.studentId)?.groupName} ${teacher(l.teacherId)?.name}`
+          `${student(l.studentId)?.name ?? ""} ${teacher(l.teacherId)?.name ?? ""}`
             .toLowerCase()
             .includes(query.toLowerCase())),
     )
-    .sort(
-      (a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time),
-    );
+    .sort((a, b) => compareLessonRecords(a, b, now));
   const pending = matching.filter((l) => l.status === "待确认");
   const filtered = matching.filter((l) =>
     tab === "confirm"
       ? l.status === "待确认"
-      : !params.get("status") || l.status === params.get("status"),
+      : !params.get("status") || lessonStatusLabel(l.status) === statusFilter,
   );
-  const pageCount = Math.max(1, Math.ceil(filtered.length / 20));
+  const recordStats = [
+    { label: "总约课数", value: filtered.length, icon: CalendarDays, tone: "total" },
+    { label: "待上课数", value: filtered.filter((lesson) => lesson.status === "未开始").length, icon: Clock3, tone: "upcoming" },
+    { label: "已完成数", value: filtered.filter((lesson) => lesson.status === "已完成").length, icon: CircleCheck, tone: "completed" },
+    { label: "已取消数", value: filtered.filter((lesson) => lesson.status === "已取消").length, icon: CalendarX2, tone: "cancelled" },
+  ];
+  const pageCount = Math.max(1, Math.ceil(filtered.length / 25));
   const currentPage = Math.min(page, pageCount);
-  const visible = filtered.slice((currentPage - 1) * 20, currentPage * 20);
-  const eligible = (l: Lesson) =>
-    l.status === "待确认" &&
-    l.attendance === "正常" &&
-    Number.isFinite(l.confirmedUnits) &&
-    (l.confirmedUnits ?? 0) > 0;
-  const selectable = visible.filter(eligible);
-  const selectedLessons = filtered.filter(
-    (l) => selected.includes(l.id) && eligible(l),
-  );
+  const visible = filtered.slice((currentPage - 1) * 25, currentPage * 25);
   const deciding = data.lessons.find((l) => l.id === decision?.id);
   useEffect(() => {
-    setSelected([]);
     setPage(1);
   }, [params.toString()]);
   function resolve(l: Lesson, kind: "扣课" | "不扣" | "缺席") {
@@ -135,7 +146,7 @@ export default function Lessons() {
                     l.time,
                     student(l.studentId)?.name || "",
                     teacher(l.teacherId)?.name || "",
-                    l.status,
+                    lessonStatusLabel(l.status),
                     l.deducted ? "已扣" : "未扣",
                   ]),
                 ])
@@ -144,8 +155,23 @@ export default function Lessons() {
           ) : null
         }
       />
+      <section aria-label="上课记录统计" className="lesson-summary">
+        <div className="lesson-summary-grid">
+          {recordStats.map(({ label, value, icon: Icon, tone }) => (
+            <article key={label} className={`lesson-summary-card is-${tone}`} aria-label={`${label} ${value} 节`}>
+              <div>
+                <span className="lesson-summary-label">{label}</span>
+                <div className="lesson-summary-value"><strong>{value}</strong><span>节</span></div>
+              </div>
+              <span className="lesson-summary-icon"><Icon size={22} strokeWidth={1.7} aria-hidden="true" /></span>
+            </article>
+          ))}
+        </div>
+        <small className="lesson-summary-note">当前筛选范围 · 包含全部分页；待确认及历史缺席记录计入总约课数，未计入已完成。</small>
+      </section>
       {(params.has("from") ||
         params.has("status") ||
+        params.has("bookingStatus") ||
         params.has("attendance") ||
         params.has("student")) && (
         <Panel>
@@ -155,8 +181,9 @@ export default function Lessons() {
                 ? `学生：${student(filteredStudentId || "")?.name || "未知学生"}`
                 : `看板筛选：${params.get("from") || ""} 至 ${params.get("to") || ""}`}{" "}
               · {params.get("project") || "全部项目"} ·{" "}
-              {params.get("status") ||
+              {statusFilter ||
                 params.get("attendance") ||
+                params.get("bookingStatus") ||
                 (view === "attendance" ? "有效出勤记录" : "全部课程")}
             </small>
             <Button size="sm" onClick={() => setParams({ tab: "all" })}>
@@ -179,16 +206,16 @@ export default function Lessons() {
             { value: "confirm", label: "待确认", count: pending.length },
           ]}
         />
-        <small>上课时间均为北京时间</small>
       </div>
       <Panel>
-        <div className="toolbar">
+        <div className="toolbar lesson-filters">
           <SearchInput
             value={query}
             onChange={(v) => update("q", v)}
-            placeholder="搜索学生名字、群名或老师"
+            placeholder="搜索学员或老师姓名"
           />
           <DatePicker
+            placeholder="上课日期（起始）"
             aria-label="开始日期"
             mode="date"
             value={params.get("from") || ""}
@@ -196,6 +223,7 @@ export default function Lessons() {
           />
           <span className="muted">至</span>
           <DatePicker
+            placeholder="上课日期（结束）"
             aria-label="结束日期"
             mode="date"
             value={params.get("to") || ""}
@@ -203,7 +231,7 @@ export default function Lessons() {
           />
           <Select
             aria-label="处理状态"
-            value={tab === "confirm" ? "待确认" : params.get("status") || ""}
+            value={tab === "confirm" ? "待确认" : statusFilter}
             onValueChange={(v) => {
               const next = new URLSearchParams(params);
               next.set("status", v);
@@ -212,7 +240,7 @@ export default function Lessons() {
             }}
           >
             <option value="">全部状态</option>
-            {[...new Set(scopedLessons.map((l) => l.status))].map((v) => (
+            {["未开始", "待确认", "已结束", "已取消"].map((v) => (
               <option key={v} value={v}>
                 {v}
               </option>
@@ -224,7 +252,7 @@ export default function Lessons() {
             onValueChange={(v) => update("attendance", v)}
           >
             <option value="">全部考勤</option>
-            {[...new Set(scopedLessons.map((l) => l.attendance))].map((v) => (
+            {attendanceOptions.map((v) => (
               <option key={v} value={v}>
                 {v}
               </option>
@@ -251,64 +279,13 @@ export default function Lessons() {
             共 {filtered.length} 节课
           </small>
         </div>
-        {can("lesson.confirm") && (
-          <div className="lesson-batch-bar">
-            {selectedLessons.length ? (
-              <>
-                <span>
-                  已选 {selectedLessons.length} 条 · 核实扣课共{" "}
-                  {selectedLessons.reduce(
-                    (sum, l) => sum + (l.confirmedUnits ?? 0),
-                    0,
-                  )}{" "}
-                  课时
-                </span>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() =>
-                    run(
-                      {
-                        type: "lesson.resolve",
-                        ids: selectedLessons.map((l) => l.id),
-                        decision: "扣课",
-                        reason: "正常上完，批量确认",
-                      },
-                      () => setSelected([]),
-                    )
-                  }
-                >
-                  批量确认
-                </Button>
-              </>
-            ) : (
-              <small>
-                仅正常出勤且已核实扣课数量的待确认记录支持批量确认；其余记录请逐条核实。
-              </small>
-            )}
-          </div>
-        )}
         <div className="table-wrap lesson-records-table">
           <table>
             <thead>
               <tr>
-                <th>
-                  <input
-                    aria-label="选择本页可批量确认的课程"
-                    disabled={!can("lesson.confirm") || !selectable.length}
-                    type="checkbox"
-                    checked={
-                      selectable.length > 0 &&
-                      selectable.every((l) => selected.includes(l.id))
-                    }
-                    onChange={(e) =>
-                      setSelected(
-                        e.target.checked ? selectable.map((l) => l.id) : [],
-                      )
-                    }
-                  />
-                </th>
                 <th>上课时间</th>
+                <th>时长</th>
+                <th>课程类型</th>
                 <th>学员</th>
                 <th>老师</th>
                 <th>状态</th>
@@ -319,22 +296,7 @@ export default function Lessons() {
             </thead>
             <tbody>
               {visible.map((l) => (
-                <tr key={l.id}>
-                  <td>
-                    <input
-                      aria-label={`选择课程 ${l.id}`}
-                      disabled={!can("lesson.confirm") || !eligible(l)}
-                      type="checkbox"
-                      checked={selected.includes(l.id)}
-                      onChange={(e) =>
-                        setSelected((s) =>
-                          e.target.checked
-                            ? [...s, l.id]
-                            : s.filter((id) => id !== l.id),
-                        )
-                      }
-                    />
-                  </td>
+                <tr key={l.id} aria-label={`课程 ${l.id}`}>
                   <td>
                     <button
                       className="text-link"
@@ -342,26 +304,9 @@ export default function Lessons() {
                     >
                       {formatDate(l.date)} {l.time}
                     </button>
-                    <small>
-                      {l.duration} 分钟 · {l.kind}
-                    </small>
-                    {l.sync === "未同步" && (
-                      <div className="ops-reason">
-                        <Badge tone="warning">未同步</Badge>{" "}
-                        {lessonSyncReason(l)}{" "}
-                        {can("sync.retry") && (
-                          <Button
-                            size="xs"
-                            onClick={() =>
-                              run({ type: "lesson.retry", id: l.id })
-                            }
-                          >
-                            重新同步
-                          </Button>
-                        )}
-                      </div>
-                    )}
                   </td>
+                  <td>{l.duration} 分钟</td>
+                  <td>{l.kind}</td>
                   <td>
                     <Link to={`/students/${l.studentId}`}>
                       {student(l.studentId)?.name}
@@ -373,16 +318,32 @@ export default function Lessons() {
                     </Link>
                   </td>
                   <td>
-                    <Badge tone={tone(l.status)}>{l.status}</Badge>
+                    <Badge tone={tone(l.status)}>
+                      {lessonStatusLabel(l.status)}
+                    </Badge>
+                    {isOverdueLesson(l, now) && (
+                      <small className="lesson-overdue">
+                        已过计划结束时间，待核实
+                      </small>
+                    )}
                     {l.leaveFlag && <Badge tone="warning">老师请假</Badge>}
+                    {attendanceIssue(l) && (
+                      <small>数据提示：{attendanceIssue(l)}</small>
+                    )}
+                    {l.conflict && <small>时间冲突</small>}
                   </td>
                   <td>
-                    <Badge
-                      tone={l.attendance === "正常" ? "success" : "warning"}
-                    >
-                      {l.attendance}
-                    </Badge>
-                    {l.conflict && <small>时间冲突</small>}
+                    {!recordAttendance(l).length && (
+                      <span className="muted">—</span>
+                    )}
+                    {recordAttendance(l).map((label) => (
+                      <Badge
+                        key={label}
+                        tone={label === "正常" ? "success" : "warning"}
+                      >
+                        {label}
+                      </Badge>
+                    ))}
                   </td>
                   <td>
                     {l.deducted
@@ -394,6 +355,7 @@ export default function Lessons() {
                           : "不扣课时"}
                   </td>
                   <td>
+                    <CourseSyncLink lesson={l} />
                     {l.status === "待确认" && can("lesson.confirm") && (
                       <Button
                         size="xs"
@@ -447,35 +409,13 @@ export default function Lessons() {
             }
           />
         )}
-        {pageCount > 1 && (
-          <div className="row between lesson-pagination">
-            <small>
-              第 {currentPage} / {pageCount} 页 · 每页 20 条
-            </small>
-            <div className="row">
-              <Button
-                size="sm"
-                disabled={currentPage === 1}
-                onClick={() => {
-                  setPage(currentPage - 1);
-                  setSelected([]);
-                }}
-              >
-                上一页
-              </Button>
-              <Button
-                size="sm"
-                disabled={currentPage === pageCount}
-                onClick={() => {
-                  setPage(currentPage + 1);
-                  setSelected([]);
-                }}
-              >
-                下一页
-              </Button>
-            </div>
-          </div>
-        )}
+        <ListPagination
+          total={filtered.length}
+          page={currentPage}
+          onChange={(p) => {
+            setPage(p);
+          }}
+        />
       </Panel>
       <Drawer
         open={!!detail}
@@ -512,53 +452,81 @@ export default function Lessons() {
       >
         {detail && (
           <div className="stack">
-            <div>
-              <h2>{student(detail.studentId)?.name}</h2>
-              <p className="muted">
-                {formatDate(detail.date)} {detail.time} · {detail.duration} 分钟
-                · {teacher(detail.teacherId)?.name}
-              </p>
-            </div>
-            {detail.sync === "未同步" && (
-              <div className="notice">
-                <AlertTriangle size={18} />
-                <div>
-                  {lessonSyncReason(detail)}
-                  {can("sync.retry") && (
-                    <div style={{ marginTop: 12 }}>
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          run({ type: "lesson.retry", id: detail.id })
-                        }
-                      >
-                        重新同步
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <CourseSyncLink lesson={detail} detail />
             <dl className="detail-pairs">
+              <dt>学员</dt>
+              <dd>{student(detail.studentId)?.name || "—"}</dd>
+              <dt>老师</dt>
+              <dd>{teacher(detail.teacherId)?.name || "—"}</dd>
+              <dt>上课日期</dt>
+              <dd>{formatDate(detail.date)}</dd>
+              <dt>计划开始时间</dt>
+              <dd>{detail.time}</dd>
+              <dt>计划时长</dt>
+              <dd>{detail.duration} 分钟</dd>
+              <dt>课程类型</dt>
+              <dd>{detail.kind}</dd>
+
               <dt>教材</dt>
               <dd>{detail.material}</dd>
               <dt>课程状态</dt>
               <dd>
-                <Badge tone={tone(detail.status)}>{detail.status}</Badge>
+                <Badge tone={tone(detail.status)}>
+                  {lessonStatusLabel(detail.status)}
+                </Badge>
+                {isOverdueLesson(detail, now) && (
+                  <p className="lesson-overdue">已过计划结束时间，待核实</p>
+                )}
               </dd>
-              <dt>老师进出</dt>
+
+              <dt>考勤</dt>
+              <dd>{recordAttendance(detail).join("、") || "—"}</dd>
+              <dt>老师考勤</dt>
               <dd>
-                {detail.teacherIn || "暂无"} — {detail.teacherOut || "暂无"}
+                {isOverdueLesson(detail, now)
+                  ? "待核实"
+                  : personAttendance(detail, "老师").join("、") || "—"}
               </dd>
-              <dt>学员进出</dt>
+              <dt>学员考勤</dt>
               <dd>
-                {detail.studentIn || "暂无"} — {detail.studentOut || "暂无"}
+                {isOverdueLesson(detail, now)
+                  ? "待核实"
+                  : personAttendance(detail, "学员").join("、") || "—"}
               </dd>
+              {attendanceIssue(detail) && (
+                <div className="lesson-detail-field">
+                  <dt>数据提示</dt>
+                  <dd>{attendanceIssue(detail)}</dd>
+                </div>
+              )}
+              {(
+                [
+                  ["老师进入时间", detail.teacherIn],
+                  ["老师离开时间", detail.teacherOut],
+                  ["学员进入时间", detail.studentIn],
+                  ["学员离开时间", detail.studentOut],
+                ] as const
+              ).map(([label, value]) => (
+                <div className="lesson-detail-field" key={label}>
+                  <dt>{label}</dt>
+                  <dd>
+                    {detail.status === "未开始"
+                      ? isOverdueLesson(detail, now)
+                        ? "待核实"
+                        : "尚未开始"
+                      : detail.status === "已取消"
+                        ? "不适用"
+                        : value || "暂无记录"}
+                  </dd>
+                </div>
+              ))}
               <dt>课时结果</dt>
               <dd>
-                {detail.deducted
-                  ? `已扣 ${detail.confirmedUnits ?? "待核实"} 课时`
-                  : "未扣课时"}
+                {detail.status === "未开始"
+                  ? "尚未结算"
+                  : detail.deducted
+                    ? `已扣 ${detail.confirmedUnits ?? "待核实"} 课时`
+                    : "未扣课时"}
               </dd>
               <dt>备注</dt>
               <dd>{detail.note || "暂无备注"}</dd>
@@ -568,9 +536,7 @@ export default function Lessons() {
                 <Clock3 size={16} />
                 变更记录
               </h3>
-              <p style={{ marginTop: 12 }}>
-                {detail.note || "按原计划上课，暂无变更。"}
-              </p>
+              <p style={{ marginTop: 12 }}>{detail.note || "暂无变更记录。"}</p>
             </div>
             <Link to={`/schedule?student=${detail.studentId}`}>
               前往排课管理调整课程 <ArrowRight size={14} />

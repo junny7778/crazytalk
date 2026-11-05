@@ -478,6 +478,7 @@ export default function StudentCourses({
           <div className="sc-month-picker">
             <Field label="统计月份">
               <DatePicker
+                placeholder="统计月份"
                 mode="month"
                 value={month}
                 onValueChange={(nextValue) => {

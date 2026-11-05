@@ -25,8 +25,14 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         queryClient.setQueryData(["demo"], demoRepository.refresh());
     };
     window.addEventListener("crazytalk-change", update);
+    demoRepository.settleCompletedLessons();
+    const settlementTimer = window.setInterval(
+      () => demoRepository.settleCompletedLessons(),
+      30_000,
+    );
     window.addEventListener("storage", storage);
     return () => {
+      window.clearInterval(settlementTimer);
       window.removeEventListener("crazytalk-change", update);
       window.removeEventListener("storage", storage);
     };
@@ -146,6 +152,7 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "student.import": "student.import",
   "student.balance.open": "credit.add",
   "credit.add": "credit.add",
+  "credit.deduct": "credit.add",
   "student.lifecycle": "student.reschedule",
   "service.add": "student.edit",
   "referral.add": "student.edit",
@@ -154,6 +161,7 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "student.reminder.preview": "student.edit",
   "student.courseReminder.preview": "student.edit",
   "lesson.schedule": "schedule.create",
+  "lesson.plannedUnits.update": "schedule.create",
   "student.scheduleIntent.update": "schedule.create",
   "lesson.reschedule": "student.reschedule",
   "lesson.cancel": "student.reschedule",

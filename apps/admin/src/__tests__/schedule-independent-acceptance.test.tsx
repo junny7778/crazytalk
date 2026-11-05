@@ -125,11 +125,13 @@ describe("独立验收：新增排课工作流", () => {
       screen.getByRole("button", { name: /2026-11-23 18:00 可排课/ }),
     );
     fireEvent.click(screen.getByRole("button", { name: /T\. Carol.*SO/ }));
+    fireEvent.click(screen.getByRole("button", { name: "加入课表" }));
     fireEvent.click(screen.getByRole("button", { name: "下一周" }));
     fireEvent.click(
       screen.getByRole("button", { name: /2026-11-30 18:25 可排课/ }),
     );
     fireEvent.click(screen.getByRole("button", { name: /T\. Carol.*SO/ }));
+    fireEvent.click(screen.getByRole("button", { name: "加入课表" }));
     fireEvent.click(screen.getByRole("button", { name: /确认排课/ }));
     const made = demoRepository
       .read()
@@ -137,6 +139,7 @@ describe("独立验收：新增排课工作流", () => {
     expect(made[0].time).toBe("18:00");
     expect(made[1].time >= "18:25" && made[1].time <= "18:35").toBe(true);
     expect(made.every((l) => l.kind === "临时课")).toBe(true);
+    expect(screen.getByRole("dialog", { name: "排课完成" })).toBeTruthy();
     expect(
       screen.queryByRole("button", {
         name: new RegExp(student.name + ".*已排"),

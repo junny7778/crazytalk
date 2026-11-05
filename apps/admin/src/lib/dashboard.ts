@@ -1,3 +1,4 @@
+import { recordAttendance } from "./lessonAttendance";
 import { addDays, DEMO_TODAY, type Lesson } from "@crazytalk/shared";
 
 export function periodRange(period: string) {
@@ -65,5 +66,43 @@ export function attendanceSummary(lessons: Lesson[]) {
     consecutive,
     unknown: eligible.length - known.length,
     rate: known.length ? Math.round((present / known.length) * 100) : null,
+  };
+}
+
+export function courseAnomalies(lessons: Lesson[], now = Date.now()) {
+  const eligible = lessons.filter(occurred);
+  const labels = eligible
+    .filter((lesson) => lesson.status !== "已取消")
+    .map((lesson) => recordAttendance(lesson, now));
+  const anomalies: { name: string; count: number; filter: Record<string, string> }[] = [
+    {
+      name: "课程取消",
+      count: eligible.filter((lesson) => lesson.status === "已取消").length,
+      filter: { status: "已取消" },
+    },
+    ...["学员缺席", "学员迟到", "学员早退", "老师缺席", "老师迟到", "老师早退"].map((name) => ({
+      name,
+      count: labels.filter((tags) => tags.includes(name)).length,
+      filter: { attendance: name },
+    })),
+  ];
+  return {
+    anomalies,
+    pending: labels.filter((tags) => tags.includes("待核实")).length,
+  };
+}
+
+export function bookingSummary(lessons: Lesson[], start: string, end: string) {
+  const items = lessons.filter((lesson) => lesson.date >= start && lesson.date <= end);
+  const count = (status: Lesson["status"]) => items.filter((lesson) => lesson.status === status).length;
+  const cancelled = count("已取消");
+  return {
+    total: items.length,
+    upcoming: count("未开始"),
+    completed: count("已完成"),
+    pending: count("待确认"),
+    absent: count("缺席"),
+    cancelled,
+    cancellationRate: items.length ? Math.round(cancelled / items.length * 1000) / 10 : null,
   };
 }

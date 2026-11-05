@@ -370,7 +370,11 @@ export default function StudentTasks({
               />
             </Field>
             <Field label="处理期限" hint="选填">
-              <DatePicker value={dueDate} onValueChange={setDueDate} />
+              <DatePicker
+                placeholder="处理期限"
+                value={dueDate}
+                onValueChange={setDueDate}
+              />
             </Field>
             <Field label="待办说明" hint="选填">
               <textarea

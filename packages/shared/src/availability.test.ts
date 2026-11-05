@@ -31,6 +31,7 @@ function schedule(
     teacherId: "t1",
     slots: [{ date: "2026-11-02", time: "19:00" }],
     duration: 55,
+    plannedUnits: 2,
     kind: "固定课",
     material: "Power Up 3",
     ...overrides,
@@ -154,6 +155,9 @@ describe("教师可用时间与临时排课", () => {
   });
   it("临时确认不能绕过老师和学员冲突、请假和培训", () => {
     const { data } = fixture();
+    data.students.forEach((student) => {
+      if (student.id === "s5") student.balance = 8;
+    });
     const command = schedule({
       slots: [{ date: "2026-11-02", time: "18:00" }],
       kind: "临时课",

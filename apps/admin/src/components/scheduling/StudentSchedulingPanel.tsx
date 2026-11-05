@@ -31,7 +31,9 @@ export function StudentSchedulingPanel({
   onViewTeacher,
   onIntentSaved,
   onFixedPlan,
+  onScheduleComplete,
 }: {
+  onScheduleComplete: (count: number, teacherNames: string) => void;
   onFixedPlan: (plan: FixedPlan, intent: Intent) => void;
   onViewTeacher: (teacherId: string) => void;
   onIntentSaved: () => void;
@@ -157,6 +159,7 @@ export function StudentSchedulingPanel({
           <div className="form-grid">
             <Field label="开始日期">
               <DatePicker
+                placeholder="开始日期"
                 mode="date"
                 min={DEMO_TODAY}
                 value={draft.startDate}
@@ -512,6 +515,7 @@ export function StudentSchedulingPanel({
           key={`${student.id}-${JSON.stringify(saved)}`}
           studentId={student.id}
           intent={saved}
+          onComplete={onScheduleComplete}
         />
       )}
     </div>

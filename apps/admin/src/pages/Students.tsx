@@ -1,3 +1,4 @@
+import ListPagination from "../components/ListPagination";
 import { formatStudentProgress } from "@crazytalk/shared";
 import DataTransferButton from "../components/DataTransferButton";
 import { useEffect, useMemo, useState } from "react";
@@ -27,13 +28,7 @@ import {
   EmptyState,
   useToast,
 } from "@crazytalk/ui";
-import {
-  Plus,
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Plus, ArrowUpDown, SlidersHorizontal } from "lucide-react";
 import StudentImport from "../components/StudentImport";
 import {
   StudentQuickView,
@@ -234,7 +229,7 @@ export default function Students() {
   );
   const page = Math.min(
     requestedPage,
-    Math.max(1, Math.ceil(filtered.length / 10)),
+    Math.max(1, Math.ceil(filtered.length / 25)),
   );
   useEffect(() => {
     const key = params.get("openCredit");
@@ -264,7 +259,7 @@ export default function Students() {
         header: ({ table }) => {
           const visible = table
             .getRowModel()
-            .rows.slice((page - 1) * 10, page * 10);
+            .rows.slice((page - 1) * 25, page * 25);
           return (
             <input
               aria-label="选择本页学员"
@@ -393,7 +388,7 @@ export default function Students() {
     getSortedRowModel: getSortedRowModel(),
   });
   const rows = table.getRowModel().rows;
-  const pageRows = rows.slice((page - 1) * 10, page * 10);
+  const pageRows = rows.slice((page - 1) * 25, page * 25);
   const selectedStudents = data.students.filter((s) => selected[s.id]);
   const exportStudents = async (students: Student[]) => {
     if (exporting || !students.length) return;
@@ -632,35 +627,11 @@ export default function Students() {
             action={<Button onClick={() => setParams({})}>清除筛选</Button>}
           />
         )}
-        <div className="pagination">
-          <span>共 {filtered.length} 条 · 每页 10 条</span>
-          <button
-            aria-label="上一页"
-            disabled={page <= 1}
-            onClick={() => update("page", String(page - 1))}
-          >
-            <ChevronLeft size={14} />
-          </button>
-          {Array.from(
-            { length: Math.max(1, Math.ceil(rows.length / 10)) },
-            (_, i) => (
-              <button
-                key={i}
-                className={page === i + 1 ? "active" : ""}
-                onClick={() => update("page", String(i + 1))}
-              >
-                {i + 1}
-              </button>
-            ),
-          )}
-          <button
-            aria-label="下一页"
-            disabled={page >= Math.ceil(rows.length / 10)}
-            onClick={() => update("page", String(page + 1))}
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
+        <ListPagination
+          total={filtered.length}
+          page={page}
+          onChange={(p) => update("page", String(p))}
+        />
         {selectedStudents.length > 0 && (
           <div
             className="batch-bar students-batch-bar"

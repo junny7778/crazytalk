@@ -16,3 +16,9 @@ export * from "./feedbackCatalog";
 export * from "./fixedPlans";
 
 export * from "./studentProgress";
+
+export * from "./lessonAttendance";
+
+export * from "./payroll";
+
+export * from "./scheduleCredits";

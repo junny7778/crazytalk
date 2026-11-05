@@ -1,4 +1,6 @@
-import { unsyncedLessonsPath } from "../../lib/lessonSync";
+import AccountPasswordModal from "../../components/AccountPasswordModal";
+import { passwordError, setDemoPassword } from "../../lib/demoPasswords";
+import ClassInSyncManagement from "../../components/ClassInSyncManagement";
 import FeedbackCategoryTree from "./FeedbackCategoryTree";
 import DataTransferButton from "../../components/DataTransferButton";
 import { useEffect, useState } from "react";
@@ -80,7 +82,7 @@ const settingTabs = [
   {
     icon: Plug,
     value: "classin",
-    label: "ClassIn 连接",
+    label: "ClassIn 同步管理",
     permission: "classin.view",
   },
   {
@@ -98,9 +100,6 @@ const settingGroups = [
 export default function Settings() {
   const { data, can, setRole } = useDemo();
   const navigate = useNavigate();
-  const unsyncedCount = data.lessons.filter(
-    (lesson) => lesson.sync === "未同步",
-  ).length;
   const run = useBusinessAction();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -111,6 +110,12 @@ export default function Settings() {
   const [draftRole, setDraftRole] = useState<Role | null>(null);
   const [roleConfirm, setRoleConfirm] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
+  const [initialPassword, setInitialPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordTarget, setPasswordTarget] = useState<Account | null>(null);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordSaveError, setPasswordSaveError] = useState("");
+
   const [handover, setHandover] = useState("");
   const [catalogType, setCatalogType] = useState<CatalogEntry["type"]>("教材");
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
@@ -215,7 +220,7 @@ export default function Settings() {
     !!account &&
     (savedAccount
       ? JSON.stringify(account) !== JSON.stringify(savedAccount)
-      : !!(account.name || account.phone));
+      : !!(account.name || account.phone || initialPassword || confirmPassword));
   const categoryPath =
     entry?.type === "反馈分类" ? feedbackCategoryPath(data.catalog, entry) : [];
   const categoryLevel = ["一", "二", "三"][categoryPath.length - 1] || "一";
@@ -403,6 +408,7 @@ export default function Settings() {
                   size="sm"
                   onClick={() => {
                     setHandover("");
+                    setInitialPassword(""); setConfirmPassword(""); setPasswordSaveError("");
                     setAccount({
                       id: `u${Date.now()}`,
                       name: "",
@@ -480,15 +486,13 @@ export default function Settings() {
                             >
                               编辑
                             </Button>
+                            <Button size="xs" variant="ghost" onClick={() => setPasswordTarget(a)}>重置密码</Button>
                           </td>
                         </tr>
                       ))}
                   </tbody>
                 </table>
               </div>
-              <p className="ops-subtitle">
-                老师账号在老师详情中维护。停用账号前，请先转交负责的学员与反馈。
-              </p>
             </Panel>
           ) : tab === "roles" ? (
             !roleId ? (
@@ -1002,7 +1006,7 @@ export default function Settings() {
           ) : tab === "classin" ? (
             <>
               <Panel
-                title="ClassIn 课程连接"
+                title="ClassIn 同步管理"
                 action={
                   <Badge
                     tone={data.connection === "正常" ? "success" : "warning"}
@@ -1017,10 +1021,6 @@ export default function Settings() {
                       ? "课程连接正常"
                       : "课程连接需要检查"}
                   </div>
-                  <p className="muted">
-                    排课和课程变更会更新到
-                    ClassIn。未同步课程可在上课记录中查看原因并重新同步。
-                  </p>
                   <div className="inset">
                     <dl className="detail-pairs">
                       <dt>机构编号</dt>
@@ -1044,28 +1044,9 @@ export default function Settings() {
                       </Button>
                     </div>
                   )}
-                  <div
-                    className="row between settings-connection-sync"
-                    role="status"
-                  >
-                    <span>
-                      {unsyncedCount
-                        ? `有 ${unsyncedCount} 节课程未同步到 ClassIn`
-                        : "暂无未同步课程"}
-                    </span>
-                    {unsyncedCount > 0 && can("lesson.view") && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => navigate(unsyncedLessonsPath)}
-                      >
-                        查看课程
-                        <ChevronRight size={14} />
-                      </Button>
-                    )}
-                  </div>
                 </div>
               </Panel>
+              <ClassInSyncManagement />
             </>
           ) : (
             <Panel
@@ -1187,6 +1168,7 @@ export default function Settings() {
       >
         <p>离开后，本次尚未保存的修改会丢失。</p>
       </Modal>
+      {passwordTarget && <AccountPasswordModal key={passwordTarget.id} id={passwordTarget.id} name={passwordTarget.name} onClose={() => setPasswordTarget(null)} />}
       <Modal
         open={!!account}
         onClose={() => requestClose(() => setAccount(null), accountDirty)}
@@ -1205,6 +1187,8 @@ export default function Settings() {
             <Button
               variant="primary"
               disabled={
+                passwordSaving ||
+                (!savedAccount && !!passwordError(initialPassword, confirmPassword)) ||
                 !account?.name.trim() ||
                 !/^1\d{10}$/.test(account.phone) ||
                 (!account.enabled &&
@@ -1214,17 +1198,17 @@ export default function Settings() {
                     )) &&
                   !handover)
               }
-              onClick={() =>
-                account &&
-                run(
-                  {
-                    type: "account.save",
-                    account,
-                    handoverTo: handover || undefined,
-                  },
-                  () => setAccount(null),
-                )
-              }
+              onClick={async () => {
+                if (!account) return;
+                setPasswordSaving(true); setPasswordSaveError("");
+                try {
+                  if (!savedAccount) await setDemoPassword(account.id, initialPassword);
+                  run({ type: "account.save", account, handoverTo: handover || undefined }, () => {
+                    setAccount(null); setInitialPassword(""); setConfirmPassword("");
+                  });
+                } catch (cause) { setPasswordSaveError(cause instanceof Error ? cause.message : "设置密码失败"); }
+                finally { setPasswordSaving(false); }
+              }}
             >
               保存账号
             </Button>
@@ -1252,6 +1236,17 @@ export default function Settings() {
                 />
               </Field>
             </div>
+            {!savedAccount && <>
+              <Field label="初始密码" required hint="8–64 个字符，包含字母和数字">
+                <input type="password" autoComplete="new-password" value={initialPassword} onChange={e => setInitialPassword(e.target.value)} />
+              </Field>
+              <Field label="确认密码" required>
+                <input type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+              </Field>
+              {initialPassword && confirmPassword && passwordError(initialPassword, confirmPassword) && <p role="alert">{passwordError(initialPassword, confirmPassword)}</p>}
+              <small className="muted">密码仅在本次页面会话中模拟生效，刷新后恢复演示初始密码 Demo12345。</small>
+            </>}
+            {passwordSaveError && <p role="alert">{passwordSaveError}</p>}
             <Field label="角色">
               <Select
                 value={account.roleId}

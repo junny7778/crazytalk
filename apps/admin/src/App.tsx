@@ -1,3 +1,5 @@
+import AccountPasswordModal from "./components/AccountPasswordModal";
+import { hasSyncIssue, syncManagementPath } from "./lib/lessonSync";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Navigate,
@@ -115,6 +117,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [quick, setQuick] = useState<string | null>(null);
   const [userMenu, setUserMenu] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const [notifications, setNotifications] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -347,6 +350,7 @@ export default function App() {
                 <Settings size={18} />
               </button>
             )}
+            {passwordOpen && <AccountPasswordModal id={data.accounts.find(account => account.name === "Rita")?.id || "u2"} name="Rita" personal onClose={() => setPasswordOpen(false)} />}
             <div className="relative" ref={userMenuRef}>
               <button
                 aria-expanded={userMenu}
@@ -364,6 +368,7 @@ export default function App() {
               </button>
               {userMenu && (
                 <div className="dropdown user-dropdown">
+                  <button onClick={() => { setUserMenu(false); setPasswordOpen(true); }}>修改密码</button>
                   <small>演示身份</small>
                   {data.roles.map((r) => (
                     <button
@@ -593,23 +598,27 @@ export default function App() {
         width={420}
       >
         <div className="stack">
-          <div className="inset">
-            <strong>课程需要重新更新</strong>
-            <p className="muted" style={{ marginTop: 8 }}>
-              有 {data.lessons.filter((l) => l.sync === "未同步").length}{" "}
-              节课尚未更新到 ClassIn。请检查，以免师生看到旧的上课安排。
-            </p>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                navigate("/lessons?tab=all&view=unsynced");
-                setNotifications(false);
-              }}
-            >
-              去处理 <ArrowRight size={14} />
-            </Button>
-          </div>
+          {data.lessons.some(hasSyncIssue) && (
+            <div className="inset">
+              <strong>课程同步需要处理</strong>
+              <p className="muted" style={{ marginTop: 8 }}>
+                有 {data.lessons.filter(hasSyncIssue).length}{" "}
+                节课存在同步问题，请前往同步管理查看。
+              </p>
+              {can("classin.view") && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    navigate(syncManagementPath);
+                    setNotifications(false);
+                  }}
+                >
+                  去同步管理 <ArrowRight size={14} />
+                </Button>
+              )}
+            </div>
+          )}
           <div className="inset">
             <strong>欢迎使用 Crazy Talk</strong>
             <p className="muted" style={{ marginTop: 8 }}>

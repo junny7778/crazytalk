@@ -1,4 +1,4 @@
-import { formatStudentProgress } from "@crazytalk/shared";
+import { payrollBreakdown, formatStudentProgress } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -613,6 +613,7 @@ export function Availability({
           <div className="teacher-card teacher-form">
             <Field label={t("leaveStart")} required>
               <DatePicker
+                placeholder={t("leaveStart")}
                 mode="datetime-local"
                 language={language}
                 min={`${DEMO_TODAY}T00:00`}
@@ -622,6 +623,7 @@ export function Availability({
             </Field>
             <Field label={t("leaveEnd")} required>
               <DatePicker
+                placeholder={t("leaveEnd")}
                 mode="datetime-local"
                 language={language}
                 min={leaveStart}
@@ -804,24 +806,20 @@ export function Training({
   );
 }
 export function PayContent({
+  pay,
   payroll,
-  rate,
-  deductions,
-  lessons,
   t,
   findStudent,
   onFeedback,
 }: {
+  pay: ReturnType<typeof payrollBreakdown> | undefined;
   payroll: ReturnType<typeof useDemo>["data"]["payroll"][number] | undefined;
-  rate: number;
-  deductions: ReturnType<typeof useDemo>["data"]["actions"];
-  lessons: Lesson[];
   t: (key: TextKey) => string;
   findStudent: (id: string) => Student | undefined;
   onFeedback: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  if (!payroll || payroll.status === "待确认")
+  if (!payroll || !pay || payroll.status === "待确认")
     return (
       <div className="teacher-unconfirmed">
         <Wallet size={44} />
@@ -829,8 +827,8 @@ export function PayContent({
         <p>{t("notConfirmedHint")}</p>
       </div>
     );
-  const gross = payroll.lessons * rate;
-  const deduct = deductions.reduce((sum, a) => sum + a.amount, 0);
+  const gross = pay.base;
+  const deduct = pay.deductions;
   return (
     <>
       <div className="teacher-pay-summary">
@@ -840,24 +838,24 @@ export function PayContent({
             {payroll.status === "已发放" ? t("paid") : t("confirmed")}
           </Badge>
         </div>
-        <strong>{currency(gross - deduct + payroll.adjustment)}</strong>
+        <strong>{currency(pay.total)}</strong>
         <div className="teacher-pay-breakdown">
           <div>
             <span>{t("lessonPay")}</span>
             <span>
-              {payroll.lessons} × {currency(rate)}
+              {pay.units} {t("lessons")}
             </span>
             <strong>{currency(gross)}</strong>
           </div>
           <div>
             <span>{t("deductions")}</span>
-            <span>{deductions.length}</span>
+            <span>{pay.deductionRows.length}</span>
             <strong>−{currency(deduct)}</strong>
           </div>
           <div>
             <span>{t("adjustments")}</span>
             <span />
-            <strong>{currency(payroll.adjustment)}</strong>
+            <strong>{currency(pay.adjustment)}</strong>
           </div>
         </div>
       </div>
@@ -873,27 +871,28 @@ export function PayContent({
             style={{ transform: expanded ? "rotate(90deg)" : "" }}
           />
         </button>
-        {expanded &&
-          (lessons.length ? (
-            lessons.map((l) => (
-              <div className="teacher-pay-lesson" key={l.id}>
-                <span>
-                  {l.date.slice(5)} · {l.time}
-                  <small>{findStudent(l.studentId)?.name}</small>
-                </span>
-                <strong>{currency(rate * Math.round(l.duration / 25))}</strong>
+        {expanded && (
+          <>
+            <div className="teacher-pay-lesson">
+              <span>{t("openingPay")}<small>{pay.opening.units} {t("lessons")}</small></span>
+              <strong>{currency(pay.opening.amount)}</strong>
+            </div>
+            <p className="teacher-inline-hint">{t("openingPayHint")}</p>
+            {pay.rows.map((row) => (
+              <div className="teacher-pay-lesson" key={row.lessonId}>
+                <span>{row.date.slice(5)} · {row.time}<small>{findStudent(row.studentId)?.name} · {row.units} × {currency(row.rate)}</small></span>
+                <strong>{currency(row.amount)}</strong>
               </div>
-            ))
-          ) : (
-            <p className="teacher-inline-hint">
-              {payroll.lessons} {t("lessons")}
-            </p>
-          ))}
+            ))}
+            {!pay.rows.length && <p className="teacher-inline-hint">{t("noPayLessons")}</p>}
+          </>
+        )}
+
       </div>
       <section className="teacher-card">
         <h2>{t("deductions")}</h2>
-        {deductions.length ? (
-          deductions.map((a) => (
+        {pay.deductionRows.length ? (
+          pay.deductionRows.map((a) => (
             <button
               key={a.id}
               className="teacher-deduction"
@@ -908,7 +907,7 @@ export function PayContent({
             </button>
           ))
         ) : (
-          <p className="teacher-inline-hint">{t("noDeduction")}</p>
+          <p className="teacher-inline-hint">{pay.deductions ? t("historicalDeduction") : t("noDeduction")}</p>
         )}
       </section>
       <p className="teacher-inline-hint">{t("payExample")}</p>

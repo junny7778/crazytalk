@@ -66,6 +66,51 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("排课双工作流", () => {
+  it("其他时长需填写预计扣课，超过余额置灰，填写可用额度后允许确认", () => {
+    const { student } = fixture();
+    student.balance = 1;
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
+    fireEvent.click(screen.getByLabelText("学员"));
+    fireEvent.click(screen.getByRole("option", { name: /Lucy/ }));
+    fireEvent.click(screen.getByLabelText("每节时长"));
+    fireEvent.click(screen.getByRole("option", { name: "55 分钟" }));
+    const submit = screen.getByRole("button", { name: "确认排课" });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("每节预计扣课数"), {
+      target: { value: "2" },
+    });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/可用课时不足/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("每节预计扣课数"), {
+      target: { value: "1" },
+    });
+    expect(submit.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(submit);
+    expect(demoRepository.read().lessons[0].plannedUnits).toBe(1);
+    expect(
+      demoRepository.read().students.find((s) => s.id === student.id)?.balance,
+    ).toBe(1);
+  });
+  it.each(["固定排课", "灵活排课"])(
+    "老师入口%s确认后显示排课完成结果",
+    (mode) => {
+      fixture();
+      mount();
+      fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
+      fireEvent.click(screen.getByLabelText("学员"));
+      fireEvent.click(screen.getByRole("option", { name: /Lucy/ }));
+      fireEvent.click(screen.getByLabelText("排课方式"));
+      fireEvent.click(screen.getByRole("option", { name: mode }));
+      if (mode === "固定排课")
+        fireEvent.click(screen.getByRole("button", { name: "生成课程计划" }));
+      fireEvent.click(screen.getByRole("button", { name: "确认排课" }));
+      expect(demoRepository.read().lessons.length).toBe(
+        mode === "固定排课" ? 4 : 1,
+      );
+      expect(screen.getByRole("dialog", { name: "排课完成" })).toBeTruthy();
+    },
+  );
   it("老师资料关闭保留搜索，方案返回后不重复展开周期", () => {
     const { student } = fixture();
     mount(`/schedule?student=${student.id}`);

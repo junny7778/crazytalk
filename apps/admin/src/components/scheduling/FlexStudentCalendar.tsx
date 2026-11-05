@@ -1,5 +1,6 @@
+import { useScheduleCredits } from "./useScheduleCredits";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
   addDays,
@@ -9,7 +10,7 @@ import {
   minutes,
   type ScheduleIntent,
 } from "@crazytalk/shared";
-import { Button, Field, Modal, useToast } from "@crazytalk/ui";
+import { Avatar, Button, Modal, useToast } from "@crazytalk/ui";
 type Slot = { date: string; time: string; teacherId: string };
 const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const dayOf = (d: string) => new Date(`${d}T12:00:00+08:00`).getUTCDay();
@@ -19,7 +20,9 @@ const clock = (n: number) =>
 export function FlexStudentCalendar({
   studentId,
   intent,
+  onComplete,
 }: {
+  onComplete?: (count: number, teacherNames: string) => void;
   studentId: string;
   intent: ScheduleIntent;
 }) {
@@ -35,6 +38,14 @@ export function FlexStudentCalendar({
     time: string;
     index: number;
   } | null>(null);
+  const [selectedTeacher, setSelectedTeacher] = useState("");
+  const [teacherQuery, setTeacherQuery] = useState("");
+  useEffect(() => {
+    setSelectedTeacher(
+      editor && editor.index >= 0 ? slots[editor.index]?.teacherId || "" : "",
+    );
+    setTeacherQuery("");
+  }, [editor]);
   const [drag, setDrag] = useState<number | null>(null);
   const [hover, setHover] = useState("");
   const [error, setError] = useState("");
@@ -75,7 +86,9 @@ export function FlexStudentCalendar({
       slots.some((s, i) => i !== ignore && overlap(date, time, s))
     )
       return [];
-    const previous = new Set(lessons.map((l) => l.teacherId));
+    const previous = new Set(
+      lessons.filter((l) => l.status === "已完成").map((l) => l.teacherId),
+    );
     const selected = new Set(slots.map((s) => s.teacherId));
     return data.teachers
       .filter(
@@ -149,11 +162,13 @@ export function FlexStudentCalendar({
     setDrag(null);
     setHover("");
   }
+  const credits = useScheduleCredits(studentId, intent.duration, slots.length);
   function submit() {
     try {
       if (!slots.length) return;
       const result = act({
         type: "lesson.schedule",
+        plannedUnits: credits.units,
         schedulingMode: "flex",
         kind: "临时课",
         studentId,
@@ -166,6 +181,18 @@ export function FlexStudentCalendar({
       setSlots([]);
       setEditor(null);
       setError("");
+      onComplete?.(
+        slots.length,
+        [
+          ...new Set(
+            slots.map(
+              (slot) =>
+                data.teachers.find((teacher) => teacher.id === slot.teacherId)
+                  ?.name || "未填写",
+            ),
+          ),
+        ].join("、"),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "提交失败，请重试");
     }
@@ -215,7 +242,7 @@ export function FlexStudentCalendar({
           className="fixed-calendar"
           style={{ gridTemplateRows: "44px repeat(48,48px)" }}
         >
-          <div className="fixed-calendar-head">北京时间</div>
+          <div className="fixed-calendar-head">时间</div>
           {dates.map((date) => (
             <div className="fixed-calendar-head" key={date}>
               {days[dayOf(date)]}
@@ -383,58 +410,134 @@ export function FlexStudentCalendar({
           open
           onClose={() => setEditor(null)}
           title="选择授课老师"
-          width={540}
-        >
-          <div className="stack">
-            <strong>
-              {editor.date} · 每节 {intent.duration} 分钟
-            </strong>
-            <Field label="上课时间">
-              <input
-                type="time"
-                value={editor.time}
-                onChange={(e) => setEditor({ ...editor, time: e.target.value })}
-              />
-            </Field>
-            <small>
-              优先展示学员上过课的老师，其次为本次已选老师；所有可用老师均可选择。
-            </small>
-            {error && <p role="alert">{error}</p>}
-            <div className="flex-teacher-options">
-              {editingTeachers.map((t) => (
-                <button
-                  key={t.id}
-                  className="inset flex-teacher-choice"
-                  disabled={preview || !can("schedule.create")}
-                  onClick={() => choose(t.id)}
+          width={600}
+          footer={
+            <div className="flex-picker-footer">
+              <span>
+                {editingTeachers.find((t) => t.id === selectedTeacher)?.name ||
+                  "请选择老师"}
+              </span>
+              {editor.index >= 0 && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSlots(slots.filter((_, i) => i !== editor.index));
+                    setEditor(null);
+                  }}
                 >
-                  <strong>{t.name}</strong>
-                  <small>
-                    SO：{t.so || "未填写"} · 口音：{t.accent || "未填写"} ·
-                    导师等级：{t.level || "未填写"}
-                  </small>
-                  <small>
-                    可教类别：{t.categories.join(" / ") || "未填写"}
-                  </small>
-                </button>
-              ))}
-            </div>
-            {!editingTeachers.length && (
-              <p>该时间没有可匹配老师，或学员已有时间冲突。</p>
-            )}
-            {editor.index >= 0 && (
-              <Button
-                onClick={() => {
-                  setSlots(slots.filter((_, i) => i !== editor.index));
-                  setEditor(null);
-                }}
-              >
-                移除本节
+                  移除本节
+                </Button>
+              )}
+              <Button variant="ghost" onClick={() => setEditor(null)}>
+                取消
               </Button>
-            )}
-            <Button variant="ghost" onClick={() => setEditor(null)}>
-              取消
-            </Button>
+              <Button
+                variant="primary"
+                disabled={
+                  !editingTeachers.some((t) => t.id === selectedTeacher) ||
+                  preview ||
+                  !can("schedule.create")
+                }
+                onClick={() => choose(selectedTeacher)}
+              >
+                {editor.index >= 0 ? "保存修改" : "加入课表"}
+              </Button>
+            </div>
+          }
+        >
+          <div className="flex-picker">
+            <div className="flex-picker-summary">
+              <strong>
+                {data.students.find((s) => s.id === studentId)?.name} ·{" "}
+                {editor.date} {days[dayOf(editor.date)]}
+              </strong>
+              <span>
+                {editor.time || "请选择时间"}
+                {editor.time
+                  ? `–${clock(minutes(editor.time) + intent.duration)}`
+                  : ""}{" "}
+                · {intent.duration} 分钟
+              </span>
+            </div>
+            <div className="flex-picker-toolbar">
+              <strong>可选老师 {editingTeachers.length} 位</strong>
+              <input
+                aria-label="搜索可选老师"
+                placeholder="搜索老师姓名"
+                value={teacherQuery}
+                onChange={(e) => setTeacherQuery(e.target.value)}
+              />
+            </div>
+            {error && <p role="alert">{error}</p>}
+            <div
+              className="flex-teacher-options"
+              key={`${editor.date}/${editor.time}/${editor.index}`}
+            >
+              {editingTeachers
+                .filter((t) =>
+                  t.name
+                    .toLowerCase()
+                    .includes(teacherQuery.trim().toLowerCase()),
+                )
+                .map((t) => (
+                  <button
+                    type="button"
+                    key={t.id}
+                    aria-pressed={selectedTeacher === t.id}
+                    className="flex-teacher-choice"
+                    disabled={preview || !can("schedule.create")}
+                    onClick={() => setSelectedTeacher(t.id)}
+                  >
+                    <div className="flex-teacher-heading">
+                      <Avatar name={t.name} />
+                      <strong>{t.name}</strong>
+                      {lessons.some(
+                        (l) => l.teacherId === t.id && l.status === "已完成",
+                      ) ? (
+                        <small className="flex-teacher-tag">曾授课</small>
+                      ) : slots.some((s) => s.teacherId === t.id) ? (
+                        <small className="flex-teacher-tag">本次已选</small>
+                      ) : null}
+                      <span
+                        className="flex-teacher-selection"
+                        aria-hidden="true"
+                      >
+                        {selectedTeacher === t.id && (
+                          <Check size={14} strokeWidth={3} />
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex-teacher-facts">
+                      <span>
+                        <small>SO</small>
+                        {t.so || "未填写"}
+                      </span>
+                      <span>
+                        <small>口音等级</small>
+                        {t.accent || "未填写"}
+                      </span>
+                      <span>
+                        <small>导师等级</small>
+                        {t.level || "未填写"}
+                      </span>
+                    </div>
+                    <div className="flex-teacher-category">
+                      可教类别：{t.categories.join(" / ") || "未填写"}
+                    </div>
+                  </button>
+                ))}
+              {!editingTeachers.length ? (
+                <p className="muted">
+                  该时间没有可用老师或学员已有课程，请返回日历选择其他时间。
+                </p>
+              ) : (
+                !editingTeachers.some((t) =>
+                  t.name
+                    .toLowerCase()
+                    .includes(teacherQuery.trim().toLowerCase()),
+                ) && <p className="muted">没有找到该老师，请修改搜索关键词。</p>
+              )}
+            </div>
           </div>
         </Modal>
       )}
@@ -444,6 +547,7 @@ export function FlexStudentCalendar({
           部分已选课程已不可安排，请点击课程重新选择老师或移除。
         </p>
       )}
+      {credits.node}
       <div className="fixed-plan-footer">
         <span>
           <strong>
@@ -463,7 +567,11 @@ export function FlexStudentCalendar({
         <Button
           variant="primary"
           disabled={
-            !slots.length || hasInvalid || preview || !can("schedule.create")
+            Boolean(credits.error) ||
+            !slots.length ||
+            hasInvalid ||
+            preview ||
+            !can("schedule.create")
           }
           onClick={submit}
         >

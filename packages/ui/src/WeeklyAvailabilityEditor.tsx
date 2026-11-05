@@ -77,6 +77,9 @@ export function WeeklyAvailabilityEditor({
         <label>
           {english ? "Effective from (optional)" : "开始使用日期（选填）"}
           <DatePicker
+            placeholder={
+              english ? "Effective from (optional)" : "开始使用日期（选填）"
+            }
             mode="date"
             language={language}
             value={value.availabilityFrom}
@@ -90,8 +93,8 @@ export function WeeklyAvailabilityEditor({
       {heading && <h2 className="weekly-availability-heading">{heading}</h2>}
       <p className="weekly-availability-hint">
         {english
-          ? "Set your usual teaching hours for each day. All times are Beijing time."
-          : "按星期填写常规授课时间，每天可添加多段。时间均为北京时间。"}
+          ? "Set your usual teaching hours for each day."
+          : "按星期填写常规授课时间，每天可添加多段。"}
       </p>
       <div
         className="weekly-availability-weekdays"

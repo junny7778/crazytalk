@@ -1,3 +1,4 @@
+import ListPagination, { useListPage } from "../../components/ListPagination";
 import FeedbackHistory from "../../components/FeedbackHistory";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../../components/DataTransferButton";
@@ -23,6 +24,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  Drawer,
   Field,
   Modal,
   PageHeader,
@@ -82,9 +84,6 @@ function TeacherMeasures({ feedback }: { feedback: FeedbackRecord }) {
         )
       }
     >
-      <p className="ops-subtitle">
-        好评与已完成的反馈也可以继续记录鼓励、培训等措施；不会覆盖原表的判定结果。
-      </p>
       {actions.length ? (
         <div className="feedback-history">
           {actions.map((action) => (
@@ -237,6 +236,9 @@ export function Processing({
 }) {
   const { can } = useDemo();
   const run = useBusinessAction();
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [editingTM, setEditingTM] = useState(false);
+  const [addingFollow, setAddingFollow] = useState(false);
   const [progress, setProgress] = useState(feedback.customerProgress);
   const [customerResult, setCustomerResult] = useState(feedback.customerResult);
   const [customerNote, setCustomerNote] = useState(feedback.processNote);
@@ -264,54 +266,30 @@ export function Processing({
     <>
       <Panel
         title="客服处理"
-        action={!can("feedback.process") && <Badge>仅查看</Badge>}
-      >
-        {can("feedback.process") ? (
-          <div className="stack">
-            <div className="feedback-form-grid">
-              <Field label="客服处理进度">
-                <OptionalSelect
-                  label="客服处理进度"
-                  value={progress}
-                  onChange={setProgress}
-                  options={customerProgresses}
-                />
-              </Field>
-              <Field label="客服处理结果">
-                <OptionalSelect
-                  label="客服处理结果"
-                  value={customerResult}
-                  onChange={setCustomerResult}
-                  options={processingResults}
-                />
-              </Field>
-            </div>
-            <Field label="客服备注">
-              <textarea
-                rows={3}
-                value={customerNote}
-                onChange={(event) => setCustomerNote(event.target.value)}
-                placeholder="记录核实情况、与家长的沟通及后续安排"
-              />
-            </Field>
-            <div className="row wrap">
+        action={
+          can("feedback.process") ? (
+            !editingCustomer && (
               <Button
-                variant="primary"
-                onClick={() =>
-                  run({
-                    type: "feedback.customer",
-                    id: feedback.id,
-                    progress,
-                    result: customerResult,
-                    note: customerNote,
-                  })
-                }
+                size="sm"
+                onClick={() => {
+                  setProgress(feedback.customerProgress);
+                  setCustomerResult(feedback.customerResult);
+                  setCustomerNote(feedback.processNote);
+                  setEditingCustomer(true);
+                }}
               >
-                保存客服处理
+                更新客服处理
               </Button>
-              <small>处理进度与处理结果分别记录。</small>
-            </div>
-          </div>
+            )
+          ) : (
+            <Badge>仅查看</Badge>
+          )
+        }
+      >
+        {!feedback.customerProgress &&
+        !feedback.customerResult &&
+        !feedback.processNote ? (
+          <p className="muted">尚未处理</p>
         ) : (
           <dl className="feedback-value-grid">
             <Value label="客服处理进度">{feedback.customerProgress}</Value>
@@ -324,127 +302,438 @@ export function Processing({
       </Panel>
       <Panel
         title="TM 判定与跟进"
-        action={!can("feedback.verdict") && <Badge>仅查看</Badge>}
+        action={
+          can("feedback.verdict") ? (
+            !editingTM && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setJoint(feedback.jointVerdict);
+                  setResult(feedback.tmResult);
+                  setDate(feedback.tmDate);
+                  setTMNote(feedback.tmNote);
+                  setEditingTM(true);
+                }}
+              >
+                更新 TM 判定
+              </Button>
+            )
+          ) : (
+            <Badge>仅查看</Badge>
+          )
+        }
       >
-        {can("feedback.verdict") ? (
-          <div className="stack">
-            <div className="feedback-form-grid">
-              <Field label="客服&TM判定结果">
-                <OptionalSelect
-                  label="客服&TM判定结果"
-                  value={joint}
-                  onChange={setJoint}
-                  options={feedbackGrades}
-                />
-              </Field>
-              <Field label="TM判定">
-                <OptionalSelect
-                  label="TM判定"
-                  value={result}
-                  onChange={setResult}
-                  options={processingResults}
-                />
-              </Field>
-              <Field label="TM处理日期">
-                <DatePicker
-                  mode="date"
-                  value={date}
-                  onValueChange={(nextValue) => setDate(nextValue)}
-                />
-              </Field>
-            </div>
-            <Field label="TM跟进记录">
-              <textarea
-                rows={4}
-                value={tmNote}
-                onChange={(event) => setTMNote(event.target.value)}
-                placeholder="记录核实依据、判定说明及后续跟进"
+        {!feedback.jointVerdict &&
+        !feedback.tmResult &&
+        !feedback.tmDate &&
+        !feedback.tmNote ? (
+          <p className="muted">尚未判定</p>
+        ) : (
+          <dl className="feedback-value-grid">
+            <Value label="客服与 TM 判定等级">{feedback.jointVerdict}</Value>
+            <Value label="TM处理结果">{feedback.tmResult}</Value>
+            <Value label="TM处理日期">{feedback.tmDate}</Value>
+            <Value label="TM判定说明" wide>
+              {feedback.tmNote}
+            </Value>
+          </dl>
+        )}
+      </Panel>
+      <Panel
+        title="跟进历史"
+        action={
+          (can("feedback.process") || can("feedback.verdict")) &&
+          !addingFollow && (
+            <Button size="sm" onClick={() => setAddingFollow(true)}>
+              添加跟进
+            </Button>
+          )
+        }
+      >
+        <FeedbackHistory entries={feedback.followUps} />
+      </Panel>
+      <Modal
+        open={can("feedback.process") && editingCustomer}
+        title="更新客服处理"
+        onClose={() => {
+          setProgress(feedback.customerProgress);
+          setCustomerResult(feedback.customerResult);
+          setCustomerNote(feedback.processNote);
+          setEditingCustomer(false);
+        }}
+        width={640}
+      >
+        <div className="stack">
+          <div className="feedback-form-grid">
+            <Field label="客服处理进度">
+              <OptionalSelect
+                label="客服处理进度"
+                value={progress}
+                onChange={setProgress}
+                options={customerProgresses}
               />
             </Field>
-            <div className="row wrap">
-              <Button
-                variant="primary"
-                onClick={() =>
-                  run({
+            <Field label="客服处理结果">
+              <OptionalSelect
+                label="客服处理结果"
+                value={customerResult}
+                onChange={setCustomerResult}
+                options={processingResults}
+              />
+            </Field>
+          </div>
+          <Field label="客服备注">
+            <textarea
+              rows={3}
+              value={customerNote}
+              onChange={(event) => setCustomerNote(event.target.value)}
+              placeholder="记录核实情况、与家长的沟通及后续安排"
+            />
+          </Field>
+          <div className="row wrap">
+            <Button
+              variant="primary"
+              onClick={() =>
+                run(
+                  {
+                    type: "feedback.customer",
+                    id: feedback.id,
+                    progress,
+                    result: customerResult,
+                    note: customerNote,
+                  },
+                  () => setEditingCustomer(false),
+                )
+              }
+            >
+              保存客服处理
+            </Button>
+            <Button
+              onClick={() => {
+                setProgress(feedback.customerProgress);
+                setCustomerResult(feedback.customerResult);
+                setCustomerNote(feedback.processNote);
+                setEditingCustomer(false);
+              }}
+            >
+              取消客服编辑
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={can("feedback.verdict") && editingTM}
+        title="更新 TM 判定"
+        onClose={() => {
+          setJoint(feedback.jointVerdict);
+          setResult(feedback.tmResult);
+          setDate(feedback.tmDate);
+          setTMNote(feedback.tmNote);
+          setEditingTM(false);
+        }}
+        width={640}
+      >
+        <div className="stack">
+          <div className="feedback-form-grid">
+            <Field label="客服与 TM 判定等级">
+              <OptionalSelect
+                label="客服与 TM 判定等级"
+                value={joint}
+                onChange={setJoint}
+                options={feedbackGrades}
+              />
+            </Field>
+            <Field label="TM处理结果">
+              <OptionalSelect
+                label="TM处理结果"
+                value={result}
+                onChange={setResult}
+                options={processingResults}
+              />
+            </Field>
+            <Field label="TM处理日期">
+              <DatePicker
+                placeholder="TM处理日期"
+                mode="date"
+                value={date}
+                onValueChange={(nextValue) => setDate(nextValue)}
+              />
+            </Field>
+          </div>
+          <Field label="TM判定说明">
+            <textarea
+              rows={4}
+              value={tmNote}
+              onChange={(event) => setTMNote(event.target.value)}
+              placeholder="记录核实依据、判定说明及后续跟进"
+            />
+          </Field>
+          <div className="row wrap">
+            <Button
+              variant="primary"
+              onClick={() =>
+                run(
+                  {
                     type: "feedback.tm",
                     id: feedback.id,
                     jointVerdict: joint,
                     result,
                     date,
                     note: tmNote,
-                  })
-                }
-              >
-                保存 TM 判定
-              </Button>
-              <small>
-                “处理成功／处理失败”保留原表含义，不会自动结束反馈。
-              </small>
-            </div>
-          </div>
-        ) : (
-          <dl className="feedback-value-grid">
-            <Value label="客服&TM判定结果">{feedback.jointVerdict}</Value>
-            <Value label="TM判定">{feedback.tmResult}</Value>
-            <Value label="TM处理日期">{feedback.tmDate}</Value>
-            <Value label="TM跟进记录" wide>
-              {feedback.tmNote}
-            </Value>
-          </dl>
-        )}
-      </Panel>
-      <Panel title="跟进历史">
-        {(can("feedback.process") || can("feedback.verdict")) && (
-          <div className="feedback-follow-form">
-            <Field label="记录归属">
-              <Select
-                value={followSection}
-                onValueChange={(value) => {
-                  if (value === "客服处理" || value === "TM跟进")
-                    setFollowSection(value);
-                }}
-              >
-                {can("feedback.process") && <option>客服处理</option>}
-                {can("feedback.verdict") && <option>TM跟进</option>}
-              </Select>
-            </Field>
-            <Field label="追加跟进内容">
-              <textarea
-                value={follow}
-                onChange={(event) => setFollow(event.target.value)}
-                placeholder="补充新的沟通结果，不覆盖此前记录"
-              />
-            </Field>
-            <Button
-              disabled={!follow.trim()}
-              onClick={() =>
-                run(
-                  {
-                    type: "feedback.followUp",
-                    id: feedback.id,
-                    section: followSection,
-                    content: follow,
                   },
-                  () => setFollow(""),
+                  () => setEditingTM(false),
                 )
               }
             >
-              添加跟进
+              保存 TM 判定
             </Button>
+            <Button
+              onClick={() => {
+                setJoint(feedback.jointVerdict);
+                setResult(feedback.tmResult);
+                setDate(feedback.tmDate);
+                setTMNote(feedback.tmNote);
+                setEditingTM(false);
+              }}
+            >
+              取消 TM 编辑
+            </Button>
+            <small>处理结果不会自动改变反馈完成状态。</small>
           </div>
-        )}
-        <FeedbackHistory entries={feedback.followUps} />
-      </Panel>
+        </div>
+      </Modal>
+      <Modal
+        open={
+          addingFollow && (can("feedback.process") || can("feedback.verdict"))
+        }
+        title="添加跟进"
+        onClose={() => {
+          setFollow("");
+          setAddingFollow(false);
+        }}
+        width={640}
+      >
+        <div className="feedback-follow-form">
+          <Field label="记录归属">
+            <Select
+              value={followSection}
+              onValueChange={(value) => {
+                if (value === "客服处理" || value === "TM跟进")
+                  setFollowSection(value);
+              }}
+            >
+              {can("feedback.process") && <option>客服处理</option>}
+              {can("feedback.verdict") && <option>TM跟进</option>}
+            </Select>
+          </Field>
+          <Field label="追加跟进内容">
+            <textarea
+              value={follow}
+              onChange={(event) => setFollow(event.target.value)}
+              placeholder="补充新的沟通结果，不覆盖此前记录"
+            />
+          </Field>
+          <Button
+            disabled={!follow.trim()}
+            onClick={() =>
+              run(
+                {
+                  type: "feedback.followUp",
+                  id: feedback.id,
+                  section: followSection,
+                  content: follow,
+                },
+                () => {
+                  setFollow("");
+                  setAddingFollow(false);
+                },
+              )
+            }
+          >
+            保存跟进
+          </Button>
+          <Button
+            onClick={() => {
+              setFollow("");
+              setAddingFollow(false);
+            }}
+          >
+            取消添加
+          </Button>
+        </div>
+      </Modal>
     </>
   );
 }
 const columnOptions = [
+  { id: "code", label: "学员编号" },
   { id: "source", label: "项目／渠道" },
   { id: "owner", label: "教务" },
-  { id: "grade", label: "反馈阶段／等级" },
-  { id: "customer", label: "客服处理" },
+  { id: "so", label: "SO" },
+  { id: "rating", label: "评价" },
+  { id: "category", label: "问题分类" },
+  { id: "content", label: "反馈内容" },
+  { id: "repeat", label: "重复反馈" },
+  { id: "stage", label: "反馈阶段" },
+  { id: "grade", label: "反馈等级" },
+  { id: "customer", label: "客服处理进度" },
+  { id: "customerResult", label: "客服处理结果" },
   { id: "tm", label: "TM 判定" },
+  { id: "tmDate", label: "TM处理日期" },
 ];
+function FeedbackContext({ feedback }: { feedback: FeedbackRecord }) {
+  const { data, can } = useDemo();
+  const run = useBusinessAction();
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState(feedback.lessonId);
+  const [viewing, setViewing] = useState(false);
+  const [history, setHistory] = useState(false);
+  const lesson = data.lessons.find((item) => item.id === feedback.lessonId);
+  const lessons = data.lessons
+    .filter(
+      (item) =>
+        item.studentId === feedback.studentId &&
+        item.teacherId === feedback.teacherId,
+    )
+    .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+  const related = data.feedback
+    .filter(
+      (item) =>
+        !!feedback.teacherId &&
+        item.teacherId === feedback.teacherId &&
+        item.id !== feedback.id,
+    )
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return (
+    <div className="feedback-context-inline">
+      <div className="row wrap">
+        <span className="muted">关联课程：</span>
+        <span>
+          {lesson
+            ? `${lesson.date} ${lesson.time} · ${lesson.material || "未填写教材"}`
+            : "未关联"}
+        </span>
+        {lesson && (
+          <Button size="xs" variant="ghost" onClick={() => setViewing(true)}>
+            查看课程
+          </Button>
+        )}
+        {can("feedback.create") && (
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => {
+              setSelected(feedback.lessonId);
+              setSelecting(true);
+            }}
+          >
+            {lesson ? "更换关联" : "关联课程"}
+          </Button>
+        )}
+      </div>
+      <div className="row wrap">
+        <span className="muted">老师历史反馈：</span>
+        {related.length ? (
+          <Button size="xs" variant="ghost" onClick={() => setHistory(true)}>
+            其他反馈（{related.length}）
+          </Button>
+        ) : (
+          <span className="muted">该老师暂无其他反馈</span>
+        )}
+      </div>
+      <Modal
+        open={selecting}
+        title="关联课程"
+        width={600}
+        onClose={() => setSelecting(false)}
+        footer={
+          <>
+            <Button onClick={() => setSelecting(false)}>取消</Button>
+            <Button
+              variant="primary"
+              disabled={selected === feedback.lessonId}
+              onClick={() =>
+                run(
+                  {
+                    type: "feedback.edit",
+                    id: feedback.id,
+                    feedback: { ...feedback, lessonId: selected },
+                  },
+                  () => setSelecting(false),
+                )
+              }
+            >
+              保存关联
+            </Button>
+          </>
+        }
+      >
+        <Field
+          label="选择课程"
+          hint="仅展示当前学员与反馈老师的课程，避免关联到其他老师。"
+        >
+          <Select value={selected} onValueChange={setSelected} searchable>
+            <option value="">不关联具体课程</option>
+            {lessons.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.date} {item.time} · {item.material || "未填写教材"}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {!lessons.length && <p className="muted">暂无可关联课程。</p>}
+      </Modal>
+      <Drawer
+        open={history}
+        title="同老师的其他反馈"
+        onClose={() => setHistory(false)}
+      >
+        <div className="stack-sm">
+          {related.map((item) => (
+            <Link
+              className="feedback-related"
+              key={item.id}
+              to={`/feedback/${item.id}`}
+              onClick={() => setHistory(false)}
+            >
+              <strong>
+                {data.students.find((student) => student.id === item.studentId)
+                  ?.name || "学员"}{" "}
+                · {item.rating}
+              </strong>
+              <small>{item.date}</small>
+              <span>{item.content || "未填写原话"}</span>
+            </Link>
+          ))}
+        </div>
+      </Drawer>
+      <Modal
+        open={viewing}
+        title="关联课程详情"
+        width={600}
+        onClose={() => setViewing(false)}
+      >
+        {lesson && (
+          <dl className="feedback-value-grid">
+            <Value label="上课时间">
+              {lesson.date} {lesson.time}
+            </Value>
+            <Value label="教材">{lesson.material}</Value>
+            <Value label="时长">{lesson.duration} 分钟</Value>
+            <Value label="出勤">{lesson.attendance}</Value>
+            <Value label="老师进出教室">
+              {lesson.teacherIn || "未记录"} — {lesson.teacherOut || "未记录"}
+            </Value>
+            <Value label="学员进出教室">
+              {lesson.studentIn || "未记录"} — {lesson.studentOut || "未记录"}
+            </Value>
+          </dl>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
 export default function Feedback() {
   const { data, can } = useDemo();
   const navigate = useNavigate();
@@ -456,7 +745,14 @@ export default function Feedback() {
   );
   const [more, setMore] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
-  const [columns, setColumns] = useState(columnOptions.map((item) => item.id));
+  const [columns, setColumns] = useState([
+    "source",
+    "rating",
+    "category",
+    "content",
+    "customer",
+    "tm",
+  ]);
   const [preview, setPreview] = useState<string | null>(null);
   const tab = params.get("tab") === "actions" ? "actions" : "records";
   const view = params.get("view") || "全部";
@@ -515,6 +811,7 @@ export default function Feedback() {
             .includes(query.toLowerCase())),
     )
     .sort((a, b) => b.date.localeCompare(a.date));
+  const listPage0 = useListPage(filtered);
   const exportRecords = () =>
     exportCsv("学生反馈", [
       [
@@ -594,14 +891,10 @@ export default function Feedback() {
             返回反馈列表
           </Link>
           <PageHeader
-            title={`${student(feedback.studentId)?.code || ""} ${student(feedback.studentId)?.name || "学员"} 的反馈`}
-            description={`${feedback.date} · 教务 ${feedback.owner} · ${teacherLabel(feedback)}`}
+            title={`${student(feedback.studentId)?.name || "学员"} 的反馈`}
             action={
               <>
-                {feedback.grade && <Badge>{feedback.grade}</Badge>}
-                <Badge tone={feedback.rating === "好评" ? "success" : "danger"}>
-                  {feedback.rating}
-                </Badge>
+                <Badge>{feedback.status}</Badge>
                 {can("feedback.create") && (
                   <Button size="sm" onClick={() => setEditor("edit")}>
                     <Pencil size={14} />
@@ -618,75 +911,59 @@ export default function Feedback() {
                   <Value label="反馈日期">{feedback.date}</Value>
                   <Value label="项目／渠道">{source(feedback)}</Value>
                   <Value label="教务">{feedback.owner}</Value>
-                  <Value label="学员名称">
+                  <Value label="学员编号">
                     <Link to={`/students/${feedback.studentId}`}>
-                      {student(feedback.studentId)?.code}{" "}
-                      {student(feedback.studentId)?.name}
+                      {student(feedback.studentId)?.code}
                     </Link>
                   </Value>
-                  <Value label="老师名字 Tutor Name">
+                  <Value label="老师">
                     <Link to={`/teachers/${feedback.teacherId}`}>
                       {teacherLabel(feedback)}
                     </Link>
                   </Value>
                   <Value label="SO">{so(feedback)}</Value>
                 </dl>
+                <FeedbackContext key={feedback.id} feedback={feedback} />
               </Panel>
               <Panel title="反馈内容">
-                <dl className="feedback-value-grid">
-                  <Value label="反馈阶段">{feedback.stage}</Value>
-                  <Value label="反馈等级">{feedback.grade}</Value>
-                  <Value label="评价分类">{feedback.rating}</Value>
-                </dl>
-                <div className="feedback-classification-table table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>一级分类</th>
-                        <th>二级分类</th>
-                        <th>三级分类</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {feedbackCategories(feedback).length ? (
-                        feedbackCategories(feedback).map((path) => (
-                          <tr key={path}>
-                            {[0, 1, 2].map((index) => (
-                              <td key={index}>
-                                {path.split(/\s*\/\s*/)[index] || "—"}
-                              </td>
-                            ))}
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={3}>未填写问题分类</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                <div className="row wrap feedback-detail-tags">
+                  <Badge
+                    tone={feedback.rating === "好评" ? "success" : "danger"}
+                  >
+                    {feedback.rating}
+                  </Badge>
+                  {feedback.stage && <span>反馈阶段：{feedback.stage}</span>}
+                  {feedback.grade && <span>反馈等级：{feedback.grade}</span>}
+                  {feedback.repeat && <Badge tone="warning">重复反馈</Badge>}
+                </div>
+                <div className="feedback-category-paths">
+                  {feedbackCategories(feedback).map((path) => (
+                    <p key={path}>{path.split(/\s*\/\s*/).join(" › ")}</p>
+                  ))}
                 </div>
                 <dl className="feedback-value-grid">
                   <Value label="学员反馈（原话）" wide>
                     {feedback.content}
                   </Value>
-                  <Value label="截图" wide>
-                    {feedback.screenshots.length ? (
-                      <div className="feedback-screenshots">
-                        {feedback.screenshots.map((shot) => (
-                          <div key={shot.id}>
-                            <button
-                              onClick={() => setPreview(shot.dataUrl)}
-                              aria-label={`预览 ${shot.name}`}
-                            >
-                              <img src={shot.dataUrl} alt={shot.name} />
-                            </button>
-                            <small>{shot.name}</small>
-                          </div>
-                        ))}
-                      </div>
-                    ) : undefined}
-                  </Value>
+                  {feedback.screenshots.length > 0 && (
+                    <Value label="截图" wide>
+                      {feedback.screenshots.length ? (
+                        <div className="feedback-screenshots">
+                          {feedback.screenshots.map((shot) => (
+                            <div key={shot.id}>
+                              <button
+                                onClick={() => setPreview(shot.dataUrl)}
+                                aria-label={`预览 ${shot.name}`}
+                              >
+                                <img src={shot.dataUrl} alt={shot.name} />
+                              </button>
+                              <small>{shot.name}</small>
+                            </div>
+                          ))}
+                        </div>
+                      ) : undefined}
+                    </Value>
+                  )}
                 </dl>
               </Panel>
               <Processing key={feedback.id} feedback={feedback} />
@@ -695,81 +972,6 @@ export default function Feedback() {
                 feedback={feedback}
               />
             </div>
-            <aside className="stack feedback-context">
-              <Panel title="关联课程">
-                {feedback.lessonId &&
-                data.lessons.find(
-                  (lesson) => lesson.id === feedback.lessonId,
-                ) ? (
-                  (() => {
-                    const lesson = data.lessons.find(
-                      (item) => item.id === feedback.lessonId,
-                    )!;
-                    return (
-                      <div className="stack-sm">
-                        <strong>
-                          {lesson.date} {lesson.time}
-                        </strong>
-                        <p>
-                          {lesson.duration} 分钟 · {lesson.material}
-                        </p>
-                        <Badge tone={tone(lesson.attendance)}>
-                          {lesson.attendance}
-                        </Badge>
-                        <p>
-                          老师：{lesson.teacherIn || "未收到进教室记录"} —{" "}
-                          {lesson.teacherOut || "未收到离开记录"}
-                        </p>
-                        <p>
-                          学员：{lesson.studentIn || "未收到进教室记录"} —{" "}
-                          {lesson.studentOut || "未收到离开记录"}
-                        </p>
-                        <Link
-                          to={`/lessons?tab=all&q=${encodeURIComponent(student(feedback.studentId)?.code || "")}`}
-                        >
-                          查看上课记录 →
-                        </Link>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <p className="muted">
-                    未关联具体课程。可编辑反馈资料后补充，不影响记录其他反馈信息。
-                  </p>
-                )}
-              </Panel>
-              <Panel title="同一老师的其他反馈">
-                <div className="stack-sm">
-                  {data.feedback
-                    .filter(
-                      (item) =>
-                        item.teacherId === feedback.teacherId &&
-                        item.id !== feedback.id,
-                    )
-                    .slice(0, 4)
-                    .map((item) => (
-                      <Link
-                        className="feedback-related"
-                        to={`/feedback/${item.id}`}
-                        key={item.id}
-                      >
-                        <strong>
-                          {student(item.studentId)?.name} · {item.rating}
-                        </strong>
-                        <small>
-                          {item.date} ·{" "}
-                          {item.content || item.category || "未填写原话"}
-                        </small>
-                      </Link>
-                    ))}
-                  {!data.feedback.some(
-                    (item) =>
-                      item.teacherId === feedback.teacherId &&
-                      item.id !== feedback.id,
-                  ) && <p className="muted">暂无其他反馈。</p>}
-                </div>
-              </Panel>
-            </aside>
           </div>
         </>
       ) : id ? (
@@ -813,7 +1015,7 @@ export default function Feedback() {
               },
               {
                 value: "actions",
-                label: "处理措施",
+                label: "处理记录",
                 count: data.actions.filter(
                   (action) =>
                     action.type === "扣款" && action.status === "待确认",
@@ -843,34 +1045,6 @@ export default function Feedback() {
                   onChange={(value) => update("q", value)}
                   placeholder="搜索学员、老师、反馈或跟进内容"
                 />
-                <div className="row">
-                  <Button size="sm" onClick={() => setMore((value) => !value)}>
-                    <SlidersHorizontal size={14} />
-                    {more ? "收起筛选" : "更多筛选"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => setColumnsOpen((value) => !value)}
-                  >
-                    显示列
-                  </Button>
-                </div>
-              </div>
-              <div className="feedback-filters">
-                <Field label="起始日期">
-                  <DatePicker
-                    mode="date"
-                    value={params.get("from") || ""}
-                    onValueChange={(nextValue) => update("from", nextValue)}
-                  />
-                </Field>
-                <Field label="结束日期">
-                  <DatePicker
-                    mode="date"
-                    value={params.get("to") || ""}
-                    onValueChange={(nextValue) => update("to", nextValue)}
-                  />
-                </Field>
                 <Field label="项目／渠道筛选">
                   <OptionalSelect
                     label="项目／渠道筛选"
@@ -895,7 +1069,7 @@ export default function Feedback() {
                     value={params.get("customer") || ""}
                     onChange={(value) => update("customer", value)}
                     options={customerProgresses}
-                    placeholder="全部进度"
+                    placeholder="全部客服进度"
                   />
                 </Field>
                 <Field label="TM判定筛选">
@@ -904,12 +1078,41 @@ export default function Feedback() {
                     value={params.get("tm") || ""}
                     onChange={(value) => update("tm", value)}
                     options={processingResults}
-                    placeholder="全部判定"
+                    placeholder="全部 TM 判定"
                   />
                 </Field>
+                <div className="row">
+                  <Button size="sm" onClick={() => setMore((value) => !value)}>
+                    <SlidersHorizontal size={14} />
+                    {more ? "收起筛选" : "更多筛选"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => setColumnsOpen((value) => !value)}
+                  >
+                    显示列
+                  </Button>
+                </div>
               </div>
               {more && (
                 <div className="feedback-filters">
+                  <Field label="起始日期">
+                    <DatePicker
+                      mode="date"
+                      placeholder="起始日期"
+                      value={params.get("from") || ""}
+                      onValueChange={(nextValue) => update("from", nextValue)}
+                    />
+                  </Field>
+                  <Field label="结束日期">
+                    <DatePicker
+                      mode="date"
+                      placeholder="结束日期"
+                      value={params.get("to") || ""}
+                      onValueChange={(nextValue) => update("to", nextValue)}
+                    />
+                  </Field>
+
                   <Field label="教务筛选">
                     <OptionalSelect
                       label="教务筛选"
@@ -1022,86 +1225,84 @@ export default function Feedback() {
                     <tr>
                       <th>反馈日期</th>
                       <th>学员</th>
-                      {columns.includes("source") && <th>项目／渠道</th>}
-                      {columns.includes("owner") && <th>教务</th>}
-                      <th>老师／SO</th>
-                      <th>反馈摘要</th>
-                      {columns.includes("grade") && <th>阶段／等级</th>}
-                      {columns.includes("customer") && <th>客服处理</th>}
-                      {columns.includes("tm") && <th>TM 判定</th>}
+                      <th>老师</th>
+                      {columnOptions
+                        .filter((column) => columns.includes(column.id))
+                        .map((column) => (
+                          <th key={column.id}>{column.label}</th>
+                        ))}
                       <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((item) => (
+                    {listPage0.rows.map((item) => (
                       <tr
                         key={item.id}
                         className="ops-click-row"
                         onClick={() => navigate(`/feedback/${item.id}`)}
                       >
-                        <td>
-                          {item.date}
-                          <small>
-                            {item.repeat && (
-                              <Badge tone="warning">重复反馈</Badge>
-                            )}
-                          </small>
-                        </td>
+                        <td>{item.date}</td>
                         <td>
                           <strong>
-                            {student(item.studentId)?.code}{" "}
-                            {student(item.studentId)?.name}
+                            {student(item.studentId)?.name || "—"}
                           </strong>
                         </td>
-                        {columns.includes("source") && (
-                          <td>{source(item) || "—"}</td>
-                        )}
-                        {columns.includes("owner") && (
-                          <td>{item.owner || "—"}</td>
-                        )}
-                        <td>
-                          {teacherLabel(item)}
-                          <small>{so(item) || "—"}</small>
-                        </td>
-                        <td>
-                          <Badge
-                            tone={item.rating === "好评" ? "success" : "danger"}
-                          >
-                            {item.rating}
-                          </Badge>
-                          <strong className="feedback-summary-text">
-                            {feedbackCategories(item)
-                              .map((path) => path.split(" / ").at(-1))
-                              .join("、") || "未填写问题分类"}
-                          </strong>
-                          <small className="feedback-summary-text">
-                            {item.content || "未填写学员原话"}
-                          </small>
-                        </td>
-                        {columns.includes("grade") && (
-                          <td>
-                            {item.grade || "—"}
-                            <small>{item.stage || "—"}</small>
-                          </td>
-                        )}
-                        {columns.includes("customer") && (
-                          <td>
-                            {item.customerProgress ? (
-                              <Badge tone={tone(item.customerProgress)}>
-                                {item.customerProgress}
-                              </Badge>
-                            ) : (
-                              <span className="muted">未填写</span>
-                            )}
-                            <small>{item.customerResult || "未填写结果"}</small>
-                          </td>
-                        )}
-                        {columns.includes("tm") && (
-                          <td>
-                            {item.tmResult || "未填写"}
-                            <small>{item.tmDate || ""}</small>
-                          </td>
-                        )}
+                        <td>{teacherLabel(item) || "—"}</td>
+                        {columnOptions
+                          .filter((column) => columns.includes(column.id))
+                          .map((column) => {
+                            const values: Record<string, ReactNode> = {
+                              code: student(item.studentId)?.code,
+                              source: source(item),
+                              owner: item.owner,
+                              so: so(item),
+                              rating: (
+                                <Badge
+                                  tone={
+                                    item.rating === "好评"
+                                      ? "success"
+                                      : "danger"
+                                  }
+                                >
+                                  {item.rating}
+                                </Badge>
+                              ),
+                              category: feedbackCategories(item)
+                                .map((path) => path.split(" / ").at(-1))
+                                .join("、"),
+                              content: item.content,
+                              repeat: item.repeat ? "是" : "否",
+                              stage: item.stage,
+                              grade: item.grade,
+                              customer: item.customerProgress && (
+                                <Badge tone={tone(item.customerProgress)}>
+                                  {item.customerProgress}
+                                </Badge>
+                              ),
+                              customerResult: item.customerResult,
+                              tm: item.tmResult,
+                              tmDate: item.tmDate,
+                            };
+                            return (
+                              <td key={column.id}>
+                                {column.id === "content" ||
+                                column.id === "category" ? (
+                                  <span
+                                    className="feedback-summary-text"
+                                    title={
+                                      column.id === "content"
+                                        ? item.content
+                                        : feedbackCategories(item).join("、")
+                                    }
+                                  >
+                                    {values[column.id] || "—"}
+                                  </span>
+                                ) : (
+                                  values[column.id] || "—"
+                                )}
+                              </td>
+                            );
+                          })}
                         <td>
                           <Link
                             to={`/feedback/${item.id}`}
@@ -1116,6 +1317,11 @@ export default function Feedback() {
                   </tbody>
                 </table>
               </div>
+              <ListPagination
+                total={filtered.length}
+                page={listPage0.page}
+                onChange={listPage0.setPage}
+              />
               {!filtered.length && (
                 <EmptyState
                   title="没有符合条件的反馈"
@@ -1130,7 +1336,7 @@ export default function Feedback() {
             </Panel>
           ) : (
             <Panel
-              title="老师处理措施"
+              title="处理记录"
               action={
                 <Badge tone="warning">
                   {
@@ -1217,7 +1423,7 @@ export default function Feedback() {
                   </tbody>
                 </table>
               </div>
-              {!data.actions.length && <EmptyState title="暂无处理措施" />}
+              {!data.actions.length && <EmptyState title="暂无处理记录" />}
             </Panel>
           )}
         </>

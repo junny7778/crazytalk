@@ -228,9 +228,8 @@ describe("老师详情资料与培训", () => {
     ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
     const dialog = within(screen.getByRole("dialog", { name: "编辑老师" }));
-    fireEvent.change(dialog.getByLabelText("证书"), {
-      target: { value: "TEFL、TESOL" },
-    });
+    fireEvent.click(dialog.getByRole("checkbox", { name: "TEFL" }));
+    fireEvent.click(dialog.getByRole("checkbox", { name: "TESOL" }));
     fireEvent.change(dialog.getByLabelText("老师标签"), {
       target: { value: "耐心、商务英语" },
     });
@@ -649,4 +648,24 @@ describe("老师中心普通筛选", () => {
     fireEvent.click(screen.getByRole("button", { name: "清除全部筛选" }));
     expect(screen.getByText(`共 ${data.teachers.length} 位老师`)).toBeTruthy();
   });
+});
+
+it("证书多选回显旧证书，允许增选 CELTA 及取消其他", () => {
+  demoRepository.read().teachers[0].certificates = "TEFL、旧资格证";
+  mount("/teachers/t1");
+  fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+  const dialog = within(screen.getByRole("dialog", { name: "编辑老师" }));
+  expect((dialog.getByRole("checkbox", { name: "TEFL" }) as HTMLInputElement).checked).toBe(true);
+  expect((dialog.getByRole("checkbox", { name: "其他" }) as HTMLInputElement).checked).toBe(true);
+  expect(dialog.getByText("其他证书：旧资格证")).toBeTruthy();
+  fireEvent.click(dialog.getByRole("checkbox", { name: "CELTA" }));
+  fireEvent.click(dialog.getByRole("button", { name: "保存老师" }));
+  expect(demoRepository.read().teachers[0].certificates).toBe("TEFL、旧资格证、CELTA");
+  fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+  const reopened = within(screen.getByRole("dialog", { name: "编辑老师" }));
+  fireEvent.click(reopened.getByRole("checkbox", { name: "其他" }));
+  fireEvent.click(reopened.getByRole("checkbox", { name: "TEFL" }));
+  fireEvent.click(reopened.getByRole("checkbox", { name: "CELTA" }));
+  fireEvent.click(reopened.getByRole("button", { name: "保存老师" }));
+  expect(demoRepository.read().teachers[0].certificates).toBe("");
 });

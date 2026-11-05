@@ -1,3 +1,5 @@
+import { getScheduleCredits, scheduleUnits } from "./scheduleCredits";
+import { initializePayroll, payrollBreakdown } from "./payroll";
 import {
   formatMaterialProgress,
   formatStudentProgress,
@@ -118,21 +120,12 @@ export function studentImportMatches(
 }
 type StudentProfileInputLike = Pick<Student, "code" | "groupName" | "name">;
 export function payrollTotal(data: DemoState, payrollId: string) {
-  const p = data.payroll.find((p) => p.id === payrollId);
-  if (!p) return { base: 0, deductions: 0, total: 0 };
-  if (p.snapshot) return p.snapshot;
-  const rate = data.teachers.find((t) => t.id === p.teacherId)?.rate || 0;
-  const base = p.lessons * rate;
-  const deductions = data.actions
-    .filter(
-      (a) =>
-        a.teacherId === p.teacherId &&
-        a.date.startsWith(p.month) &&
-        a.status === "已确认",
-    )
-    .reduce((sum, a) => sum + a.amount, 0);
-  return { base, deductions, total: base - deductions + p.adjustment };
+  if (!data.payroll.some((p) => p.id === payrollId))
+    return { base: 0, deductions: 0, total: 0 };
+  const { base, deductions, total } = payrollBreakdown(data, payrollId);
+  return { base, deductions, total };
 }
+
 function required<T>(value: T | undefined, message: string): T {
   if (value === undefined) throw new Error(message);
   return value;
@@ -142,6 +135,7 @@ export function transition(
   command: Command,
 ): { data: DemoState; message: string } {
   const data = structuredClone(current);
+  initializePayroll(data);
   data.teachers = data.teachers.map((record) => teacherSchema.parse(record));
   data.students = data.students.map((record) => studentSchema.parse(record));
   data.feedback = data.feedback.map((record) => feedbackSchema.parse(record));
@@ -798,6 +792,36 @@ export function transition(
       event("修改资料", "更新了学员资料", command.id);
       break;
     }
+    case "credit.deduct": {
+      const s = student(command.studentId);
+      if (!s.balanceKnown) throw new Error("请先核实并录入剩余课时");
+      if (s.status === "退费")
+        throw new Error("退费学员的课包已冻结，请先办理复课");
+      if (!Number.isFinite(command.units) || command.units <= 0)
+        throw new Error("扣减课时必须为大于 0 的有效数值");
+      if (!command.reason.trim()) throw new Error("请填写扣减原因");
+      if (command.units > s.balance)
+        throw new Error("扣减课时不能超过当前剩余课时");
+      const before = s.balance;
+      const after = Math.round((before - command.units) * 1e8) / 1e8;
+      const creditId = credit(
+        s,
+        -command.units,
+        "手动扣减",
+        command.reason.trim(),
+      );
+      s.balance = after;
+      data.credits[0].balance = after;
+      event(
+        "手动扣减",
+        `扣减 ${command.units} 课时，余额 ${before} → ${after}；${command.reason.trim()}`,
+        s.id,
+        "",
+        { relatedType: "credit", relatedId: creditId },
+      );
+      message = `已扣减 ${command.units} 课时，剩余 ${after} 课时`;
+      break;
+    }
     case "credit.add": {
       const s = student(command.studentId);
       if (!s.balanceKnown) throw new Error("请先补录期初余额，再进行课时操作");
@@ -1125,6 +1149,23 @@ export function transition(
       message = "回访已记录";
       break;
     }
+    case "lesson.plannedUnits.update": {
+      const item = lesson(command.id);
+      if (item.deducted || !["未开始", "待确认", "缺席"].includes(item.status))
+        throw new Error("仅可核实尚未扣课的课程占用");
+      const units = scheduleUnits(item.duration, command.plannedUnits);
+      if (units === undefined || !Number.isFinite(units) || units <= 0)
+        throw new Error("请填写有效的预计扣课数");
+      item.plannedUnits = units;
+      event(
+        "核实排课占用",
+        `预计占用 ${units} 课时`,
+        item.studentId,
+        item.teacherId,
+      );
+      message = "课程占用课时已核实";
+      break;
+    }
     case "lesson.schedule": {
       const s = student(command.studentId);
       const flexible = command.schedulingMode === "flex";
@@ -1135,6 +1176,17 @@ export function transition(
       if (!command.slots.length) throw new Error("请至少选择一个上课时间");
       if (![25, 50, 55, 120].includes(command.duration))
         throw new Error("请选择可用的上课时长");
+      const plannedUnits = scheduleUnits(
+        command.duration,
+        command.plannedUnits,
+      );
+      const credits = getScheduleCredits(
+        data,
+        s.id,
+        command.slots.length,
+        plannedUnits ?? NaN,
+      );
+      if (credits.error) throw new Error(credits.error);
       const unique = new Set(command.slots.map((s) => s.date + s.time));
       if (unique.size !== command.slots.length)
         throw new Error("选择的时间有重复");
@@ -1189,6 +1241,7 @@ export function transition(
           status: "未开始",
           attendance: "正常",
           deducted: false,
+          plannedUnits,
           sync: "已同步",
           syncReason: "",
           material: command.material,
@@ -1368,19 +1421,15 @@ export function transition(
         if (command.decision === "不扣" && !command.reason.trim())
           throw new Error("请填写不扣课时的原因");
         deduct(l, command.decision !== "不扣", command.units);
-        l.status = command.decision === "缺席" ? "缺席" : "已完成";
+        l.status = "已完成";
+        if (command.decision === "缺席") {
+          l.attendance = "学员缺席";
+          l.studentAttendance = ["缺席"];
+        }
         l.note = command.reason;
         const s = student(l.studentId);
         if (s.status === "待排课") s.status = "在读";
         s.lastLesson = l.date;
-        const p = data.payroll.find(
-          (p) =>
-            p.teacherId === l.teacherId &&
-            p.month === l.date.slice(0, 7) &&
-            p.status === "待确认",
-        );
-        if (p && command.decision === "扣课" && l.attendance === "正常")
-          p.lessons++;
         event(
           "确认上课",
           `${l.date} ${l.time} · ${command.decision}`,
@@ -1920,7 +1969,16 @@ export function transition(
           )
         )
           throw new Error("请先处理这位老师的待确认扣款");
-        if (command.status === "已确认") p.snapshot = payrollTotal(data, p.id);
+        if (command.status === "已确认") {
+          const breakdown = payrollBreakdown(data, p.id);
+          p.breakdownSnapshot = { ...breakdown, frozen: true };
+          p.lessons = breakdown.units;
+          p.snapshot = {
+            base: breakdown.base,
+            deductions: breakdown.deductions,
+            total: breakdown.total,
+          };
+        }
         p.status = command.status;
         event(
           command.status,

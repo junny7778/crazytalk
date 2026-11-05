@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { webcrypto } from "node:crypto";
+import { changeDemoPassword } from "../lib/demoPasswords";
 import { transferableAbortController } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -792,4 +794,53 @@ describe("业务规则轻量展示", () => {
       screen.getByRole("spinbutton", { name: "课时快用完（剩余课时 ≤）" }),
     ).toBeTruthy();
   });
+});
+
+it("新建账号设置密码，编辑不回显，独立重置可生效", async () => {
+ vi.stubGlobal("crypto", webcrypto);
+ mount("/settings?tab=accounts");
+ fireEvent.click(await screen.findByRole("button", {name:"新建账号"}));
+ const form=within(screen.getByRole("dialog", {name:"新建团队账号"}));
+ fireEvent.change(form.getByLabelText("姓名"),{target:{value:"密码测试"}});
+ fireEvent.change(form.getByLabelText("登录手机号"),{target:{value:"13812345678"}});
+ expect(form.getByRole("button",{name:"保存账号"}).hasAttribute("disabled")).toBe(true);
+ fireEvent.change(form.getByLabelText("初始密码"),{target:{value:"Initial123"}});
+ fireEvent.change(form.getByLabelText("确认密码"),{target:{value:"Initial124"}});
+ expect(form.getByText("两次输入的密码不一致")).toBeTruthy();
+ fireEvent.change(form.getByLabelText("确认密码"),{target:{value:"Initial123"}});
+ fireEvent.click(form.getByRole("button",{name:"保存账号"}));
+ await waitFor(()=>expect(screen.queryByRole("dialog",{name:"新建团队账号"})).toBeNull());
+ const record=demoRepository.read().accounts.find(a=>a.name==="密码测试")!;
+ expect(JSON.stringify(record)).not.toContain("Initial123");
+ const row=screen.getByText("密码测试").closest("tr")!;
+ fireEvent.click(within(row).getByRole("button",{name:"编辑"}));
+ const edit=within(screen.getByRole("dialog",{name:"编辑团队账号"}));
+ expect(edit.queryByLabelText("初始密码")).toBeNull();
+ fireEvent.click(edit.getByRole("button",{name:"取消"}));
+ fireEvent.click(within(row).getByRole("button",{name:"重置密码"}));
+ const reset=within(screen.getByRole("dialog",{name:"重置 密码测试 的密码"}));
+ fireEvent.change(reset.getByLabelText("新密码"),{target:{value:"Reset1234"}});
+ fireEvent.change(reset.getByLabelText("确认新密码"),{target:{value:"Reset1234"}});
+ fireEvent.click(reset.getByRole("button",{name:"确认重置"}));
+ await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
+ await expect(changeDemoPassword(record.id,"Initial123","Another123")).rejects.toThrow();
+ await changeDemoPassword(record.id,"Reset1234","Another123");
+});
+
+it("个人菜单修改密码校验当前密码并更新演示会话", async () => {
+ vi.stubGlobal("crypto", webcrypto);
+ mount("/settings?tab=accounts");
+ fireEvent.click(await screen.findByRole("button",{name:/Rita.*教务运营/}));
+ fireEvent.click(screen.getByRole("button",{name:"修改密码"}));
+ const form=within(screen.getByRole("dialog",{name:"修改密码"}));
+ fireEvent.change(form.getByLabelText("当前密码"),{target:{value:"Wrong123"}});
+ fireEvent.change(form.getByLabelText("新密码"),{target:{value:"Personal123"}});
+ fireEvent.change(form.getByLabelText("确认新密码"),{target:{value:"Personal123"}});
+ fireEvent.click(form.getByRole("button",{name:"确认修改"}));
+ expect(await form.findByText("当前密码不正确")).toBeTruthy();
+ fireEvent.change(form.getByLabelText("当前密码"),{target:{value:"Demo12345"}});
+ fireEvent.click(form.getByRole("button",{name:"确认修改"}));
+ await waitFor(()=>expect(screen.queryByRole("dialog",{name:"修改密码"})).toBeNull());
+ const record=demoRepository.read().accounts.find(a=>a.name==="Rita")!;
+ await changeDemoPassword(record.id,"Personal123","Demo12345");
 });

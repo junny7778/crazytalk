@@ -183,14 +183,7 @@ export function DatePicker({
             value={text}
             disabled={disabled}
             readOnly={readOnly}
-            placeholder={
-              props.placeholder ||
-              (mode === "month"
-                ? "YYYY-MM"
-                : mode === "date"
-                  ? "YYYY-MM-DD"
-                  : "YYYY-MM-DDTHH:mm")
-            }
+            placeholder={props.placeholder || props["aria-label"] || label}
             autoComplete="off"
             aria-haspopup="dialog"
             aria-expanded={open}

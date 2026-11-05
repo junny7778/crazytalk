@@ -117,6 +117,7 @@ export default function StudentHistoryEditor({
             error={fieldErrors.historyStartDate}
           >
             <DatePicker
+              placeholder="系统记录起算日期"
               mode="date"
               value={draft.historyStartDate || ""}
               onValueChange={(nextValue) =>
@@ -139,6 +140,7 @@ export default function StudentHistoryEditor({
             </Field>
             <Field label="买单日期" error={fieldErrors.purchaseDate}>
               <DatePicker
+                placeholder="买单日期"
                 mode="date"
                 value={draft.purchaseDate ?? ""}
                 onValueChange={(nextValue) =>
@@ -191,6 +193,7 @@ export default function StudentHistoryEditor({
             </Field>
             <Field label="历史第一节课" error={fieldErrors.firstLessonDate}>
               <DatePicker
+                placeholder="历史第一节课"
                 mode="date"
                 value={draft.firstLessonDate ?? ""}
                 onValueChange={(nextValue) =>

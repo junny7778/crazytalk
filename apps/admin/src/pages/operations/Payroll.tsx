@@ -1,10 +1,11 @@
+import ListPagination, { useListPage } from "../../components/ListPagination";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../../components/DataTransferButton";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Plus, ArrowRight } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
-import { payrollTotal, type Payroll as PayrollRecord } from "@crazytalk/shared";
+import { payrollBreakdown, payrollTotal, type Payroll as PayrollRecord } from "@crazytalk/shared";
 import {
   Select,
   Badge,
@@ -38,20 +39,12 @@ export default function Payroll() {
   const [rateId, setRateId] = useState("");
   const [rate, setRate] = useState(180);
   const teacher = (id: string) => data.teachers.find((t) => t.id === id);
-  const deductions = (p: PayrollRecord) =>
-    data.actions.filter(
-      (a) =>
-        a.teacherId === p.teacherId &&
-        a.status === "已确认" &&
-        a.type === "扣款" &&
-        a.date.startsWith(p.month),
-    );
+  const deductions = (p: PayrollRecord) => payrollBreakdown(data, p.id).deductionRows;
   const base = (p: PayrollRecord) => payrollTotal(data, p.id).base;
   const deductionTotal = (p: PayrollRecord) =>
     payrollTotal(data, p.id).deductions;
   const total = (p: PayrollRecord) => payrollTotal(data, p.id).total;
-  const unitRate = (p: PayrollRecord) =>
-    p.lessons ? base(p) / p.lessons : teacher(p.teacherId)?.rate || 0;
+  const breakdown = (p: PayrollRecord) => payrollBreakdown(data, p.id);
   const display = (value: number) =>
     can("field.pay_amount") ? money(value) : "—";
   const filtered = data.payroll.filter(
@@ -63,10 +56,13 @@ export default function Payroll() {
         .includes(q.toLowerCase()),
   );
   const detail = data.payroll.find((p) => p.id === detailId);
+  const detailPay = detail ? breakdown(detail) : undefined;
   const pending = data.actions.filter(
     (a) =>
       a.status === "待确认" && a.type === "扣款" && a.date.startsWith(month),
   );
+  const listPage0 = useListPage(filtered);
+  const listPage1 = useListPage(data.teachers);
   const chosen = filtered.filter((p) => selected.includes(p.id));
   const update = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -100,10 +96,10 @@ export default function Payroll() {
                     p.month,
                     teacher(p.teacherId)?.name || "",
                     teacher(p.teacherId)?.so || "",
-                    p.lessons,
+                    breakdown(p).units,
                     display(base(p)),
                     display(deductionTotal(p)),
-                    display(p.adjustment),
+                    display(breakdown(p).adjustment),
                     display(total(p)),
                     p.status,
                   ]),
@@ -121,9 +117,6 @@ export default function Payroll() {
           { value: "rates", label: "单价" },
         ]}
       />
-      <div className="notice notice-info">
-        当前展示示例薪资规则：按老师个人单价计算，货币为菲律宾比索。最终结算规则待确认。
-      </div>
       {tab === "monthly" ? (
         <>
           <div className="grid-4">
@@ -133,9 +126,9 @@ export default function Payroll() {
               note="本月薪资单"
             />
             <StatCard
-              label="完成课时"
-              value={filtered.reduce((s, p) => s + p.lessons, 0)}
-              note="25 分钟为 1 课时"
+              label="计薪课时"
+              value={filtered.reduce((s, p) => s + breakdown(p).units, 0)}
+              note="含明确列示的期初课时"
             />
             <StatCard
               label="应发合计"
@@ -162,6 +155,7 @@ export default function Payroll() {
           <Panel>
             <div className="toolbar" style={{ marginTop: 0 }}>
               <DatePicker
+                placeholder="薪资月份"
                 aria-label="薪资月份"
                 className="ops-filter-select"
                 mode="month"
@@ -196,12 +190,14 @@ export default function Payroll() {
                         aria-label="选择全部薪资"
                         type="checkbox"
                         checked={
-                          filtered.length > 0 &&
-                          chosen.length === filtered.length
+                          listPage0.rows.length > 0 &&
+                          listPage0.rows.every((p) => selected.includes(p.id))
                         }
                         onChange={(e) =>
                           setSelected(
-                            e.target.checked ? filtered.map((p) => p.id) : [],
+                            e.target.checked
+                              ? listPage0.rows.map((p) => p.id)
+                              : [],
                           )
                         }
                       />
@@ -217,7 +213,7 @@ export default function Payroll() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((p) => (
+                  {listPage0.rows.map((p) => (
                     <tr key={p.id}>
                       <td>
                         <input
@@ -242,16 +238,16 @@ export default function Payroll() {
                         </button>
                         <small>{teacher(p.teacherId)?.so}</small>
                       </td>
-                      <td className="text-right">{p.lessons}</td>
+                      <td className="text-right">{breakdown(p).units}</td>
                       <td className="text-right">{display(base(p))}</td>
                       <td className="text-right danger">
-                        {deductions(p).length
+                        {deductionTotal(p)
                           ? `−${display(deductionTotal(p))}`
                           : "—"}
                       </td>
                       <td className="text-right">
-                        {p.adjustment
-                          ? `${p.adjustment > 0 ? "+" : ""}${display(p.adjustment)}`
+                        {breakdown(p).adjustment
+                          ? `${breakdown(p).adjustment > 0 ? "+" : ""}${display(breakdown(p).adjustment)}`
                           : "—"}
                       </td>
                       <td className="text-right">
@@ -274,6 +270,11 @@ export default function Payroll() {
                 </tbody>
               </table>
             </div>
+            <ListPagination
+              total={filtered.length}
+              page={listPage0.page}
+              onChange={listPage0.setPage}
+            />
             {!filtered.length && (
               <EmptyState
                 title="这个月份还没有薪资单"
@@ -339,7 +340,7 @@ export default function Payroll() {
                 </tr>
               </thead>
               <tbody>
-                {data.teachers.map((t) => (
+                {listPage1.rows.map((t) => (
                   <tr key={t.id}>
                     <td>{t.name}</td>
                     <td>{t.so}</td>
@@ -363,6 +364,11 @@ export default function Payroll() {
               </tbody>
             </table>
           </div>
+          <ListPagination
+            total={data.teachers.length}
+            page={listPage1.page}
+            onChange={listPage1.setPage}
+          />
         </Panel>
       )}
       <Drawer
@@ -411,7 +417,7 @@ export default function Payroll() {
           )
         }
       >
-        {detail && (
+        {detail && detailPay && (
           <div className="stack">
             <div className="row between">
               <h2>应发 {display(total(detail))}</h2>
@@ -420,15 +426,14 @@ export default function Payroll() {
             <dl className="detail-pairs">
               <dt>课酬</dt>
               <dd>
-                {detail.lessons} 课时 × {display(unitRate(detail))} ={" "}
-                {display(base(detail))}
+                {detailPay.units} 计薪课时 · {display(detailPay.base)}
               </dd>
               <dt>扣款</dt>
               <dd>−{display(deductionTotal(detail))}</dd>
               <dt>调整</dt>
               <dd>
-                {display(detail.adjustment)}
-                {detail.adjustmentNote && ` · ${detail.adjustmentNote}`}
+                {display(detailPay.adjustment)}
+                {detailPay.adjustmentNote && ` · ${detailPay.adjustmentNote}`}
               </dd>
             </dl>
             <h3>扣款明细</h3>
@@ -450,48 +455,34 @@ export default function Payroll() {
               </div>
             ))}
             {!deductions(detail).length && (
-              <p className="muted">没有已确认扣款</p>
+              <p className="muted">{detailPay.deductions ? "历史扣款汇总已保留，原扣款明细未留存。" : "没有已确认扣款"}</p>
             )}
-            <h3>本月上课明细</h3>
-            <small>
-              下方展示可查的演示课次。薪资含示例期初课时，金额不作为真实结算依据。
-            </small>
+            <h3>课酬来源</h3>
+            <div className="inset stack">
+              <div className="row between"><span>期初 / 历史课酬 · {detailPay.opening.units} 课时</span><strong>{display(detailPay.opening.amount)}</strong></div>
+              <small className="muted">{detailPay.opening.source}</small>
+              <div className="row between"><span>可追溯课程 · {detailPay.rows.length} 节</span><strong>{display(detailPay.rows.reduce((sum, row) => sum + row.amount, 0))}</strong></div>
+              <div className="row between"><span>课酬合计</span><strong>{display(detailPay.base)}</strong></div>
+            </div>
+            <p className="muted">{detailPay.frozen ? "已锁定计薪明细，后续课程和单价变化不改写本次结算。" : "按符合计薪条件的已完成课程核算；课时与金额随课程核实结果更新，确认薪资后锁定。"}</p>
+            <h3>计薪课程明细</h3>
             <div className="table-wrap">
               <table>
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>学员</th>
-                    <th>时长</th>
-                    <th>结果</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>时间</th><th>学员</th><th>时长</th><th>计薪课时</th><th>单价</th><th>课酬</th></tr></thead>
                 <tbody>
-                  {data.lessons
-                    .filter(
-                      (l) =>
-                        l.teacherId === detail.teacherId &&
-                        l.date.startsWith(detail.month) &&
-                        l.status === "已完成",
-                    )
-                    .map((l) => (
-                      <tr key={l.id}>
-                        <td>
-                          {l.date} {l.time}
-                        </td>
-                        <td>
-                          {
-                            data.students.find((s) => s.id === l.studentId)
-                              ?.name
-                          }
-                        </td>
-                        <td>{l.duration} 分钟</td>
-                        <td>已完成</td>
-                      </tr>
-                    ))}
+                  {detailPay.rows.map((row) => (
+                    <tr key={row.lessonId}>
+                      <td>{row.date} {row.time}</td>
+                      <td>{data.students.find((student) => student.id === row.studentId)?.name || "未知学员"}</td>
+                      <td>{row.duration} 分钟</td><td>{row.units}</td>
+                      <td>{display(row.rate)}</td><td>{display(row.amount)}</td>
+                    </tr>
+                  ))}
+                  {!detailPay.rows.length && <tr><td colSpan={6}><p className="muted">暂无可追溯的计薪课程明细。{detailPay.opening.amount ? "本次课酬来自上方列示的期初 / 历史汇总，并非逐课结算数据。" : "本月暂无符合计薪条件的课程。"}</p></td></tr>}
                 </tbody>
               </table>
             </div>
+
           </div>
         )}
       </Drawer>

@@ -1,3 +1,4 @@
+import { initializePayroll } from "./payroll";
 import { migrateFeedbackCatalog } from "./feedbackCatalog";
 import { emptyStudentProfile } from "./model";
 import {
@@ -719,6 +720,12 @@ export function createSeed(): DemoState {
           ?.name || "";
   }
   seed.catalog = migrateFeedbackCatalog(seed.catalog);
+  initializePayroll(seed);
+  for (const payroll of seed.payroll) {
+    if (payroll.status === "待确认" && payroll.opening) {
+      payroll.opening.source = "演示期初课酬（预设汇总减可追溯课酬），非真实结算凭据";
+    }
+  }
   return seed;
 }
 

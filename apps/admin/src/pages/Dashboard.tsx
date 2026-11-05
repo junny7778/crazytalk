@@ -1,5 +1,5 @@
 import { formatStudentProgress } from "@crazytalk/shared";
-import { unsyncedLessonsPath } from "../lib/lessonSync";
+import { syncManagementPath, hasSyncIssue } from "../lib/lessonSync";
 import DataTransferButton from "../components/DataTransferButton";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -40,7 +40,7 @@ import {
   Clock3,
 } from "lucide-react";
 import { downloadTable } from "../lib/export";
-import { attendanceSummary, occurred, periodRange } from "../lib/dashboard";
+import { bookingSummary, attendanceSummary, courseAnomalies, occurred, periodRange } from "../lib/dashboard";
 export default function Dashboard() {
   const { data, can, scope } = useDemo();
   const navigate = useNavigate();
@@ -70,6 +70,19 @@ export default function Dashboard() {
   const studentIds = new Set(students.map((s) => s.id));
   const lessons = data.lessons.filter((l) => studentIds.has(l.studentId));
   const { start: since, end: periodEnd } = periodRange(period);
+  const bookings = bookingSummary(lessons, since, periodEnd);
+  const bookingPath = (status = "") => `/lessons?${new URLSearchParams({
+    tab: "all", from: since, to: periodEnd,
+    ...(project === "全部项目" ? {} : { project }),
+    ...(status ? { bookingStatus: status } : {}),
+  })}`;
+  const bookingStates = [
+    { label: "待上课", count: bookings.upcoming, status: "未开始", color: "#5995dc" },
+    { label: "已完成", count: bookings.completed, status: "已完成", color: "#f47c30" },
+    { label: "待确认", count: bookings.pending, status: "待确认", color: "#ebc489" },
+    { label: "已取消", count: bookings.cancelled, status: "已取消", color: "#a0a6b1" },
+    ...(bookings.absent ? [{ label: "已结束（缺席）", count: bookings.absent, status: "缺席", color: "#cc7a85" }] : []),
+  ];
   const inPeriod = lessons.filter(
     (l) => l.date >= since && l.date <= DEMO_TODAY && occurred(l),
   );
@@ -100,7 +113,7 @@ export default function Dashboard() {
     (s) =>
       s.balanceKnown && s.balance > 0 && s.balance <= data.rules.lowBalance,
   ).length;
-  const unsynced = data.lessons.filter((l) => l.sync === "未同步").length;
+  const unsynced = data.lessons.filter(hasSyncIssue).length;
   const closed = inPeriod.filter((l) => l.status === "已完成").length;
   const bad = feedback.filter((f) => f.rating === "差评").length;
   const trend = Array.from(
@@ -152,32 +165,7 @@ export default function Dashboard() {
       ).length,
     }))
     .sort((a, b) => b.count - a.count);
-  const anomalies: {
-    name: string;
-    count: number;
-    filter: Record<string, string>;
-  }[] = [
-    {
-      name: "课程取消",
-      count: inPeriod.filter((l) => l.status === "已取消").length,
-      filter: { status: "已取消" },
-    },
-    {
-      name: "学员缺席",
-      count: due.filter((l) => l.attendance === "学员缺席").length,
-      filter: { attendance: "学员缺席" },
-    },
-    {
-      name: "老师缺席",
-      count: due.filter((l) => l.attendance === "老师缺席").length,
-      filter: { attendance: "老师缺席" },
-    },
-    {
-      name: "老师迟到",
-      count: due.filter((l) => l.attendance === "老师迟到").length,
-      filter: { attendance: "老师迟到" },
-    },
-  ];
+  const { anomalies, pending: anomalyPending } = courseAnomalies(inPeriod);
   const teacherUtil = scopedTeachers
     .filter((t) => t.status === "在职")
     .map((t) => {
@@ -268,15 +256,15 @@ export default function Dashboard() {
     },
     {
       id: "sync",
-      label: "未同步课程",
-      description: `有 ${unsynced} 节课程尚未同步到 ClassIn，可查看原因并重新同步。`,
-      emptyDescription: "暂无未同步课程。",
-      action: "去检查同步",
+      label: "同步异常",
+      description: `有 ${unsynced} 节课程存在同步问题，可前往同步管理查看。`,
+      emptyDescription: "暂无同步异常。",
+      action: "去同步管理",
       count: unsynced,
       unit: "节",
       urgent: true,
-      path: unsyncedLessonsPath,
-      permission: "lesson.view",
+      path: syncManagementPath,
+      permission: "classin.view",
     },
     {
       id: "balance",
@@ -475,6 +463,58 @@ export default function Dashboard() {
                     </div>
                   </article>
                 ))}
+              </div>
+            </Panel>
+          </section>
+          <section aria-label="约课统计">
+            <Panel title="约课统计" action={<small>{period} · {since} 至 {periodEnd}</small>}>
+              <div className="dashboard-booking-layout">
+                <div className="dashboard-booking-overview">
+                  <div className="dashboard-booking-ring">
+                    <svg viewBox="0 0 200 200" aria-hidden="true">
+                      <circle cx="100" cy="100" r="84" fill="none" stroke="#f1f2f4" strokeWidth="14" />
+                      {bookingStates.map((item, index) => {
+                        const share = bookings.total ? item.count / bookings.total * 100 : 0;
+                        const offset = bookings.total ? bookingStates.slice(0, index).reduce((sum, state) => sum + state.count, 0) / bookings.total * 100 : 0;
+                        const circumference = 2 * Math.PI * 84;
+                        const strokeWidth = Math.min(14, share / 100 * circumference * 0.7);
+                        const gap = share < 100 ? Math.min(share * 0.9, strokeWidth / circumference * 100 + 1) : 0;
+                        return share > 0 && <circle key={item.status} cx="100" cy="100" r="84" fill="none" stroke={item.color} strokeWidth={strokeWidth} strokeLinecap="round" pathLength="100" strokeDasharray={`${share - gap} 100`} strokeDashoffset={-(offset + gap / 2)} transform="rotate(-90 100 100)" />;
+                      })}
+                    </svg>
+                    <button onClick={() => navigate(bookingPath())} aria-label={`总约课数 ${bookings.total} 节`}>
+                      <span>总约课数</span>
+                      <strong>{bookings.total}</strong>
+                      <small>节课 <ArrowUpRight size={12} /></small>
+                    </button>
+                  </div>
+                  <span className="dashboard-booking-caption">{bookings.total ? "所选周期内的全部预约" : "本期暂无约课"}</span>
+                </div>
+                <div className="dashboard-booking-breakdown">
+                  <div className="dashboard-booking-table-heading"><span>约课状态</span><span>课次数 / 占比</span></div>
+                  {bookingStates.map((item) => (
+                    <button className="dashboard-booking-state" key={item.status} onClick={() => navigate(bookingPath(item.status))} aria-label={`${item.label} ${item.count} 节`}>
+                      <span className="dashboard-booking-state-name"><i style={{ background: item.color }} />{item.label}</span>
+                      <span className="dashboard-booking-state-track" aria-hidden="true"><span style={{ width: `${bookings.total ? item.count / bookings.total * 100 : 0}%`, background: item.color }} /></span>
+                      <strong>{item.count}<small> 节</small></strong>
+                      <span className="dashboard-booking-share">{bookings.total ? `${Math.round(item.count / bookings.total * 100)}%` : "—"}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="dashboard-booking-cancellation">
+                  <div className="dashboard-booking-rate-heading"><span>取消率</span><span className="dashboard-booking-rate-tag">预约流失</span></div>
+                  <strong className="dashboard-booking-rate-number">{bookings.cancellationRate === null ? "—" : bookings.cancellationRate}<small>{bookings.cancellationRate === null ? "" : "%"}</small></strong>
+                  <p>{bookings.total} 节预约中<br />有 <b>{bookings.cancelled} 节</b>已取消</p>
+                  <div className="dashboard-booking-rate-track" aria-hidden="true"><span style={{ width: `${bookings.cancellationRate ?? 0}%` }} /></div>
+                  <button onClick={() => navigate(bookingPath("已取消"))}>查看取消记录 <ArrowUpRight size={14} /></button>
+                </div>
+              </div>
+              <div className="dashboard-booking-note">
+                <small>按上课日期统计，包含所选周期的未来课程 · 点击数量查看明细</small>
+                <DataExplanation title="约课统计">
+                  <p>总约课数为所选项目、完整周期内的课程记录数，包含已取消课程，不按预约创建时间统计。</p>
+                  <p>取消率 = 已取消数 ÷ 总约课数；无约课时显示“—”。待上课对应未开始状态，逾期未更新的记录仍计入；待确认单列，确认完成后计入已完成。历史缺席状态单列为已结束（缺席）。</p>
+                </DataExplanation>
               </div>
             </Panel>
           </section>
@@ -789,11 +829,7 @@ export default function Dashboard() {
                 title="课程异常"
                 action={<small>{period} · 按课次统计</small>}
               >
-                <div
-                  className="dashboard-capsule-chart"
-                  role="group"
-                  aria-label="课程异常柱状图"
-                >
+                <div className="dashboard-capsule-chart" role="group" aria-label="课程异常柱状图">
                   {anomalies.map((item, index) => (
                     <button
                       className="dashboard-capsule-column"
@@ -801,39 +837,36 @@ export default function Dashboard() {
                       aria-label={`${item.name} ${item.count} 节`}
                       onClick={() => navigate(lessonPath(item.filter))}
                     >
-                      <span
-                        className="dashboard-capsule-stage"
-                        aria-hidden="true"
-                      >
-                        <strong className="dashboard-capsule-value">
-                          {item.count}
-                          <small> 节</small>
-                        </strong>
+                      <span className="dashboard-capsule-stage" aria-hidden="true">
+                        <strong className="dashboard-capsule-value">{item.count}<small> 节</small></strong>
                         {item.count > 0 ? (
                           <span
                             className={`dashboard-capsule-bar ${index % 2 === 0 ? "is-solid" : "is-striped"}`}
-                            style={{
-                              height: `${(item.count / Math.max(1, ...anomalies.map((a) => a.count))) * 180}px`,
-                            }}
+                            style={{ height: `${item.count / Math.max(1, ...anomalies.map((a) => a.count)) * 180}px` }}
                           />
-                        ) : (
-                          <span className="dashboard-capsule-zero" />
-                        )}
+                        ) : <span className="dashboard-capsule-zero" />}
                       </span>
-                      <span className="dashboard-capsule-label">
-                        {item.name}
-                      </span>
+                      <span className="dashboard-capsule-label">{item.name}</span>
                     </button>
                   ))}
                 </div>
-                <div className="dashboard-data-note">
+                <div className="dashboard-data-note dashboard-anomaly-footer">
+                {anomalyPending > 0 && (
+                  <button
+                    className="dashboard-anomaly-pending"
+                    aria-label={`待核实 ${anomalyPending} 节`}
+                    onClick={() => navigate(lessonPath({ attendance: "待核实" }))}
+                  >
+                    有 {anomalyPending} 节课程考勤待核实 <ArrowRight size={13} aria-hidden="true" />
+                  </button>
+                )}
                   <DataExplanation title="课程异常">
                     <p>
                       统计{period}
-                      已发生课程中的取消、学员缺席、老师缺席和老师迟到课次，点击各项查看课程明细。
+                      已发生课程中的取消，以及学员和老师的缺席、迟到、早退课次，点击各项查看课程明细。
                     </p>
                     <p>
-                      取消记录尚未区分申请方；同一课程的异常可能重叠，不直接相加。
+                      按老师、学员各自的考勤标签统计，同一课程同类异常只计一次，不同异常可能重叠，不直接相加。取消记录尚未区分申请方。
                     </p>
                   </DataExplanation>
                 </div>
@@ -929,13 +962,9 @@ export default function Dashboard() {
                 </Panel>
               )}
             </div>
-            <p className="dashboard-chart-footnote">
-              演示数据截至 {DEMO_TODAY} ·
-              学员与老师为当前快照，课程与反馈按所选周期统计。
-              {project !== "全部项目"
-                ? "项目老师按任教学员及课次关联筛选，开放容量未作项目分摊。"
-                : ""}
-            </p>
+            {project !== "全部项目" && (
+              <p className="dashboard-chart-footnote">项目老师按任教学员及课次关联筛选，开放容量未作项目分摊。</p>
+            )}
           </section>
         </>
       ) : (

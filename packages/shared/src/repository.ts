@@ -1,3 +1,6 @@
+import { initializePayroll } from "./payroll";
+import { autoSettleLessons } from "./autoLessonSettlement";
+import { restoreLessonSyncNotice } from "./restoreLessonSyncNotice";
 import { migrateFeedbackCatalog } from "./feedbackCatalog";
 import { z } from "zod";
 import {
@@ -26,10 +29,22 @@ function read(): DemoState {
         const result = stateSchema.safeParse(input);
         if (result.success) {
           memory = result.data;
+          const payrollUpgrade = memory.payroll.some((p) => p.status === "待确认" ? !p.opening : !p.breakdownSnapshot);
+          initializePayroll(memory);
           const original = storedFeedbackPresenceSchema.parse(input);
           const catalog = migrateFeedbackCatalog(memory.catalog);
-          let upgraded = catalog !== memory.catalog;
+          let upgraded = catalog !== memory.catalog || payrollUpgrade;
           memory.catalog = catalog;
+          const noticeRecoveryKey = `${storageKey}:nancy-sync-notice-2026-11-05`;
+          if (
+            !localStorage.getItem(noticeRecoveryKey) &&
+            restoreLessonSyncNotice(memory)
+          ) {
+            // Persist before marking recovery complete so reloads cannot lose the repair.
+            localStorage.setItem(storageKey, JSON.stringify(memory));
+            localStorage.setItem(noticeRecoveryKey, "done");
+            upgraded = true;
+          }
           const storedTeachers = z
             .object({ teachers: z.array(z.record(z.unknown())) })
             .safeParse(input);
@@ -106,9 +121,11 @@ function read(): DemoState {
     }
   }
   memory = migrateStudentIds(createSeed()).data;
+  initializePayroll(memory);
   return memory;
 }
 function save(data: DemoState) {
+  initializePayroll(data);
   if (typeof localStorage !== "undefined")
     localStorage.setItem(storageKey, JSON.stringify(data));
   memory = data;
@@ -117,9 +134,16 @@ function save(data: DemoState) {
 }
 export const demoRepository = {
   read,
+  settleCompletedLessons(now = Date.now()) {
+    const before = read();
+    const after = autoSettleLessons(before, now);
+    if (after !== before) save(after);
+    return after;
+  },
   execute(command: Command) {
     const before = read();
     const result = transition(before, resolveStudentCommand(before, command));
+    result.data = autoSettleLessons(result.data);
     save(result.data);
     let undo: (() => void) | undefined;
     if (command.type === "lesson.resolve") {
@@ -161,6 +185,7 @@ export const demoRepository = {
             });
           }
           Object.assign(now, old);
+          now.autoSettlementPaused = true;
           const p = latest.payroll.find(
             (p) =>
               p.teacherId === now.teacherId &&

@@ -87,7 +87,10 @@ describe("可用时间与临时排课", () => {
     );
     expect(submit.hasAttribute("disabled")).toBe(false);
     fireEvent.click(submit);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "排课完成" })).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }),
+    );
     const data = demoRepository.read();
     const created = data.lessons.find(
       (l) =>
@@ -167,6 +170,8 @@ describe("可用时间与临时排课", () => {
               demoRepository.read().students.find((s) => s.name === "Lucy")?.id,
         ),
     ).toBe(true);
-    expect(document.querySelector(".schedule-date")?.textContent).toContain("12月");
+    expect(document.querySelector(".schedule-date")?.textContent).toContain(
+      "12月",
+    );
   });
 });

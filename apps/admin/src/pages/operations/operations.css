@@ -873,13 +873,22 @@
   column-gap: 24px;
   row-gap: 24px;
 }
-.teacher-training-pairs dt { white-space: nowrap; min-width: 140px; }
-.teacher-training-pairs dd { overflow-wrap: anywhere; }
+.teacher-training-pairs dt {
+  white-space: nowrap;
+  min-width: 140px;
+}
+.teacher-training-pairs dd {
+  overflow-wrap: anywhere;
+}
 @media (max-width: 1100px) {
-  .detail-pairs.teacher-training-pairs { grid-template-columns: repeat(2, max-content minmax(0, 1fr)); }
+  .detail-pairs.teacher-training-pairs {
+    grid-template-columns: repeat(2, max-content minmax(0, 1fr));
+  }
 }
 @media (max-width: 700px) {
-  .detail-pairs.teacher-training-pairs { grid-template-columns: max-content minmax(0, 1fr); }
+  .detail-pairs.teacher-training-pairs {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
 }
 
 .teacher-feedback-filters {
@@ -903,4 +912,45 @@
   .teacher-feedback-filters {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.lesson-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.lesson-filters > .ct-date-picker {
+  width: 170px;
+  flex: 0 0 170px;
+}
+.lesson-records-table {
+  max-height: none;
+}
+
+.lesson-detail-field {
+  display: contents;
+}
+
+.lesson-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.lesson-summary-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 24px; background: #fff; border: 1px solid #e8eaee; border-radius: 14px; }
+.lesson-summary-card.is-total { background: #fff8f2; border-color: #f5dfcc; }
+.lesson-summary-label { font-size: 13px; color: #777f8a; }
+.lesson-summary-value { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; }
+.lesson-summary-value strong { font-size: 30px; line-height: 1; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.lesson-summary-value > span { font-size: 12px; color: #9aa1aa; }
+.lesson-summary-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #fff0e3; color: #da702c; flex-shrink: 0; }
+.lesson-summary-card.is-upcoming .lesson-summary-icon { background: #eef5fc; color: #638fbd; }
+.lesson-summary-card.is-completed .lesson-summary-icon { background: #eef7f2; color: #5d9e80; }
+.lesson-summary-card.is-cancelled .lesson-summary-icon { background: #f2f3f5; color: #9098a4; }
+.lesson-summary-note { display: block; margin-top: 10px; color: #939aa4; font-size: 12px; }
+@media (max-width: 1000px) {
+  .lesson-summary-card { padding: 18px; }
+  .lesson-summary-grid { gap: 12px; }
+}
+@media (max-width: 700px) {
+  .lesson-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 380px) {
+  .lesson-summary-card { padding: 14px; }
+  .lesson-summary-icon { width: 30px; height: 30px; }
 }

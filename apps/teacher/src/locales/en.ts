@@ -1,4 +1,8 @@
 export default {
+  historicalDeduction: "Historical deduction total retained; original itemized records are unavailable.",
+  openingPay: "Opening / historical pay",
+  openingPayHint: "Historical balances have no retained lesson-level records. Confirmed payroll uses the locked settlement.",
+  noPayLessons: "No traceable paid lesson details are available.",
   usualHours: "Usual teaching hours",
   reviewAvailability: "Review teaching hours",
   saveKeepLessons: "Save and keep lessons",
@@ -39,7 +43,6 @@ export default {
     "Please check your microphone, camera and connection 10 minutes before class. A quiet room makes a big difference.",
   readAnnouncement: "Read announcement",
   preparation: "Ready for class",
-  timeZone: "All times in GMT+8",
   min: "min",
   yesterday: "Yesterday",
   tomorrow: "Tomorrow",

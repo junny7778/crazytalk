@@ -317,6 +317,17 @@ describe("后台导航和学员建档", () => {
 });
 
 describe("数据看板概览与下钻", () => {
+  it("约课统计放在待办后，待上课下钻保留完整周期", async () => {
+    mount("/");
+    const booking = await screen.findByRole("region", { name: "约课统计" });
+    const pending = screen.getByRole("region", { name: "待处理事项" });
+    expect(pending.compareDocumentPosition(booking) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(booking).getByText("取消率")).toBeTruthy();
+    const upcoming = within(booking).getByRole("button", { name: /^待上课 / });
+    fireEvent.click(upcoming);
+    expect(await screen.findByText(/看板筛选：2026-10-26 至 2026-11-01/)).toBeTruthy();
+    expect(screen.getByText(/全部项目 · 未开始/)).toBeTruthy();
+  });
   it("展示四张业务卡片和四个分析区块，不展示首页学员表格", async () => {
     mount("/");
     const cards = await screen.findByRole("region", { name: "基础数据" });
@@ -331,6 +342,8 @@ describe("数据看板概览与下钻", () => {
       expect(screen.getByRole("heading", { name })).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByRole("heading", { name: "剩余课时分布" })).toBeNull();
+    for (const name of ["老师早退", "学员迟到", "学员早退", "待核实"])
+      expect(screen.getByRole("button", { name: new RegExp(`^${name} \\d+ 节$`) })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "学员缺席 1 节" }));
     expect(await screen.findByText(/看板筛选：.*学员缺席/)).toBeTruthy();
     const rows = screen.getAllByRole("row");
@@ -496,4 +509,33 @@ it("看板老师入口使用可见普通筛选，清除后展示全部老师", a
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "清除全部筛选" }));
   expect(screen.getByText(`共 ${data.teachers.length} 位老师`)).toBeTruthy();
+});
+
+describe("上课记录统计卡", () => {
+  it("统计全部分页的匹配课程，并随姓名搜索更新", async () => {
+    mount("/lessons");
+    const stats = await screen.findByRole("region", { name: "上课记录统计" });
+    const data = demoRepository.read();
+    const assertCounts = (lessons: typeof data.lessons) => {
+      expect(within(stats).getByRole("article", { name: `总约课数 ${lessons.length} 节` })).toBeTruthy();
+      for (const [label, status] of [["待上课数", "未开始"], ["已完成数", "已完成"], ["已取消数", "已取消"]]) {
+        expect(within(stats).getByRole("article", { name: `${label} ${lessons.filter((lesson) => lesson.status === status).length} 节` })).toBeTruthy();
+      }
+    };
+    assertCounts(data.lessons);
+    const search = screen.getByPlaceholderText("搜索学员或老师姓名");
+    fireEvent.change(search, { target: { value: "不存在的姓名" } });
+    assertCounts([]);
+    fireEvent.change(search, { target: { value: "" } });
+    assertCounts(data.lessons);
+  });
+  it("状态筛选后卡片数量与列表一致", async () => {
+    mount("/lessons?bookingStatus=已取消");
+    const stats = await screen.findByRole("region", { name: "上课记录统计" });
+    const count = demoRepository.read().lessons.filter((lesson) => lesson.status === "已取消").length;
+    expect(within(stats).getByRole("article", { name: `总约课数 ${count} 节` })).toBeTruthy();
+    expect(within(stats).getByRole("article", { name: `已取消数 ${count} 节` })).toBeTruthy();
+    expect(within(stats).getByRole("article", { name: "待上课数 0 节" })).toBeTruthy();
+    expect(within(stats).getByRole("article", { name: "已完成数 0 节" })).toBeTruthy();
+  });
 });

@@ -131,9 +131,11 @@ describe("独立验收：教师时间与排课", () => {
       target: { value: "15:35" },
     });
     fireEvent.click(ui.getByRole("button", { name: "确认排课" }));
-    expect(screen.getByLabelText("选择日期").getAttribute("value")).toBe(
-      "2026-12-04",
+    expect(screen.getByRole("dialog", { name: "排课完成" })).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }),
     );
+    expect(screen.getByText("11月30日 — 12月06日")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Lucy 15:35–16:00" }),
     ).toBeTruthy();
@@ -145,7 +147,7 @@ describe("独立验收：教师时间与排课", () => {
     expect(
       next.getByRole("button", { name: "确认排课" }).hasAttribute("disabled"),
     ).toBe(true);
-    expect(next.getByText(/老师这个时间已经有课/)).toBeTruthy();
+    expect(next.getAllByText(/老师这个时间已经有课/)[0]).toBeTruthy();
   });
 
   it("旧数据迁移保留余额、课程与原有分钟时段，不把新时间覆盖旧设置", () => {

@@ -1,3 +1,4 @@
+import { useScheduleCredits } from "./useScheduleCredits";
 import { z } from "zod";
 import { useEffect, useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
@@ -187,11 +188,13 @@ export function CoursePlanEditor({
       });
     setRows(next);
   }
+  const credits = useScheduleCredits(studentId, duration, ready.length);
   function submit() {
     try {
       if (!student) throw new Error("请选择学员");
       const result = act({
         type: "lesson.schedule",
+        plannedUnits: credits.units,
         studentId,
         teacherId,
         slots: ready,
@@ -485,6 +488,7 @@ export function CoursePlanEditor({
                 }
               />
               <DatePicker
+                placeholder={`第${i + 1}节上课日期`}
                 aria-label={`第${i + 1}节上课日期`}
                 mode="date"
                 min={DEMO_TODAY}
@@ -578,6 +582,7 @@ export function CoursePlanEditor({
           <summary>在可接受时间范围内找课</summary>
           <div className="row wrap">
             <DatePicker
+              placeholder="查找课程日期"
               aria-label="查找课程日期"
               mode="date"
               min={DEMO_TODAY}
@@ -635,6 +640,7 @@ export function CoursePlanEditor({
         </Field>
       )}
       {error && <p role="alert">{error}</p>}
+      {credits.node}
       <div className="row wrap">
         <Button onClick={onClose}>返回调整</Button>
         {kind === "固定课" && !expanded ? (
@@ -661,7 +667,11 @@ export function CoursePlanEditor({
           <Button
             variant="primary"
             disabled={
-              !ready.length || !studentId || preview || !can("schedule.create")
+              Boolean(credits.error) ||
+              !ready.length ||
+              !studentId ||
+              preview ||
+              !can("schedule.create")
             }
             onClick={submit}
           >

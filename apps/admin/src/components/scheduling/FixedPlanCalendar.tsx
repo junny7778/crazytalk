@@ -1,3 +1,4 @@
+import { useScheduleCredits } from "./useScheduleCredits";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
@@ -209,11 +210,13 @@ export function FixedPlanCalendar({
     );
     setMessage("");
   }
+  const credits = useScheduleCredits(studentId, intent.duration, ready.length);
   function submit() {
     try {
       if (!ready.length) return;
       const result = act({
         type: "lesson.schedule",
+        plannedUnits: credits.units,
         studentId,
         teacherId: plan.primaryTeacherId,
         slots: ready.map((r) => ({ ...r, confirmedTeacher: r.confirmed })),
@@ -591,6 +594,7 @@ export function FixedPlanCalendar({
         </Modal>
       )}
       {message && !focused && <p role="alert">{message}</p>}
+      {credits.node}
       <div className="fixed-plan-footer">
         <span>
           尚未保存 · 本次可确认 {ready.length} 节
@@ -601,7 +605,12 @@ export function FixedPlanCalendar({
         <Button onClick={onClose}>返回方案</Button>
         <Button
           variant="primary"
-          disabled={!ready.length || preview || !can("schedule.create")}
+          disabled={
+            Boolean(credits.error) ||
+            !ready.length ||
+            preview ||
+            !can("schedule.create")
+          }
           onClick={submit}
         >
           {ready.length === editable.length && !missingTimeCount

@@ -1,3 +1,4 @@
+import { payrollBreakdown } from "@crazytalk/shared";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -961,19 +962,9 @@ export default function TeacherApp() {
           <>
             <MonthSelect value={month} onChange={setMonth} t={t} />
             <PayContent
+              pay={(() => { const record = data.payroll.find((p) => p.teacherId === teacher.id && p.month === month); return record ? payrollBreakdown(data, record.id) : undefined; })()}
               payroll={data.payroll.find(
                 (p) => p.teacherId === teacher.id && p.month === month,
-              )}
-              rate={teacher.rate}
-              deductions={data.actions.filter(
-                (a) =>
-                  a.teacherId === teacher.id &&
-                  a.status === "已确认" &&
-                  a.date.startsWith(month) &&
-                  a.type === "扣款",
-              )}
-              lessons={lessons.filter(
-                (l) => l.date.startsWith(month) && l.status === "已完成",
               )}
               t={t}
               findStudent={findStudent}
@@ -1044,14 +1035,12 @@ export default function TeacherApp() {
       </main>
       <footer className="teacher-footer">
         <span>Crazy Talk</span>
-        <span>{t("timeZone")}</span>
       </footer>
       <Drawer
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         title="Carol · BigBrains"
         width={Math.min(320, window.innerWidth * 0.82)}
-        description={t("timeZone")}
       >
         <div className="teacher-menu">
           <small>{t("teaching")}</small>

@@ -229,6 +229,7 @@ export default function FeedbackEditor({
             <div className="feedback-form-grid">
               <Field label="反馈日期" required>
                 <DatePicker
+                  placeholder="反馈日期"
                   mode="date"
                   value={draft.date}
                   onValueChange={(nextValue) => patch({ date: nextValue })}

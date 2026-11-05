@@ -59,6 +59,8 @@ function select(time: string, name: string) {
     screen.getByRole("button", { name: `2026-11-23 ${time} 可排课` }),
   );
   fireEvent.click(screen.getByRole("button", { name: new RegExp(name) }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "加入课表" }));
 }
 beforeEach(() => {
   localStorage.clear();
@@ -100,6 +102,22 @@ it("意向外可排，取消选择不新增，移除待确认课程不写入", (
   fireEvent.click(
     screen.getByRole("button", { name: "2026-11-23 19:00 可排课" }),
   );
+  expect(
+    screen.getByRole("button", { name: "加入课表" }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索可选老师" }), {
+    target: { value: "不存在的老师" },
+  });
+  expect(screen.getByText("没有找到该老师，请修改搜索关键词。")).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索可选老师" }), {
+    target: { value: "" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: new RegExp(f.d.teachers[0].name) }),
+  );
+  expect(
+    screen.getByRole("button", { name: "加入课表" }).hasAttribute("disabled"),
+  ).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(screen.queryByRole("button", { name: /待确认 T\./ })).toBeNull();
   select("19:00", f.d.teachers[0].name);
@@ -132,6 +150,7 @@ it("拖动至原老师不可用时间，取消保留原课，选新老师后移�
   fireEvent.click(
     screen.getByRole("button", { name: new RegExp(d.teachers[1].name) }),
   );
+  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   expect(
     screen.getByRole("button", {
       name: new RegExp(`2026-11-23 20:00 待确认 ${d.teachers[1].name}`),

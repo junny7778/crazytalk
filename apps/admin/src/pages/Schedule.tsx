@@ -1,3 +1,4 @@
+import CourseSyncLink from "../components/CourseSyncLink";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../components/DataTransferButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -556,7 +557,7 @@ export default function Schedule() {
             gridTemplateRows: `52px repeat(${slots.length},40px)`,
           }}
         >
-          <div className="schedule-corner">北京时间</div>
+          <div className="schedule-corner">时间</div>
           {columns.map((col, ci) => (
             <button
               key={col.id}
@@ -969,6 +970,14 @@ export default function Schedule() {
                   setRecommendedTeacher("");
                   setSelected([]);
                 }}
+                onScheduleComplete={(count, teacherName) =>
+                  setScheduleResult({
+                    studentId,
+                    studentName: student.name,
+                    teacherName,
+                    count,
+                  })
+                }
                 onViewTeacher={setProfileTeacherId}
               />
             ) : (
@@ -1089,14 +1098,13 @@ export default function Schedule() {
               setModal(null);
               setSelected([]);
               setRecommendedTeacher("");
-              if (panel === "pending")
-                setScheduleResult({
-                  studentId: id,
-                  studentName:
-                    data.students.find((s) => s.id === id)?.name || "学员",
-                  teacherName: teachers,
-                  count,
-                });
+              setScheduleResult({
+                studentId: id,
+                studentName:
+                  data.students.find((s) => s.id === id)?.name || "学员",
+                teacherName: teachers,
+                count,
+              });
             }}
             onClose={() => {
               setModal(null);
@@ -1166,6 +1174,7 @@ export default function Schedule() {
               variant="primary"
               onClick={() => {
                 setScheduleResult(null);
+                setPanel("pending");
                 setStudent(
                   pending.find((s) => s.id !== scheduleResult?.studentId)?.id ||
                     "",
@@ -1315,26 +1324,7 @@ export default function Schedule() {
               <dt>课时处理</dt>
               <dd>{lesson.deducted ? "已扣课时" : "尚未扣课时"}</dd>
             </dl>
-            {lesson.sync === "未同步" && (
-              <div className="notice">
-                <AlertCircle size={18} />
-                <div>
-                  这节课还没有更新到 ClassIn。
-                  {can("sync.retry") && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={preview}
-                      onClick={() =>
-                        run({ type: "lesson.retry", id: lesson.id })
-                      }
-                    >
-                      重新更新
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
+            <CourseSyncLink lesson={lesson} detail />
             <div className="inset">
               <h3>上课情况</h3>
               <p style={{ marginTop: 12 }}>
@@ -1347,7 +1337,6 @@ export default function Schedule() {
               </p>
             </div>
             {lesson.note && <p>{lesson.note}</p>}
-            <small>时间均为北京时间。</small>
           </div>
         )}
       </Drawer>
@@ -1398,6 +1387,7 @@ export default function Schedule() {
           <div className="form-grid">
             <Field label="上课日期" required>
               <DatePicker
+                placeholder="上课日期"
                 mode="date"
                 value={rescheduleDate}
                 min={DEMO_TODAY}
@@ -1536,7 +1526,7 @@ export default function Schedule() {
               ),
             )}
           </div>
-          <small>时间均为北京时间 · 具体安排请联系教务确认</small>
+          <small>具体安排请联系教务确认</small>
         </div>
       </Modal>
     </div>

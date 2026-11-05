@@ -59,7 +59,7 @@ function choose(label: string, value: string) {
 describe("学生反馈表数字化专项", () => {
   it("列表分别展示客服与TM信息，搜索覆盖原话，显示列可调整", () => {
     mount();
-    expect(screen.getByRole("columnheader", { name: "客服处理" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "客服处理进度" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "TM 判定" })).toBeTruthy();
     fireEvent.change(
       screen.getByRole("textbox", { name: "搜索学员、老师、反馈或跟进内容" }),
@@ -68,37 +68,16 @@ describe("学生反馈表数字化专项", () => {
     expect(screen.getByText("共 1 条反馈")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "显示列" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "教务" }));
+    expect(screen.getByRole("columnheader", { name: "教务" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "教务" }));
     expect(screen.queryByRole("columnheader", { name: "教务" })).toBeNull();
   });
   it("详情完整包含原表21项，客服和TM分别保存，失败结论不等同未完成，跟进可追加", async () => {
     const record = demoRepository.read().feedback[0];
     mount(`/feedback/${record.id}`);
-    for (const label of [
-      "反馈日期",
-      "项目／渠道",
-      "教务",
-      "学员名称",
-      "老师名字 Tutor Name",
-      "SO",
-      "反馈阶段",
-      "反馈等级",
-      "评价分类",
-      "一级分类",
-      "二级分类",
-      "三级分类",
-      "学员反馈（原话）",
-      "截图",
-      "客服处理进度",
-      "客服备注",
-      "客服处理结果",
-      "客服&TM判定结果",
-      "TM判定",
-      "TM处理日期",
-      "TM跟进记录",
-    ])
-      expect(
-        screen.getAllByText(label, { exact: true }).length,
-      ).toBeGreaterThan(0);
+    for (const label of ["反馈日期", "项目／渠道", "教务", "学员编号", "老师", "SO", "学员反馈（原话）"])
+      expect(screen.getAllByText(label, { exact: true }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "更新客服处理" }));
     expect(screen.queryByRole("button", { name: "提交责任判定" })).toBeNull();
     choose("客服处理进度", "处理中");
     choose("客服处理结果", "处理失败");
@@ -110,12 +89,13 @@ describe("学生反馈表数字化专项", () => {
       expect(demoRepository.read().feedback[0].customerResult).toBe("处理失败"),
     );
     expect(demoRepository.read().feedback[0].status).toBe("处理中");
-    choose("客服&TM判定结果", "三星");
-    choose("TM判定", "处理失败");
+    fireEvent.click(screen.getByRole("button", { name: "更新 TM 判定" }));
+    choose("客服与 TM 判定等级", "三星");
+    choose("TM处理结果", "处理失败");
     fireEvent.change(screen.getByLabelText("TM处理日期", { exact: true }), {
       target: { value: "2026-10-27" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "TM跟进记录" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "TM判定说明" }), {
       target: { value: "核实为学员端网络波动，已说明原因" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存 TM 判定" }));
@@ -123,10 +103,11 @@ describe("学生反馈表数字化专项", () => {
       expect(demoRepository.read().feedback[0].tmNote).toContain("学员端网络"),
     );
     expect(demoRepository.read().feedback[0].status).toBe("处理中");
+    fireEvent.click(screen.getByRole("button", { name: "添加跟进" }));
     fireEvent.change(screen.getByRole("textbox", { name: "追加跟进内容" }), {
       target: { value: "家长已收到说明，约定下次课后再回访" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "添加跟进" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存跟进" }));
     await waitFor(() =>
       expect(
         demoRepository

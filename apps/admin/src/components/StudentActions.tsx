@@ -508,6 +508,7 @@ export function StudentActionModal({
         {(isCredit || action === "referral") && (
           <Field label="业务日期" required>
             <DatePicker
+              placeholder="业务日期"
               mode="date"
               value={businessDate}
               onValueChange={(nextValue) => setBusinessDate(nextValue)}
@@ -577,6 +578,7 @@ export function StudentActionModal({
         {["reschedule", "changeTeacher"].includes(action || "") && (
           <Field label="从哪天开始" required>
             <DatePicker
+              placeholder="从哪天开始"
               mode="date"
               min={DEMO_TODAY}
               value={date}

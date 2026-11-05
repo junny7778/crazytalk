@@ -1,5 +1,9 @@
 import en from "./en";
 const zh: Record<keyof typeof en, string> = {
+  historicalDeduction: "历史扣款汇总已保留，原明细未留存。",
+  openingPay: "期初 / 历史课酬",
+  openingPayHint: "历史汇总未留存逐课记录，单独列示来源；已确认薪资以锁定结果为准。",
+  noPayLessons: "暂无可追溯的计薪课程明细。",
   usualHours: "每周常规可用时间",
   reviewAvailability: "确认调整可用时间",
   saveKeepLessons: "保存，保留现有课程",
@@ -38,7 +42,6 @@ const zh: Record<keyof typeof en, string> = {
     "请在课前 10 分钟检查麦克风、摄像头和网络。安静的上课环境能帮助孩子专注。",
   readAnnouncement: "阅读公告",
   preparation: "准备好上课",
-  timeZone: "所有时间均为北京时间 GMT+8",
   min: "分钟",
   yesterday: "昨天",
   tomorrow: "明天",

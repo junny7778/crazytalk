@@ -1,3 +1,5 @@
+import {SurveyLink} from "../components/StudentSurvey";
+import StudentClassIn from "../components/StudentClassIn";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -68,8 +70,7 @@ const tabs = [
   { value: "profile", label: "概述信息" },
   { value: "courses", label: "课程与教材进度" },
   { value: "service", label: "服务跟进" },
-  { value: "credits", label: "课时、续费与转介绍" },
-  { value: "tasks", label: "待办事项" },
+  { value: "credits", label: "课时与续费" },
 ];
 export default function StudentDetail() {
   const { id } = useParams();
@@ -143,7 +144,7 @@ export default function StudentDetail() {
     : ["feedback", "teachers"].includes(rawTab)
       ? "service"
       : rawTab === "timeline"
-        ? "tasks"
+        ? "profile"
         : tabs.some((item) => item.value === rawTab)
           ? rawTab
           : "profile";
@@ -153,6 +154,7 @@ export default function StudentDetail() {
       result.set("tab", next);
       return result;
     });
+  const sharedBalance=(data.orders || []).filter(o=>o.studentIds.includes(student.id)).reduce((n,o)=>n+o.balance,0);
   const nextLesson = data.lessons
     .filter(
       (item) =>
@@ -360,7 +362,7 @@ export default function StudentDetail() {
           label="剩余课时"
           title="查看课时明细"
           value={
-            student.balanceKnown ? `${student.balance} 课时` : "余额待核实"
+            sharedBalance ? `共享 ${sharedBalance} · 个人 ${student.balanceKnown ? student.balance : "待核"}` : student.balanceKnown ? `${student.balance} 课时` : "余额待核实"
           }
           note={
             student.orderStatus === "退款" ? (
@@ -424,6 +426,8 @@ export default function StudentDetail() {
       </div>
       {tab === "profile" && (
         <>
+          <SurveyLink student={student}/>
+          <StudentClassIn key={student.id} student={student}/>
           {studentFieldGroups
             .filter(
               (group) =>

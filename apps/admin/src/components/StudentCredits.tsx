@@ -39,21 +39,13 @@ export default function StudentCredits({
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const credits = data.credits
-    .filter((item) => item.studentId === student.id)
+    .filter((item) => item.studentId === student.id || !!item.orderId && data.orders?.some(o=>o.id===item.orderId && o.studentIds.includes(student.id)))
     .sort(
       (a, b) =>
         b.date.localeCompare(a.date) ||
         (b.recordedAt || "").localeCompare(a.recordedAt || ""),
     );
-  const referrals = data.referrals
-    .filter(
-      (item) =>
-        item.studentId === student.id || item.referrerStudentId === student.id,
-    )
-    .sort((a, b) => b.date.localeCompare(a.date));
   const renewal = credits.find((item) => item.type === "续费");
-  const name = (id: string) =>
-    data.students.find((item) => item.id === id)?.name || "未关联学员";
   function saveOpening() {
     setError("");
     if (!opening.trim() || !Number.isFinite(Number(opening))) {
@@ -74,6 +66,7 @@ export default function StudentCredits({
   }
   return (
     <div className="stack">
+      <Panel title="套餐订单">{data.orders?.some(o=>o.studentIds.includes(student.id)) ? data.orders.filter(o=>o.studentIds.includes(student.id)).map(o=><p key={o.id}>{o.date} · {o.units} 节套餐 · 共享余额 {o.balance} 节 · {o.studentIds.map(id=>data.students.find(s=>s.id===id)?.name || id).join("、")}</p>) : <p>暂无套餐订单</p>}</Panel>
       <Modal open={deductOpen} onClose={() => setDeductOpen(false)} title={`给 ${student.name} 扣减课时`}
         footer={<><Button onClick={() => setDeductOpen(false)}>取消</Button><Button variant="danger-solid" disabled={!canDeduct} onClick={saveDeduction}>确认扣减</Button></>}>
         <div className="stack">
@@ -213,58 +206,6 @@ export default function StudentCredits({
           <EmptyState
             title="暂无课时记录"
             description="登记购课、补偿或确认课程结果后，可以在这里查看明细。"
-          />
-        )}
-      </Panel>
-      <Panel
-        title="转介绍关系"
-        action={
-          can("student.edit") && (
-            <Button size="sm" onClick={() => onAction("referral")}>
-              登记转介绍
-            </Button>
-          )
-        }
-      >
-        {referrals.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th>介绍人</th>
-                  <th>被介绍人</th>
-                  <th>说明</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {referrals.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.date}</td>
-                    <td>{name(item.referrerStudentId)}</td>
-                    <td>{name(item.studentId)}</td>
-                    <td>{item.note || "未填写"}</td>
-                    <td>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        onClick={() =>
-                          onOpen({ kind: "referral", id: item.id })
-                        }
-                      >
-                        查看记录
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState
-            title="暂无转介绍关系"
-            description="从已有学员中登记介绍人，关系与充值记录分别保存。"
           />
         )}
       </Panel>

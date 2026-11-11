@@ -240,9 +240,8 @@
 .feedback-summary-text {
   display: block;
   max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   margin-top: 0;
 }
 .feedback-related {

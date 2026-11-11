@@ -146,7 +146,7 @@ describe("学员档案内操作联动", () => {
       `/students/${student.id}?tab=service`,
     );
   });
-  it("转介绍关系可打开关联流水，介绍人仍来自已有学员", async () => {
+  it("隐藏转介绍入口，历史关联流水仍可追溯", async () => {
     const [student, referrer] = demoRepository.read().students;
     demoRepository.execute({
       type: "referral.add",
@@ -166,17 +166,9 @@ describe("学员档案内操作联动", () => {
       date: DEMO_TODAY,
     });
     mount(`/students/${student.id}?tab=credits`);
-    fireEvent.click(await screen.findByRole("button", { name: "查看记录" }));
-    const relation = await screen.findByRole("dialog", { name: "转介绍记录" });
-    expect(within(relation).getByText(referrer.name)).toBeTruthy();
-    fireEvent.click(
-      within(relation).getByRole("button", { name: /充值 · \+3 课时/ }),
-    );
-    const credit = await screen.findByRole("dialog", { name: "充值记录" });
-    expect(within(credit).getByText("关系关联充值")).toBeTruthy();
-    expect(screen.getByTestId("path").textContent).toBe(
-      `/students/${student.id}?tab=credits`,
-    );
+    await screen.findByRole("tab",{name:"课时与续费"});
+    expect(screen.queryByRole("button",{name:"登记转介绍"})).toBeNull();
+    expect(demoRepository.read().credits.find(c=>c.referralId===referral.id)?.units).toBe(3);
   });
   it("新换师记录不会隐藏原表换师历史，操作记录也不重复", () => {
     const data = demoRepository.read();

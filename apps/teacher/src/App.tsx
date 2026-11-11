@@ -535,7 +535,7 @@ export default function TeacherApp() {
               <h1>{currentStudent.name}</h1>
               <p>
                 {[
-                  currentStudent.groupName,
+                  currentStudent.id,
                   currentStudent.ageText ||
                     (currentStudent.age === null
                       ? ""
@@ -550,6 +550,9 @@ export default function TeacherApp() {
               <div className="teacher-facts">
                 <span>{t("preferences")}</span>
                 <p>{currentStudent.preferences}</p>
+                {currentStudent.surveyOriginal && <><span>{language==="en"?"Personality":"性格"}</span><p>{currentStudent.personality}</p>
+                  <span>{language==="en"?"Interests":"兴趣"}</span><p>{currentStudent.interests}</p>
+                  <span>{language==="en"?"Past lessons":"外教经验"}</span><p>{currentStudent.foreignTeacherExperience}</p></>}
                 <span>{t("learningGoal")}</span>
                 <p>{currentStudent.goal}</p>
               </div>
@@ -961,6 +964,9 @@ export default function TeacherApp() {
         {view === "pay" && (
           <>
             <MonthSelect value={month} onChange={setMonth} t={t} />
+            {data.settlements?.some(r=>r.teacherId===teacher.id && r.month===month) ?
+              data.settlements.filter(r=>r.teacherId===teacher.id && r.month===month).map(r=><FeatureCard key={r.at} title={language==="en"?"Confirmed earnings":"已确认薪资"}>
+                <strong>PHP {r.lines.reduce((n,l)=>n+(l.teacher||0),0).toFixed(2)}</strong>{r.lines.map((l,i)=><p key={i}>{l.source} · {l.label} · PHP {l.teacher?.toFixed(2)}</p>)}</FeatureCard>) :
             <PayContent
               pay={(() => { const record = data.payroll.find((p) => p.teacherId === teacher.id && p.month === month); return record ? payrollBreakdown(data, record.id) : undefined; })()}
               payroll={data.payroll.find(
@@ -969,7 +975,7 @@ export default function TeacherApp() {
               t={t}
               findStudent={findStudent}
               onFeedback={() => go("feedback")}
-            />
+            />}
           </>
         )}
         {view === "messages" && (

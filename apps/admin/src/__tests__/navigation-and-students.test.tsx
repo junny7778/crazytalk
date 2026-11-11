@@ -155,7 +155,7 @@ describe("后台导航和学员建档", () => {
       fireEvent.click(screen.getByRole("button", { name: "放弃修改" }));
     }
     fireEvent.change(
-      screen.getByRole("textbox", { name: "搜索学生名字、学生群名或手机号" }),
+      screen.getByRole("textbox", { name: "搜索学员 ID、姓名或手机号" }),
       { target: { value: "Jayden" } },
     );
     await waitFor(() =>

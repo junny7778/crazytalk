@@ -8,7 +8,7 @@ import {
   scheduleIntentSchema,
   isScheduleDate,
   addDays,
-  getFixedSchedulePlans,
+  matchedTags, getFixedSchedulePlans,
   type FixedPlan,
   getStudentScheduleProgress,
   type Student,
@@ -54,6 +54,8 @@ export function StudentSchedulingPanel({
   const [editingIntent, setEditingIntent] = useState(!student.scheduleIntent);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [priority,setPriority]=useState("时间优先");
+  const [holdMinutes,setHoldMinutes]=useState(30);
   const saved = student.scheduleIntent;
   const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
   const windowErrors = draft.windows.map((window) => {
@@ -382,6 +384,9 @@ export function StudentSchedulingPanel({
         <section className="schedule-plan-section" aria-label="固定排课方案">
           <div className="schedule-plan-toolbar">
             <h4>推荐排课方案</h4>
+            <Field label="匹配策略"><Select value={priority} onValueChange={setPriority}><option>时间优先</option><option>老师优先</option></Select></Field>
+            <Field label="锁课保留分钟"><input type="number" min={1} value={holdMinutes} onChange={e=>setHoldMinutes(Number(e.target.value))}/></Field>
+            {data.slotLocks?.some(l=>l.studentId===student.id && Date.parse(l.expiresAt)>Date.now()) && <Button disabled={preview||!can("schedule.create")} onClick={()=>act({type:"slot.release",studentId:student.id})}>释放当前锁课</Button>}
             <input
               aria-label="搜索推荐老师"
               placeholder="搜索老师姓名"
@@ -397,6 +402,11 @@ export function StudentSchedulingPanel({
                   ?.name.toLowerCase()
                   .includes(query.toLowerCase()),
               )
+              .sort((a,b)=>{
+                const score=(id:string)=>{const t=data.teachers.find(t=>t.id===id);return t?matchedTags(student,t).length:0;};
+                const fit=score(b.primaryTeacherId)-score(a.primaryTeacherId),coverage=b.coveredCount-a.coveredCount;
+                return priority==="老师优先" ? fit || coverage : coverage || fit;
+              })
               .map((plan) => {
                 const teacher = data.teachers.find(
                   (t) => t.id === plan.primaryTeacherId,
@@ -425,6 +435,7 @@ export function StudentSchedulingPanel({
                           : `缺 ${plan.requiredCount - plan.coveredCount} 节`}
                       </Badge>
                     </div>
+                    <p>匹配标签：{matchedTags(student,teacher).join("、") || "暂无命中"}</p>
                     <dl className="schedule-match-meta">
                       <div>
                         <dt>SO</dt>
@@ -481,6 +492,9 @@ export function StudentSchedulingPanel({
                       )}
                     </dl>
                     <div className="schedule-match-actions">
+                      <Button size="sm" disabled={dirty||preview||!can("schedule.create")||!(holdMinutes>0)} onClick={()=>{try{
+                        act({type:"slot.lock",studentId:student.id,duration:saved.duration,slots:plan.slots.filter(s=>s.teacherId && !s.lessonId),expiresAt:new Date(Date.now()+holdMinutes*60000).toISOString()});toast("档期已保留");
+                      }catch(e){toast(String(e),{tone:"error"});}}}>锁定方案时段</Button>
                       <Button
                         size="sm"
                         variant="primary"

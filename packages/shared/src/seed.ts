@@ -583,6 +583,7 @@ export function createSeed(): DemoState {
       {
         id: "u3",
         name: "Roma",
+        team:"B队", group:"一组",
         phone: "13900005678",
         roleId: "ops",
         scope: "14",

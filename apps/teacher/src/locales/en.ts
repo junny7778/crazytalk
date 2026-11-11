@@ -106,7 +106,7 @@ export default {
   leaveEnd: "End",
   reason: "Reason",
   leaveReason: "Briefly explain your request",
-  leaveSent: "Your leave request has been sent.",
+  leaveSent: "Leave recorded. Your coordinator will follow up on affected lessons.",
   leaveRequired: "Please choose valid dates and tell us the reason.",
   pendingApproval: "Pending",
   approved: "Approved",

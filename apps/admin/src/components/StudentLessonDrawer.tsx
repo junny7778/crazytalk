@@ -64,6 +64,7 @@ export function StudentLessonDrawer({
   const [reportMaterial, setReportMaterial] = useState("");
   const [reportFrom, setReportFrom] = useState("");
   const [reportTo, setReportTo] = useState("");
+  const [cancelKind,setCancelKind]=useState("学员请假"),[waived,setWaived]=useState(false);
   const [responsibility, setResponsibility] = useState<
     "学员" | "老师" | "平台"
   >("学员");
@@ -74,7 +75,7 @@ export function StudentLessonDrawer({
   const [discard, setDiscard] = useState<"close" | "back" | null>(null);
   const lesson = data.lessons.find((item) => item.id === lessonId);
   useEffect(() => {
-    setEditing(null);
+    setEditing(null);setCancelKind("学员请假");setWaived(false);setResponsibility("学员");
     setError("");
     setReason("");
     setUnits("");
@@ -200,8 +201,8 @@ export function StudentLessonDrawer({
     setSaving(true);
     try {
       if (editing === "cancel") {
-        act({ type: "lesson.cancel", id: lesson.id, reason, responsibility });
-        toast("课程已取消，课时处理保留待核实");
+        act({ type: "lesson.cancel", id: lesson.id, reason, responsibility,kind:cancelKind,waived });
+        toast("课程已取消，课时结果已记录");
       } else if (pending) {
         act({
           type: "lesson.resolve",
@@ -456,7 +457,7 @@ export function StudentLessonDrawer({
               <h3>取消本节课程</h3>
               <p>
                 将取消 {lesson.date} {lesson.time}{" "}
-                的这节课，保留历史记录。是否扣课由教务另行核实。
+                的这节课，保留历史记录。学员课前 3 小时内请假按原课节扣课，已核准的豁免另记。
               </p>
               <Field label="取消原因方">
                 <Select
@@ -467,7 +468,7 @@ export function StudentLessonDrawer({
                       value === "老师" ||
                       value === "平台"
                     )
-                      setResponsibility(value);
+                      {setResponsibility(value);setCancelKind(value==="学员"?"学员请假":value==="老师"?"老师取消":"误操作");setWaived(false);}
                   }}
                 >
                   <option>学员</option>
@@ -475,6 +476,8 @@ export function StudentLessonDrawer({
                   <option>平台</option>
                 </Select>
               </Field>
+              <Field label="取消类型"><Select value={cancelKind} onValueChange={setCancelKind}>{(responsibility==="学员"?["学员请假","换老师","换时间","停课","已核实网络故障"]:responsibility==="老师"?["老师取消","老师缺席","教材错误或重复","已核实网络故障"]:["误操作","已核实网络故障","其他"]).map(v=><option key={v}>{v}</option>)}</Select></Field>
+              {cancelKind==="学员请假" && <label><input type="checkbox" checked={waived} onChange={e=>setWaived(e.target.checked)}/>教务已核准临时豁免（在原因中记录依据）</label>}
               <Field label="取消原因" required>
                 <textarea
                   value={reason}
@@ -494,7 +497,7 @@ export function StudentLessonDrawer({
                 <h3>教材进度</h3>
                 {report ? (
                   <div className="sc-report">
-                    <strong>{report.material}</strong>
+                    <strong>{report.material}</strong>{report.screenshot && <img src={report.screenshot} width={220} alt="当节教材结束页"/>}
                     <p>
                       {report.from
                         ? `${formatStudentProgress(report.from)} → `

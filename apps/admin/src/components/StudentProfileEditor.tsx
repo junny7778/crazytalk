@@ -115,9 +115,10 @@ export default function StudentProfileEditor({
         "age",
         "ageText",
         "gender",
+        "project",
         "channel",
         "owner",
-        "personality",
+        "personality","level","interests",
         "foreignTeacherExperience",
         "preferences",
         ...(!hasReports ? (["material", "unit"] as const) : []),
@@ -269,6 +270,8 @@ export default function StudentProfileEditor({
                 options={["有", "无"]}
               />
             </Field>
+            <Field label="口语等级"><Choice label="口语等级" value={draft.level} onChange={level=>patch({level})} options={["L0","L1","L2","L3","L4","待评估"]}/></Field>
+            <Field label="兴趣爱好"><input value={draft.interests || ""} onChange={e=>patch({interests:e.target.value})}/></Field>
             <Field label="喜欢的老师类型">
               <textarea
                 value={draft.preferences}
@@ -284,12 +287,14 @@ export default function StudentProfileEditor({
               <Choice
                 label="渠道"
                 value={draft.channel}
-                onChange={(channel) => patch({ channel })}
+                onChange={(channel) => patch({ channel, project: "" })}
                 options={data.catalog
                   .filter((item) => item.type === "渠道")
                   .map((item) => item.name)}
               />
             </Field>
+            <Field label="项目"><Choice label="项目" value={draft.project} onChange={project => patch({project})}
+              options={data.catalog.filter(p => p.enabled && p.type === "项目" && data.catalog.some(c => c.id === p.parentId && c.name === draft.channel)).map(p => p.name)}/></Field>
             <Field label="负责教务">
               <Choice
                 label="负责教务"
@@ -297,8 +302,7 @@ export default function StudentProfileEditor({
                 onChange={(owner) => patch({ owner })}
                 options={[
                   ...data.students.map((item) => item.owner),
-                  "Rita",
-                  "Roma",
+                  ...data.accounts.filter(a=>a.enabled && a.roleId==="ops").map(a=>a.name),
                 ]}
               />
             </Field>

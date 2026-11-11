@@ -54,6 +54,8 @@ export default function Lessons() {
     id: string;
     kind: "扣课" | "不扣" | "缺席";
   } | null>(null);
+  const [delay,setDelay]=useState("");
+  const [incident,setIncident]=useState("学员缺席"),[evidence,setEvidence]=useState("");
   const [reason, setReason] = useState("");
   const [units, setUnits] = useState("");
   const [linkId, setLinkId] = useState("");
@@ -453,6 +455,13 @@ export default function Lessons() {
         {detail && (
           <div className="stack">
             <CourseSyncLink lesson={detail} detail />
+            {detail.incident && <p>已核实：{detail.incident.reason} · {detail.incident.note} · {detail.incident.operator}</p>}
+            {can("lesson.correct") && <details><summary>登记异常考勤</summary><Field label="异常原因"><Select value={incident} onValueChange={setIncident}>
+              {["学员缺席","学员提前3小时取消","学员3小时内取消","学员网络设备问题","老师缺席","老师迟到","老师早退","老师24小时内取消","老师1–5天取消","老师超过5天请假","老师网络设备问题","教材错误或重复","换老师","换时间","停课","误操作","其他"].map(s=><option key={s}>{s}</option>)}
+            </Select></Field><Field label="核实依据"><textarea value={evidence} onChange={e=>setEvidence(e.target.value)}/></Field>
+            {["老师迟到","老师早退"].includes(incident) && <Field label="核实分钟数"><input type="number" min="0" value={delay} onChange={e=>setDelay(e.target.value)}/></Field>}
+            <Button disabled={!evidence.trim()} onClick={()=>run({type:"lesson.incident",id:detail.id,reason:incident,note:evidence,minutes:["老师迟到","老师早退"].includes(incident) && delay ? Number(delay):undefined},()=>setEvidence(""))}>保存核实结果</Button></details>}
+            {detail.absenceNotice && <p className="muted">学员缺席提醒 · 待教务跟进</p>}
             <dl className="detail-pairs">
               <dt>学员</dt>
               <dd>{student(detail.studentId)?.name || "—"}</dd>

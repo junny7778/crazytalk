@@ -394,25 +394,25 @@
 
 .sc-calendar-lesson[data-status="未开始"] {
   background: var(--ct-info-bg);
-  border-color: #c5d7fa;
+  border-color: var(--ct-info-bg);
   border-left-color: var(--ct-info);
-  color: #1e4595;
+  color: var(--ct-info);
 }
 .sc-calendar-lesson[data-status="待确认"] {
   background: var(--ct-warning-bg);
-  border-color: #eed8a2;
+  border-color: var(--ct-warning-bg);
   border-left-color: var(--ct-warning);
   color: var(--ct-warning);
 }
 .sc-calendar-lesson[data-status="已完成"] {
   background: var(--ct-success-bg);
-  border-color: #bce3ce;
+  border-color: var(--ct-success-bg);
   border-left-color: var(--ct-success);
   color: var(--ct-success);
 }
 .sc-calendar-lesson[data-status="缺席"] {
   background: var(--ct-danger-bg);
-  border-color: #f0c5bf;
+  border-color: var(--ct-danger-bg);
   border-left-color: var(--ct-danger);
   color: var(--ct-danger);
 }
@@ -420,7 +420,7 @@
   background: var(--ct-gray-100);
   border-color: var(--ct-gray-200);
   border-left-color: var(--ct-gray-500);
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 .sc-calendar-lesson:hover,
 .sc-calendar-lesson:focus-visible {

@@ -331,10 +331,10 @@ describe("独立学员数字化验收", () => {
     ).toHaveLength(1);
     expect(screen.getByRole("cell", { name: "已核对原台账为0" })).toBeTruthy();
   });
-  it("列表按群名搜索并按原表订单/续课筛选，未知余额不当作欠课", async () => {
+  it("列表按唯一 ID 搜索并按原表订单/续课筛选，未知余额不当作欠课", async () => {
     const student = importProfile();
     mount();
-    change("搜索学生名字、学生群名或手机号", "QA901专属学习群");
+    change("搜索学员 ID、姓名或手机号", student.id);
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "独立验收学员" })).toBeTruthy(),
     );
@@ -419,7 +419,7 @@ describe("独立学员数字化验收", () => {
     // Keep the browser URL stub alive until the download revocation timer finishes.
     await new Promise((resolve) => setTimeout(resolve, 1100));
   });
-  it("导入学员可录入负期初余额，续费先抵欠且保留原表总课时", async () => {
+  it("导入学员可录入负期初余额，共享订单与历史欠额分开核对", async () => {
     const student = importProfile();
     mount(`/students/${student.id}?tab=credits`);
     change("初始剩余课时", "-2");
@@ -431,18 +431,12 @@ describe("独立学员数字化验收", () => {
     expect(
       demoRepository.read().students.find((s) => s.id === student.id),
     ).toMatchObject({ balance: -2, balanceKnown: true, totalUnits: 0 });
-    fireEvent.click(screen.getByRole("tab", { name: "课时、续费与转介绍" }));
+    fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
     fireEvent.click(screen.getByRole("button", { name: "加课时" }));
     const dialog = screen.getByRole("dialog", {
       name: "给 独立验收学员 加课时",
     });
-    const amount = within(dialog).getByRole("spinbutton", {
-      name: /增加课时|课时数/,
-    });
-    fireEvent.change(amount, { target: { value: "4" } });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "确认加 4 课时" }),
-    );
+    fireEvent.click(within(dialog).getByRole("button",{name:"确认加 72 课时"}));
     await waitFor(() =>
       expect(
         screen.queryByRole("dialog", { name: "给 独立验收学员 加课时" }),
@@ -450,7 +444,8 @@ describe("独立学员数字化验收", () => {
     );
     expect(
       demoRepository.read().students.find((s) => s.id === student.id),
-    ).toMatchObject({ balance: 2, totalUnits: 0 });
+    ).toMatchObject({ balance: -2, totalUnits: 0 });
+    expect(demoRepository.read().orders?.[0].balance).toBe(72);
   });
   it("原表没有最后上课日期的在读学员不误列为两周没上课", async () => {
     const profile = { ...originalProfile(), status: "在读" as const };

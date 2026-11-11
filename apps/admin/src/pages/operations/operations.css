@@ -290,7 +290,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 .settings-role-summary span {
   display: inline-flex;
@@ -364,7 +364,7 @@
   border: 0;
   background: transparent;
   padding: 4px;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 .settings-category-tree-spacer {
   width: 24px;
@@ -395,7 +395,7 @@
   color: var(--ct-gray-500);
 }
 .settings-category-popup .settings-category-delete {
-  color: var(--ct-danger-600, #c0392b);
+  color: var(--ct-danger-600, var(--ct-danger));
 }
 @media (max-width: 760px) {
   .settings-category-tree-row {
@@ -416,14 +416,14 @@
   flex-direction: column;
   gap: 12px;
   padding: 0 0 16px;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
   font-size: 12px;
 }
 .settings-rule-conventions-label {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #000;
+  color: var(--ct-gray-900);
 }
 .settings-rule-threshold .field > label {
   font-size: 14px;
@@ -451,7 +451,7 @@
   gap: 12px;
   flex-wrap: wrap;
   font-size: 13px;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 
 .teacher-profile-grid {
@@ -460,7 +460,7 @@
   gap: 20px 32px;
   margin: 24px 0 0;
   padding-top: 24px;
-  border-top: 1px solid var(--ct-gray-200, #e5e7eb);
+  border-top: 1px solid var(--ct-gray-200, var(--ct-gray-200));
 }
 .teacher-profile-grid > div {
   display: grid;
@@ -471,7 +471,7 @@
   line-height: 1.6;
 }
 .teacher-profile-grid dt {
-  color: var(--ct-gray-500, #6b7280);
+  color: var(--ct-gray-500, var(--ct-gray-500));
 }
 .teacher-profile-grid dd {
   margin: 0;
@@ -526,7 +526,7 @@
   padding: 8px;
   border: 2px solid transparent;
   border-radius: 12px;
-  background: var(--ct-gray-50, #f9fafb);
+  background: var(--ct-gray-50, var(--ct-gray-50));
   cursor: pointer;
 }
 .teacher-avatar-option img {
@@ -620,7 +620,7 @@
   background: var(--ct-brand-700);
 }
 .teacher-photo-error {
-  color: var(--ct-danger-600, #c42b1c);
+  color: var(--ct-danger-600, var(--ct-danger));
   font-size: 12px;
   margin: 8px 0 0;
 }
@@ -932,17 +932,17 @@
 }
 
 .lesson-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
-.lesson-summary-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 24px; background: #fff; border: 1px solid #e8eaee; border-radius: 14px; }
-.lesson-summary-card.is-total { background: #fff8f2; border-color: #f5dfcc; }
-.lesson-summary-label { font-size: 13px; color: #777f8a; }
+.lesson-summary-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 24px; background: var(--ct-white); border: 1px solid var(--ct-gray-200); border-radius: 14px; }
+.lesson-summary-card.is-total { background: var(--ct-brand-50); border-color: var(--ct-brand-100); }
+.lesson-summary-label { font-size: 13px; color: var(--ct-gray-500); }
 .lesson-summary-value { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; }
 .lesson-summary-value strong { font-size: 30px; line-height: 1; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
-.lesson-summary-value > span { font-size: 12px; color: #9aa1aa; }
-.lesson-summary-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #fff0e3; color: #da702c; flex-shrink: 0; }
-.lesson-summary-card.is-upcoming .lesson-summary-icon { background: #eef5fc; color: #638fbd; }
-.lesson-summary-card.is-completed .lesson-summary-icon { background: #eef7f2; color: #5d9e80; }
-.lesson-summary-card.is-cancelled .lesson-summary-icon { background: #f2f3f5; color: #9098a4; }
-.lesson-summary-note { display: block; margin-top: 10px; color: #939aa4; font-size: 12px; }
+.lesson-summary-value > span { font-size: 12px; color: var(--ct-gray-500); }
+.lesson-summary-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--ct-brand-50); color: var(--ct-brand-500); flex-shrink: 0; }
+.lesson-summary-card.is-upcoming .lesson-summary-icon { background: var(--ct-info-bg); color: var(--ct-info); }
+.lesson-summary-card.is-completed .lesson-summary-icon { background: var(--ct-success-bg); color: var(--ct-success); }
+.lesson-summary-card.is-cancelled .lesson-summary-icon { background: var(--ct-gray-100); color: var(--ct-gray-500); }
+.lesson-summary-note { display: block; margin-top: 10px; color: var(--ct-gray-500); font-size: 12px; }
 @media (max-width: 1000px) {
   .lesson-summary-card { padding: 18px; }
   .lesson-summary-grid { gap: 12px; }

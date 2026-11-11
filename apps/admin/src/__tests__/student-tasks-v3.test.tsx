@@ -221,7 +221,8 @@ describe("学员待办简洁操作", () => {
         ?.serviceStopResults?.length,
     ).toBeGreaterThan(0);
     mount(<App />, `/students/${student.id}?tab=tasks`);
-    expect(await screen.findByRole("tab", { name: "待办事项" })).toBeTruthy();
+    expect(await screen.findByRole("tab", { name: "概述信息" })).toBeTruthy();
+    expect(screen.queryByRole("tab",{name:"待办事项"})).toBeNull();
     expect(screen.queryByRole("heading", { name: "服务停用进展" })).toBeNull();
     expect(
       screen.getByText("更多操作").closest("details")?.hasAttribute("open"),

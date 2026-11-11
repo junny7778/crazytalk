@@ -385,7 +385,7 @@
 }
 .schedule-regular-detail {
   font-size: 12px;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
   line-height: 1.8;
 }
 .schedule-regular-detail summary {
@@ -729,7 +729,7 @@
   border: 1px solid var(--ct-gray-200);
   border-radius: 8px;
   font-weight: 600;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 .intent-weekdays button[aria-pressed="true"] {
   background: var(--ct-brand-600);
@@ -744,7 +744,7 @@
   margin: 0 0 12px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 .intent-window-grid {
   display: grid;
@@ -861,7 +861,7 @@
 }
 .schedule-match-notes {
   min-height: 20px;
-  color: #b58a36;
+  color: var(--ct-warning);
 }
 .schedule-match-actions {
   display: flex;
@@ -1117,7 +1117,7 @@
 .fixed-course.confirmed {
   background: var(--ct-gray-100);
   border-color: var(--ct-gray-200);
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
   cursor: default;
 }
 .fixed-plan-footer {
@@ -1228,8 +1228,8 @@
 }
 .fixed-calendar-legend .available,
 .fixed-empty-cell.available {
-  background: #edf7f1;
-  color: #537963;
+  background: var(--ct-success-bg);
+  color: var(--ct-success);
 }
 .fixed-calendar-legend .unavailable,
 .fixed-empty-cell.unavailable {
@@ -1241,8 +1241,8 @@
   font-size: 11px;
 }
 .fixed-empty-cell.drop-target {
-  background: #d5ecdf;
-  outline: 2px solid #438464;
+  background: var(--ct-success-bg);
+  outline: 2px solid var(--ct-success);
   outline-offset: -2px;
 }
 .fixed-course[draggable="true"] {
@@ -1346,42 +1346,42 @@
   font-size: 11px;
   line-height: 16px;
   padding: 3px;
-  background: #fafbfc;
+  background: var(--ct-gray-50);
   color: var(--ct-gray-500);
 }
 .flex-time-cell.available {
-  background: #edf7f1;
-  color: #3d7053;
+  background: var(--ct-success-bg);
+  color: var(--ct-success);
   cursor: pointer;
 }
 .flex-time-cell.unavailable {
   cursor: default;
 }
 .flex-time-cell.expired {
-  background: #eef0f2;
-  color: #929aa5;
+  background: var(--ct-gray-100);
+  color: var(--ct-gray-500);
 }
 .flex-time-cell.intent {
-  box-shadow: inset 0 0 0 1px #df9a5d;
+  box-shadow: inset 0 0 0 1px var(--ct-brand-200);
 }
 .flex-time-cell small {
   display: block;
-  color: #ac641f;
+  color: var(--ct-brand-800);
   font-size: 10px;
 }
 .flex-time-cell.drop-target {
-  outline: 2px solid #438464;
+  outline: 2px solid var(--ct-success);
   outline-offset: -2px;
-  background: #d5ecdf;
+  background: var(--ct-success-bg);
 }
 .flex-pending {
-  background: #fff0df;
-  border-color: #efb379;
+  background: var(--ct-brand-50);
+  border-color: var(--ct-brand-200);
 }
 .flex-booked {
-  background: #eaf2ff;
-  border-color: #a8bedf;
-  color: #4b658a;
+  background: var(--ct-info-bg);
+  border-color: var(--ct-info-bg);
+  color: var(--ct-info);
   cursor: default;
 }
 .flex-calendar-legend {
@@ -1403,23 +1403,23 @@
   border-radius: 3px;
 }
 .flex-calendar-legend .intent {
-  border-color: #df9a5d;
+  border-color: var(--ct-brand-200);
   background: white;
 }
 .flex-calendar-legend .available {
-  background: #edf7f1;
+  background: var(--ct-success-bg);
 }
 .flex-calendar-legend .unavailable {
-  background: #fafbfc;
+  background: var(--ct-gray-50);
 }
 .flex-calendar-legend .expired {
-  background: #eef0f2;
+  background: var(--ct-gray-100);
 }
 .flex-calendar-legend .pending {
-  background: #fff0df;
+  background: var(--ct-brand-50);
 }
 .flex-calendar-legend .booked {
-  background: #eaf2ff;
+  background: var(--ct-info-bg);
 }
 .flex-teacher-options {
   display: flex;

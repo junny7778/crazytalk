@@ -1,3 +1,4 @@
+import ProjectMetrics from "../components/ProjectMetrics";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { syncManagementPath, hasSyncIssue } from "../lib/lessonSync";
 import DataTransferButton from "../components/DataTransferButton";
@@ -77,11 +78,11 @@ export default function Dashboard() {
     ...(status ? { bookingStatus: status } : {}),
   })}`;
   const bookingStates = [
-    { label: "待上课", count: bookings.upcoming, status: "未开始", color: "#5995dc" },
-    { label: "已完成", count: bookings.completed, status: "已完成", color: "#f47c30" },
-    { label: "待确认", count: bookings.pending, status: "待确认", color: "#ebc489" },
-    { label: "已取消", count: bookings.cancelled, status: "已取消", color: "#a0a6b1" },
-    ...(bookings.absent ? [{ label: "已结束（缺席）", count: bookings.absent, status: "缺席", color: "#cc7a85" }] : []),
+    { label: "待上课", count: bookings.upcoming, status: "未开始", color: "var(--ct-info)" },
+    { label: "已完成", count: bookings.completed, status: "已完成", color: "var(--ct-brand-500)" },
+    { label: "待确认", count: bookings.pending, status: "待确认", color: "var(--ct-warning)" },
+    { label: "已取消", count: bookings.cancelled, status: "已取消", color: "var(--ct-gray-400)" },
+    ...(bookings.absent ? [{ label: "已结束（缺席）", count: bookings.absent, status: "缺席", color: "var(--ct-danger)" }] : []),
   ];
   const inPeriod = lessons.filter(
     (l) => l.date >= since && l.date <= DEMO_TODAY && occurred(l),
@@ -279,6 +280,7 @@ export default function Dashboard() {
       permission: "student.view",
     },
   ].filter((reminder) => can(reminder.permission));
+  if(tab==="projectMetrics")return <div className="stack"><Button onClick={()=>setParams({tab:"overview"})}>返回运营总览</Button><ProjectMetrics/></div>;
   return (
     <div className="stack dashboard-page">
       <header className="dashboard-hero">
@@ -306,6 +308,7 @@ export default function Dashboard() {
           onChange={(v) => setParams({ tab: v })}
           items={[
             { value: "overview", label: "运营总览" },
+            {value:"projectMetrics",label:"项目月度指标"},
             ...(can("dashboard.utilization")
               ? [{ value: "utilization", label: "老师利用率" }]
               : []),
@@ -472,7 +475,7 @@ export default function Dashboard() {
                 <div className="dashboard-booking-overview">
                   <div className="dashboard-booking-ring">
                     <svg viewBox="0 0 200 200" aria-hidden="true">
-                      <circle cx="100" cy="100" r="84" fill="none" stroke="#f1f2f4" strokeWidth="14" />
+                      <circle cx="100" cy="100" r="84" fill="none" stroke="var(--ct-gray-100)" strokeWidth="14" />
                       {bookingStates.map((item, index) => {
                         const share = bookings.total ? item.count / bookings.total * 100 : 0;
                         const offset = bookings.total ? bookingStates.slice(0, index).reduce((sum, state) => sum + state.count, 0) / bookings.total * 100 : 0;

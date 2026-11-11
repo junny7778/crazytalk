@@ -28,6 +28,7 @@ import { useDemo } from "@crazytalk/shared/react";
 import {
   feedbackCategoryPath,
   feedbackCategoryDeletionError,
+  projectLabel, scopeLabel,
   permissionGroups,
   permissionLabels,
   type Account,
@@ -449,7 +450,7 @@ export default function Settings() {
                       .map((a) => (
                         <tr key={a.id}>
                           <td>
-                            <strong>{a.name}</strong>
+                            <strong>{a.name}</strong><small>{[a.team,a.group].filter(Boolean).join(" / ") || (a.roleId==="ops" ? "归属待补录" : "")}</small>
                           </td>
                           <td>
                             {a.phone.slice(0, 3)}****{a.phone.slice(-4)}
@@ -459,7 +460,7 @@ export default function Settings() {
                             <small>
                               {a.scope === "全部"
                                 ? "全部数据"
-                                : `${a.scope} 项目`}
+                                : scopeLabel(data.catalog, a.scope)}
                             </small>
                           </td>
                           <td>
@@ -874,7 +875,7 @@ export default function Settings() {
                             <td>
                               <strong>{c.name}</strong>
                             </td>
-                            <td>{c.type}</td>
+                            <td>{c.type}{c.type === "项目" && <small className="muted"> · {data.catalog.find(channel => channel.id === c.parentId)?.name || "渠道待补录"} · {c.monthlyLessons ? `每月 ${c.monthlyLessons} 节` : "月目标待补录"}</small>}</td>
                             <td>{c.detail || "—"}</td>
                             <td>
                               <Badge tone={c.enabled ? "success" : "neutral"}>
@@ -1261,6 +1262,14 @@ export default function Settings() {
                 ))}
               </Select>
             </Field>
+            <Field label="所属队伍"><Select value={account.team || ""} onValueChange={team => setAccount({...account, team, group:""})}>
+              <option value="">待分配</option>{["A队","B队"].map(t => <option key={t}>{t}</option>)}
+            </Select></Field>
+            <Field label="队内组别"><Select disabled={!account.team} value={account.group || ""} onValueChange={group=>setAccount({...account,group})}>
+              <option value="">待分配</option>{Array.from(new Set([...(account.team==="A队"?["一组","二组"]:["一组"]),...data.accounts.filter(a=>a.team===account.team && a.group).map(a=>a.group!),...(account.group?[account.group]:[])])).map(g=><option key={g}>{g}</option>)}
+            </Select></Field>
+            {account.team && <details><summary>填写其他组名</summary><Field label="组名"><input value={account.group || ""} onChange={e=>setAccount({...account,group:e.target.value})}/></Field></details>}
+
             <Field label="数据范围">
               <Select
                 value={account.scope}
@@ -1268,9 +1277,10 @@ export default function Settings() {
                   setAccount({ ...account, scope: value })
                 }
               >
-                {["全部", "K12", "14", "乐说", "本人负责"].map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
+                {Array.from(new Set(["全部", "本人负责", "本组", "本队", account.scope])).map(s =>
+                  <option key={s} value={s}>{scopeLabel(data.catalog, s)}</option>)}
+                {data.catalog.filter(c => c.type === "项目" && c.enabled && c.parentId && account.scope !== "project:" + c.id).map(p =>
+                  <option key={p.id} value={"project:" + p.id}>{projectLabel(data.catalog, p)}</option>)}
               </Select>
             </Field>
             <label className="select-row">
@@ -1568,8 +1578,10 @@ export default function Settings() {
             {tab === "org" && (
               <Field label="类型">
                 <Select
+                  disabled={!!savedEntry}
                   value={entry.type}
                   onValueChange={(value) => {
+                    if (savedEntry) return;
                     if (value === "项目" || value === "渠道")
                       setEntry({ ...entry, type: value });
                   }}
@@ -1579,6 +1591,13 @@ export default function Settings() {
                 </Select>
               </Field>
             )}
+            {entry.type === "项目" && <>
+              <Field label="所属渠道" required><Select value={entry.parentId || ""} onValueChange={parentId => setEntry({...entry, parentId})}>
+                <option value="">请选择渠道</option>
+                {data.catalog.filter(c => c.type === "渠道" && c.enabled).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select></Field>
+              <Field label="月应上课数" required><input type="number" min={1} step={1} value={entry.monthlyLessons ?? ""} onChange={e => setEntry({...entry, monthlyLessons: e.target.value ? Number(e.target.value) : undefined})}/></Field>
+            </>}
             {entry.type === "反馈分类" && (
               <div className="settings-category-context">
                 <small>上级分类</small>

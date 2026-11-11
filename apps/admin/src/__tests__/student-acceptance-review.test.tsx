@@ -40,6 +40,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
     sheet.eachRow((row, rowNo) => {
       if (rowNo < 3 || !row.getCell(6).text.trim()) return;
       expected.push(Array.from({ length: 27 }, (_, index) => {
+        if(index===4)return ""; // 新模板中的学员 ID 在首次导入时留空分配。
         const cell = row.getCell(index + 1);
         if (cell.value instanceof Date) return cell.value.toISOString().slice(0, 10);
         if (typeof cell.value === "number" && [2, 14].includes(index)) {
@@ -50,6 +51,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
       }));
     });
     expect(actual).toEqual(expected);
+    expect(result.rows[0].groupName).toBe(sheet.getRow(3).getCell(5).text.trim());
     expect(result.rows).toHaveLength(55);
     expect(result.skipped).toBe(2);
     expect(result.rows.every(row => row.monthlyRecords[0].month === "7月（原表，年份未注明）")).toBe(true);

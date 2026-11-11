@@ -57,6 +57,9 @@ export function migrateStudentIds(current: DemoState) {
     data.events,
   ])
     for (const record of records) record.studentId = remap(record.studentId);
+  for(const account of data.classInAccounts || [])account.studentIds=account.studentIds.map(remap);
+  for(const order of data.orders || [])order.studentIds=order.studentIds.map(remap);
+  for(const lock of data.slotLocks || [])lock.studentId=remap(lock.studentId);
   for (const referral of data.referrals)
     referral.referrerStudentId = remap(referral.referrerStudentId);
   for (const task of data.tasks)
@@ -83,6 +86,7 @@ export function resolveStudentCommand(
   if ("referrerStudentId" in next)
     next.referrerStudentId = resolveStudentId(data, next.referrerStudentId);
   if (
+    next.type === "survey.issue" || next.type==="student.bindClassIn" ||
     next.type === "student.details.update" ||
     next.type === "student.history.update" ||
     next.type === "student.profile" ||

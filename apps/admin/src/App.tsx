@@ -99,7 +99,7 @@ function Loading() {
   );
 }
 export default function App() {
-  const { data, can, roleId, setRole, preview, reset, scope } = useDemo();
+  const { data, can, roleId, accountId, setRole, preview, reset, scope } = useDemo();
   const navigate = useNavigate();
   const location = useLocation();
   const isSettings = location.pathname === "/settings";
@@ -350,7 +350,7 @@ export default function App() {
                 <Settings size={18} />
               </button>
             )}
-            {passwordOpen && <AccountPasswordModal id={data.accounts.find(account => account.name === "Rita")?.id || "u2"} name="Rita" personal onClose={() => setPasswordOpen(false)} />}
+            {passwordOpen && <AccountPasswordModal id={accountId || "u2"} name={data.accounts.find(a => a.id === accountId)?.name || "Rita"} personal onClose={() => setPasswordOpen(false)} />}
             <div className="relative" ref={userMenuRef}>
               <button
                 aria-expanded={userMenu}
@@ -361,7 +361,7 @@ export default function App() {
                 <span>
                   {preview
                     ? data.roles.find((r) => r.id === roleId)?.name
-                    : "Rita"}
+                    : data.accounts.find(a => a.id === accountId)?.name || "Rita"}
                   <small>{preview ? "角色预览" : "教务运营"}</small>
                 </span>
                 <ChevronDown size={12} />
@@ -386,6 +386,11 @@ export default function App() {
                       {roleId === r.id && <Check size={14} />}
                     </button>
                   ))}
+                  <small>切换团队账号</small>
+                  {data.accounts.filter(a => a.enabled).map(a => <button key={a.id} onClick={() => {
+                    setRole(a.roleId, false, a.id); setUserMenu(false);
+                    navigate(nav.find(n => data.roles.find(r => r.id === a.roleId)?.permissions.includes(n.permission))?.path || "/");
+                  }}>{a.name} · {a.scope}</button>)}
                   <hr />
                   <button
                     onClick={() => {
@@ -598,6 +603,10 @@ export default function App() {
         width={420}
       >
         <div className="stack">
+          {data.tasks.filter(t=>t.sourceType==="teacher" && t.status==="待处理" && (roleId==="admin" || !accountId || t.owner===data.accounts.find(a=>a.id===accountId)?.name)).map(t=><div className="inset" key={t.id}>
+            <strong>{t.title}</strong><p>{t.owner} · {t.note}</p>
+            <Button size="sm" onClick={()=>{navigate("/lessons?student="+encodeURIComponent(t.studentId));setNotifications(false);}}>查看受影响课程</Button>
+          </div>)}
           {data.lessons.some(hasSyncIssue) && (
             <div className="inset">
               <strong>课程同步需要处理</strong>

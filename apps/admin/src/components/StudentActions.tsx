@@ -62,12 +62,15 @@ export function StudentActionModal({
   const toast = useToast();
   const navigate = useNavigate();
   const isCredit = action === "credit" || action === "compensate";
-  const [units, setUnits] = useState(24);
+  const [stars,setStars]=useState(0),[visitStage,setVisitStage]=useState("首三节"),[visitEvidence,setVisitEvidence]=useState("");
+  const [units, setUnits] = useState(72);
+  const [members,setMembers] = useState<string[]>([]);
+  const [benefitOrder,setBenefitOrder]=useState("");
+  const orderKey = useRef("");
+
   const [kind, setKind] = useState("续费");
   const [businessDate, setBusinessDate] = useState(DEMO_TODAY);
-  const [amount, setAmount] = useState("");
   const [feedbackId, setFeedbackId] = useState("");
-  const [referralId, setReferralId] = useState("");
   const [referrerId, setReferrerId] = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(addDays(DEMO_TODAY, 2));
@@ -98,10 +101,11 @@ export function StudentActionModal({
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   useEffect(() => {
     setError("");
-    setUnits(24);
+    setBenefitOrder("");setStars(0);setVisitEvidence("");setVisitStage("首三节");
+    setUnits(action === "compensate" ? 1 : 72);
+    setMembers([student.id]); orderKey.current=crypto.randomUUID();
     setNote("");
     setAck(false);
-    setAmount("");
     const nextFeedbackId = data.feedback.some(
       (item) => item.id === initialFeedbackId && item.studentId === student.id,
     )
@@ -109,7 +113,6 @@ export function StudentActionModal({
       : "";
     const nextKind = action === "compensate" ? "补偿" : "续费";
     setFeedbackId(nextFeedbackId);
-    setReferralId("");
     setKind(nextKind);
     setReferrerId("");
     setBusinessDate(DEMO_TODAY);
@@ -130,12 +133,11 @@ export function StudentActionModal({
     setTime(nextTime);
     setTeacher(nextTeacher);
     initialValues.current = JSON.stringify({
-      units: 24,
+      members:[student.id], stars:0,visitStage:"首三节",visitEvidence:"",
+      units: action === "compensate" ? 1 : 72,
       kind: nextKind,
       businessDate: DEMO_TODAY,
-      amount: "",
       feedbackId: nextFeedbackId,
-      referralId: "",
       referrerId: "",
       note: "",
       date: nextDate,
@@ -197,18 +199,14 @@ export function StudentActionModal({
     }
   }
   function requestClose() {
-    if (action === "credit") {
-      onClose();
-      return;
-    }
+    if (action === "credit") {onClose();return;}
     const changed =
       JSON.stringify({
+        members, stars,visitStage,visitEvidence,
         units,
         kind,
         businessDate,
-        amount,
         feedbackId,
-        referralId,
         referrerId,
         note,
         date,
@@ -251,16 +249,20 @@ export function StudentActionModal({
       switch (action) {
         case "credit":
         case "compensate":
+          if (["新购","续费","充值"].includes(kind)) {
+            if (units !== 72 && units !== 144) throw new Error("请选择 72 或 144 节套餐");
+            cmd = {type:"order.buy",id:orderKey.current,studentId:student.id,studentIds:members,units,date:businessDate,kind,note};
+            break;
+          }
           cmd = {
             type: "credit.add",
+            orderId:benefitOrder || undefined,
             studentId: student.id,
             units,
             kind,
             note,
             date: businessDate,
-            ...(amount !== "" ? { amount: Number(amount) } : {}),
             ...(feedbackId ? { feedbackId } : {}),
-            ...(referralId ? { referralId } : {}),
           };
           break;
         case "referral":
@@ -276,7 +278,7 @@ export function StudentActionModal({
         case "edit":
           return;
         case "visit":
-          cmd = { type: "service.add", studentId: student.id, content: note };
+          cmd = { type: "service.add", studentId: student.id, content: note,stars,stage:visitStage,evidence:visitEvidence };
           break;
         case "reschedule":
           if (!ack) throw new Error("请确认已与家长和老师沟通本次调整");
@@ -324,7 +326,7 @@ export function StudentActionModal({
   }
   if (action === "edit")
     return <StudentProfileEditor student={student} onClose={onClose} />;
-  if (isCredit && !student.balanceKnown)
+  if (isCredit && ["补偿","赠送"].includes(kind) && !student.balanceKnown && !data.orders?.some(o=>o.studentIds.includes(student.id)))
     return (
       <Modal
         open
@@ -406,47 +408,19 @@ export function StudentActionModal({
                     key={t}
                     size="sm"
                     variant={kind === t ? "primary" : "secondary"}
-                    onClick={() => setKind(t)}
+                    onClick={() => {setKind(t); setUnits(["补偿","赠送"].includes(t)?1:72);}}
                   >
                     {t}
                   </Button>
                 ))}
               </div>
             </Field>
-            <Field
-              label="课时数"
-              required
-              hint={
-                student.balanceKnown
-                  ? `登记后剩余 ${student.balance + units} 课时。按已核实的课时口径登记，不自动折算分钟。`
-                  : "请先在学员档案核实并录入剩余课时"
-              }
-            >
-              <input
-                aria-label="课时数"
-                type="number"
-                value={units}
-                min="0"
-                step="any"
-                onChange={(e) => setUnits(Number(e.target.value))}
-              />
-              <div className="row">
-                {[12, 24, 48].map((n) => (
-                  <Button size="xs" key={n} onClick={() => setUnits(n)}>
-                    {n} 课时
-                  </Button>
-                ))}
-              </div>
-            </Field>
-            <Field label="充值金额" hint="选填，仅登记业务记录，不执行收款。">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-              />
-            </Field>
+            {["新购","续费","充值"].includes(kind) ? <>
+              <Field label="课时套餐"><Select value={String(units)} onValueChange={value => setUnits(Number(value))}><option value="72">72 课时</option><option value="144">144 课时</option></Select></Field>
+              <fieldset><legend>共用本订单余额的学员</legend>{data.students.filter(s=>s.status!=="退费").map(s=><label key={s.id} className="select-row"><input type="checkbox" checked={members.includes(s.id)} disabled={s.id===student.id} onChange={e=>setMembers(e.target.checked?[...members,s.id]:members.filter(id=>id!==s.id))}/>{s.name} · {s.id}</label>)}</fieldset>
+            </> : <Field label="课时数" required><input aria-label="课时数" type="number" min="0" step="any" value={units} onChange={e=>setUnits(Number(e.target.value))}/></Field>}
+            {["补偿","赠送"].includes(kind) && !!data.orders?.some(o=>o.studentIds.includes(student.id)) && <Field label="课时入账归属"><Select value={benefitOrder} onValueChange={setBenefitOrder}>
+              <option value="">学员个人余额</option>{data.orders.filter(o=>o.studentIds.includes(student.id)).map(o=><option key={o.id} value={o.id}>{o.date} · {o.units} 节套餐 · {o.id.slice(0,8)}</option>)}</Select></Field>}
             {kind === "补偿" && (
               <Field
                 label="关联反馈"
@@ -468,37 +442,7 @@ export function StudentActionModal({
                 </Select>
               </Field>
             )}
-            <Field
-              label="关联转介绍"
-              hint="选填，仅关联已有关系，不自动计算或发放奖励。"
-            >
-              <Select
-                aria-label="关联转介绍"
-                value={referralId}
-                onValueChange={setReferralId}
-              >
-                <option value="">不关联转介绍</option>
-                {data.referrals
-                  .filter(
-                    (item) =>
-                      item.studentId === student.id ||
-                      item.referrerStudentId === student.id,
-                  )
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {data.students.find(
-                        (entry) => entry.id === item.referrerStudentId,
-                      )?.name || "介绍人"}{" "}
-                      介绍{" "}
-                      {data.students.find(
-                        (entry) => entry.id === item.studentId,
-                      )?.name || "学员"}{" "}
-                      · {item.date}
-                    </option>
-                  ))}
-              </Select>
-            </Field>
-            {student.balance < 0 && (
+            {student.balance < 0 && ["补偿","赠送"].includes(kind) && (
               <div className="notice">
                 会先抵扣欠的 {Math.abs(student.balance)} 课时。
               </div>
@@ -713,6 +657,11 @@ export function StudentActionModal({
             固定课需符合新老师的常规时间；临时课超出常规时间时，需与老师确认。
           </small>
         )}
+        {action==="visit" && <>
+          <Field label="回访节点"><Select value={visitStage} onValueChange={setVisitStage}>{["首三节","首月","月度跟进","换师后三节","续费跟进"].map(s=><option key={s}>{s}</option>)}</Select></Field>
+          <Field label="星级评价" required><Select value={String(stars)} onValueChange={v=>setStars(Number(v))}><option value="0">请选择星级</option>{[1,2,3,4,5].map(n=><option key={n} value={String(n)}>{n} 星</option>)}</Select></Field>
+          {[1,2,5].includes(stars) && <Field label="反馈截图"><input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>setVisitEvidence(String(r.result));r.readAsDataURL(f);}}}/></Field>}
+        </>}
         {
           <Field
             label={action === "visit" ? "回访内容" : "备注 / 原因"}

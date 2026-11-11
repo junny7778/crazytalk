@@ -117,7 +117,7 @@ it("student overview explains card details and preserves navigation", async () =
   fireEvent.click(balance);
   expect(
     screen
-      .getByRole("tab", { name: "课时、续费与转介绍" })
+      .getByRole("tab", { name: "课时与续费" })
       .getAttribute("aria-selected"),
   ).toBe("true");
 });
@@ -325,7 +325,7 @@ it.each(["停课", "结课", "退费"] as const)(
     );
   },
 );
-it("independent: stopped profile keeps five tabs, offers resume and human readable history form", async () => {
+it("independent: stopped profile keeps four tabs, offers resume and human readable history form", async () => {
   const s = demoRepository.read().students[0];
   demoRepository.execute({
     type: "student.lifecycle",
@@ -335,7 +335,7 @@ it("independent: stopped profile keeps five tabs, offers resume and human readab
   });
   mount(<App />, `/students/${s.id}`);
   expect(await screen.findByRole("button", { name: "办理复课" })).toBeTruthy();
-  expect(screen.getAllByRole("tab")).toHaveLength(5);
+  expect(screen.getAllByRole("tab")).toHaveLength(4);
   expect(screen.queryByRole("button", { name: "历史资料" })).toBeNull();
   fireEvent.click(screen.getByText("更多操作"));
   fireEvent.click(screen.getByRole("button", { name: "补录／更正历史资料" }));

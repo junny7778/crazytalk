@@ -75,14 +75,7 @@ export function MonthSelect({
   return (
     <label className="teacher-month-picker">
       <CalendarDays size={18} />
-      <Select
-        aria-label={t("month")}
-        value={value}
-        onValueChange={(value) => onChange(value)}
-      >
-        <option value="2026-10">{t("october")}</option>
-        <option value="2026-09">{t("september")}</option>
-      </Select>
+      <input type="month" aria-label={t("month")} value={value} onChange={e=>{if(e.target.value)onChange(e.target.value);}}/>
     </label>
   );
 }
@@ -293,6 +286,7 @@ export function CloseLesson({
       level: stored?.level || existing?.suggestedLevel || "",
     };
   });
+  const [screenshot,setScreenshot]=useState(existing?.screenshot || "");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [suggest, setSuggest] = useState(!!draft.level);
@@ -316,23 +310,15 @@ export function CloseLesson({
   };
   const expired = existing && existing.date < addDays(DEMO_TODAY, -1);
   function submit() {
-    if (
-      !draft.material.trim() ||
-      !draft.page ||
-      !Number.isInteger(Number(draft.page)) ||
-      Number(draft.page) < 1
-    ) {
-      setError(t("required"));
-      return;
-    }
+    if(!screenshot){setError(language==="en"?"Upload the ending page screenshot":"请上传本节教材结束页截图");return;}
     onSave({
       lessonId: lesson.id,
       studentId: lesson.studentId,
       teacherId: lesson.teacherId,
       date: DEMO_TODAY,
-      material: draft.material.trim(),
+      screenshot,material: draft.material.trim() || lesson.material || "课堂教材",
       from: student?.unit || "",
-      to: `${draft.unit ? `Unit ${draft.unit} / ` : ""}P${draft.page}`,
+      to: !draft.page ? (language==="en"?"See screenshot":"见结束页截图") : `${draft.unit ? `Unit ${draft.unit} / ` : ""}P${draft.page}`,
       rating: draft.rating,
       comment: draft.comment,
       suggestedLevel: draft.level,
@@ -351,6 +337,10 @@ export function CloseLesson({
         </div>
       </div>
       <div className="teacher-card teacher-form">
+        <Field label={language==="en"?"Ending page screenshot":"教材结束页截图"} required><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{
+          const file=e.target.files?.[0];if(!file)return;
+          const reader=new FileReader();reader.onload=()=>{setScreenshot(String(reader.result));setError("");};reader.onerror=()=>setError(language==="en"?"Upload failed":"读取失败");reader.readAsDataURL(file);
+        }}/></Field>{screenshot && <img src={screenshot} alt={language==="en"?"Ending page":"结束页"} width={180}/>}
         <div className="teacher-facts">
           <span>{t("material")}</span>
           <Field label={t("material")} required>
@@ -664,7 +654,7 @@ export function Availability({
                           : "warning"
                     }
                   >
-                    {leave.status === "已通过"
+                    {leave.status === "已登记" ? (language==="en"?"Recorded":"已登记") : leave.status === "已通过"
                       ? t("approved")
                       : leave.status === "已驳回"
                         ? t("rejected")

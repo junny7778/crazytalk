@@ -9,6 +9,7 @@ export function canAutoSettleLesson(lesson: Lesson, now: number): boolean {
   return (
     lesson.status === "待确认" &&
     lesson.attendance === "正常" &&
+    !lesson.requiresScreenshot &&
     !lesson.autoSettlementPaused &&
     !lesson.deducted &&
     end <= now &&
@@ -26,7 +27,7 @@ export function autoSettleLessons(
     .filter(
       (l) =>
         canAutoSettleLesson(l, now) &&
-        input.students.some((s) => s.id === l.studentId && s.balanceKnown),
+        (l.orderId ? input.orders?.some(o => o.id === l.orderId) : input.students.some((s) => s.id === l.studentId && s.balanceKnown)),
     )
     .map((l) => l.id);
   if (!ids.length) return input;

@@ -1083,11 +1083,11 @@ th:last-child {
   cursor: pointer;
 }
 .data-explanation-trigger:hover {
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 .data-explanation-trigger:focus-visible,
 .data-explanation-close:focus-visible {
-  outline: 2px solid var(--ct-brand-300);
+  outline: 2px solid var(--ct-brand-200);
   outline-offset: 3px;
   border-radius: 4px;
 }

@@ -609,7 +609,7 @@ export default function Schedule() {
               const leave = data.leaves.some(
                 (l) =>
                   l.teacherId === col.teacher.id &&
-                  l.status === "已通过" &&
+                  ["已通过","已登记"].includes(l.status) &&
                   overlapsLeave(col.date, time, duration, l.start, l.end),
               );
               const open = isRegularTime(col.teacher, col.date, time, duration);

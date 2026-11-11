@@ -9,7 +9,7 @@ export const studentWorkbookHeaders = [
   "订单状态",
   "买单日期",
   "序号",
-  "学生群名",
+  "学员ID",
   "学生名字",
   "手机号码",
   "总课时",
@@ -37,7 +37,7 @@ export const originalStudentMonth = "7月（原表，年份未注明）";
 type WorkbookProfile = Pick<StudentProfileInput, keyof StudentProfileInput>;
 
 export function studentWorkbookRow(
-  student: WorkbookProfile,
+  student: WorkbookProfile & {id?:string},
   data?: DemoState,
 ): (string | number)[] {
   const month = student.monthlyRecords.find(
@@ -48,7 +48,7 @@ export function studentWorkbookRow(
     student.orderStatus,
     student.purchaseDate,
     student.sourceSequence,
-    student.groupName,
+    student.id || student.importStudentId || "",
     student.name,
     student.phone,
     student.totalUnits ?? "",
@@ -158,6 +158,8 @@ export async function readStudentWorkbook(
     }
     return -1;
   });
+  const legacyGroupColumn = first.values && Array.from({length:sheet.columnCount}, (_,i)=>i+1).find(col => first.getCell(col).text.trim() === "学生群名");
+  if (indexes[4] < 0 && legacyGroupColumn) indexes[4] = legacyGroupColumn;
   const missing = studentWorkbookHeaders.filter((_, i) => indexes[i] < 0);
   if (missing.length)
     throw new Error(
@@ -184,7 +186,8 @@ export async function readStudentWorkbook(
     profile.orderStatus = text(v[1]);
     profile.purchaseDate = date(v[2], !!book.properties.date1904);
     profile.sourceSequence = text(v[3]);
-    profile.groupName = text(v[4]);
+    profile.importStudentId = legacyGroupColumn === indexes[4] ? "" : text(v[4]);
+    if (legacyGroupColumn === indexes[4]) profile.groupName = text(v[4]);
     profile.name = text(v[5]);
     profile.phone = text(v[6]);
     profile.totalUnits = number(v[7], "总课时", line);

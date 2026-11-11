@@ -1309,7 +1309,7 @@ export default function Feedback() {
                             onClick={(event) => event.stopPropagation()}
                             aria-label={`查看 ${student(item.studentId)?.name} 的反馈`}
                           >
-                            <ArrowRight size={16} />
+                            查看处理 <ArrowRight size={16} />
                           </Link>
                         </td>
                       </tr>

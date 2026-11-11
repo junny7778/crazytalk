@@ -844,3 +844,16 @@ it("个人菜单修改密码校验当前密码并更新演示会话", async () =
  const record=demoRepository.read().accounts.find(a=>a.name==="Rita")!;
  await changeDemoPassword(record.id,"Personal123","Demo12345");
 });
+
+it("项目编辑后列表和已保存资料均显示所属渠道和月应上课数", async () => {
+  mount("/settings?tab=org");
+  const row = (await screen.findByText("K12", {exact:true})).closest("tr")!;
+  fireEvent.click(within(row).getByRole("button", {name:"编辑"}));
+  const dialog = await screen.findByRole("dialog", {name:"编辑项目"});
+  fireEvent.click(within(dialog).getByRole("combobox", {name:/所属渠道/}));
+  fireEvent.click(screen.getByRole("option", {name:"许老师"}));
+  fireEvent.change(within(dialog).getByRole("spinbutton", {name:/月应上课数/}), {target:{value:"12"}});
+  fireEvent.click(within(dialog).getByRole("button",{name:"保存"}));
+  await screen.findByText(/许老师 · 每月 12 节/);
+  expect(demoRepository.read().catalog.find(p => p.id === "pr0")).toMatchObject({parentId:"ch0",monthlyLessons:12});
+});

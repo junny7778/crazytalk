@@ -64,7 +64,7 @@ afterEach(() => {
 });
 
 describe("学员课程入口与人工确认", () => {
-  it("老师只填写教材及页码即可提交单节记录，不强制评分评语或联动扣课", () => {
+  it("老师上传截图后可以提交单节记录，历史已处理课不重复消课", async () => {
     const data = demoRepository.read();
     const student = data.students[0];
     const lesson = data.lessons
@@ -95,8 +95,10 @@ describe("学员课程入口与人工确认", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /提交结课/ }));
-    expect(screen.getByRole("alert").textContent).toMatch(/教材.*页码/);
+    expect(screen.getByRole("alert").textContent).toMatch(/截图/);
     expect(save).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(/教材结束页截图/),{target:{files:[new File(["data"],"page.png",{type:"image/png"})]}});
+    await screen.findByRole("img",{name:"结束页"});
     fireEvent.change(screen.getByRole("textbox", { name: /教材/ }), {
       target: { value: "新版教材" },
     });
@@ -111,12 +113,12 @@ describe("学员课程入口与人工确认", () => {
     ).toMatchObject({ material: "新版教材", rating: 0, comment: "" });
     expect(after.students[0]).toMatchObject({
       material: "新版教材",
-      balance: beforeBalance,
+      balance: beforeBalance - (lesson.deducted ? 0 : lesson.confirmedUnits ?? 1),
       status: beforeStatus,
     });
     expect(after.students[0].unit).toMatch(/P12$/);
     expect(after.lessons.find((item) => item.id === lesson.id)?.deducted).toBe(
-      lesson.deducted,
+      true,
     );
   });
   it("从学员详情筛选课程时，不显示其他学生的课程", async () => {

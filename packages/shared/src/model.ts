@@ -24,8 +24,11 @@ export const scheduleIntentSchema = z
     path: ["windows"],
   });
 export type ScheduleIntent = z.infer<typeof scheduleIntentSchema>;
+const surveyAnswers = z.object({age:z.number().int().min(1).max(120),level:z.enum(["L0","L1","L2","L3","L4","待评估"]),personality:z.string(),interests:z.string(),experience:z.string(),material:z.string(),times:z.string(),needs:z.string()});
+export const studentSurveyAnswers = surveyAnswers;
 export const studentSchema = z.object({
   id: z.string(),
+  surveySecret:z.string().optional(), surveyToken:z.string().optional(),surveySubmittedAt:z.string().optional(), surveyOriginal:surveyAnswers.optional(), interests:z.string().optional(),
   code: z.string(),
   name: z.string(),
   chineseName: z.string(),
@@ -101,7 +104,7 @@ export const studentSchema = z.object({
 });
 export const studentProfileSchema = studentSchema
   .omit({
-    id: true,
+    id: true, surveySecret:true,surveyToken:true,surveySubmittedAt:true,surveyOriginal:true,
     scheduleIntent: true,
     balance: true,
     createdAt: true,
@@ -111,6 +114,7 @@ export const studentProfileSchema = studentSchema
     serviceStopResults: true,
   })
   .extend({
+    importStudentId: z.string().optional(),
     code: z.string().trim().default(""),
     name: z.string().trim().min(1, "请填写学员姓名"),
     phone: z
@@ -127,6 +131,8 @@ export const studentEditableSchema = studentProfileSchema.pick({
   age: true,
   ageText: true,
   gender: true,
+  level: true, interests:true,
+  project: true,
   channel: true,
   owner: true,
   personality: true,
@@ -230,11 +236,13 @@ export const teacherSchema = z.preprocess(
     id: z.string(),
     name: z.string(),
     so: z.string(),
+    tmAccountId: z.string().optional(),
     accent: z.string(),
     level: z.string(),
     categories: z.array(z.string()),
     status: z.enum(["在职", "培训中", "请假中", "已离职"]),
     trained: z.boolean(),
+    photos:z.array(z.string()).optional(), introVideo:z.string().optional(),
     photo: z.string().optional(),
     startDate: z.string().optional(),
     certificates: z.string().optional(),
@@ -260,6 +268,11 @@ export const teacherSchema = z.preprocess(
   }),
 );
 export const lessonSchema = z.object({
+  cancellation:z.object({kind:z.string(),at:z.string(),responsibility:z.string(),waived:z.boolean()}).optional(),
+  requiresScreenshot:z.boolean().optional(),
+  incident:z.object({minutes:z.number().nonnegative().optional(),reason:z.string(),note:z.string(),at:z.string(),operator:z.string()}).optional(),
+  absenceNotice:z.enum(["待发送","已送达","发送失败"]).optional(),noticeError:z.string().optional(),
+  orderId: z.string().optional(),
   id: z.string(),
   studentId: z.string(),
   teacherId: z.string(),
@@ -408,6 +421,7 @@ export const recordRelationTypeSchema = z.enum([
   "student",
 ]);
 export const creditSchema = z.object({
+  orderId: z.string().optional(),
   id: z.string(),
   studentId: z.string(),
   date: z.string(),
@@ -451,6 +465,7 @@ export const serviceTaskSchema = z.object({
   lessonIds: z.array(z.string()).optional(),
 });
 export const eventSchema = z.object({
+  visit:z.object({stars:z.number().int().min(1).max(5),stage:z.string(),text:z.string(),evidence:z.string()}).optional(),
   serviceStopResults: studentSchema.shape.serviceStopResults.optional(),
   id: z.string(),
   studentId: z.string(),
@@ -524,6 +539,7 @@ export const payrollSchema = z.object({
     .optional(),
 });
 export const reportSchema = z.object({
+  screenshot:z.string().regex(/^data:image\/(png|jpeg|webp);base64,/).optional(),
   id: z.string(),
   lessonId: z.string(),
   studentId: z.string(),
@@ -549,12 +565,16 @@ export const accountSchema = z.object({
   name: z.string(),
   phone: z.string(),
   roleId: z.string(),
+  group: z.string().optional(),
+  team: z.string().optional(),
   scope: z.string(),
   enabled: z.boolean(),
 });
 export const catalogSchema = z.object({
   id: z.string(),
   parentId: z.string().optional(),
+  targetHistory: z.array(z.object({ at: z.string(), lessons: z.number().int().positive(), operator: z.string() })).optional(),
+  monthlyLessons: z.number().int().positive().optional(),
   usedInFeedback: z.boolean().optional(),
   type: z.enum(["教材", "反馈分类", "SO", "下拉选项", "项目", "渠道"]),
   name: z.string(),
@@ -567,12 +587,26 @@ export const leaveSchema = z.object({
   start: z.string(),
   end: z.string(),
   reason: z.string(),
-  status: z.enum(["待审批", "已通过", "已驳回"]),
+  status: z.enum(["已登记","待审批", "已通过", "已驳回"]),
 });
+export const payTermsSchema=z.object({
+  teacherId:z.string(),month:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),so:z.string().min(1),mode:z.enum(["OP","NP"]), hourly:z.number().positive(),soHourly:z.number().nonnegative(), paidMinutes:z.number().positive(),
+  praise:z.number().nonnegative().nullable(),complaint:z.number().nonnegative().nullable(),fullAttendance:z.number().nonnegative().nullable(),renewal:z.number().nonnegative().nullable(),
+  confirmed:z.array(z.object({date:z.string(),time:z.string(),minutes:z.number().positive()})),
+  teacherAdjustment:z.number(),soAdjustment:z.number(),adjustmentNote:z.string()
+});
+export type PayTerms=z.infer<typeof payTermsSchema>;
+const payLine=z.object({source:z.string(),label:z.string(),teacher:z.number().nullable(),office:z.number().nullable()});
 export const stateSchema = z.object({
   version: z.literal(1),
   revision: z.number(),
   studentIdAliases: z.record(z.string()).optional(),
+  classInAccounts: z.array(z.object({id:z.string(), phone:z.string(), uid:z.string(), studentIds:z.array(z.string())})).optional(),
+  orders: z.array(z.object({ id:z.string(), studentIds:z.array(z.string()), units:z.union([z.literal(72),z.literal(144)]), balance:z.number(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
+  slotLocks:z.array(z.object({studentId:z.string(),teacherId:z.string(),date:z.string(),time:z.string(),duration:z.number().positive(),operator:z.string(),expiresAt:z.string()})).optional(),
+  payTerms:z.array(payTermsSchema).optional(),
+  settlements:z.array(z.object({teacherId:z.string(),month:z.string(),so:z.string(),at:z.string(),lines:z.array(payLine)})).optional(),
+  importedBatches: z.array(z.string()).optional(),
   students: z.array(studentSchema),
   teachers: z.array(teacherSchema),
   lessons: z.array(lessonSchema),
@@ -600,8 +634,8 @@ export type Teacher = z.infer<typeof teacherSchema>;
 export type Lesson = z.infer<typeof lessonSchema>;
 export function canSubmitLessonReport(lesson: Lesson): boolean {
   return (
-    lesson.date <= DEMO_TODAY &&
-    ["待确认", "已完成", "缺席"].includes(lesson.status)
+    (lesson.date <= DEMO_TODAY && ["待确认", "已完成", "缺席"].includes(lesson.status))
+    || (!!lesson.requiresScreenshot && lesson.status==="未开始" && Date.parse(lesson.date+"T"+lesson.time+":00+08:00")+lesson.duration*60000<=Date.now())
   );
 }
 export type Feedback = z.infer<typeof feedbackSchema>;
@@ -676,9 +710,20 @@ export type Command = { operator?: string } & (
       studentId: string;
       intent: ScheduleIntent;
     }
+  | {type:"slot.lock";studentId:string;slots:{teacherId:string;date:string;time:string}[];duration:number;expiresAt:string}
+  | {type:"lesson.incident";minutes?:number;id:string;reason:string;note:string}
+  | {type:"lesson.notice";id:string;sent:boolean;error:string}
+  | {type:"pay.terms";terms:PayTerms}
+  | {type:"pay.freeze";teacherId:string;month:string}
+  | {type:"slot.release";studentId:string}
+  | {type:"survey.issue";id:string;token?:string;secret?:string}
+  | {type:"survey.submit";token:string;answers:Omit<z.infer<typeof surveyAnswers>,"level"> & {level:string}}
+  | { type: "order.buy"; id:string; studentId:string; studentIds:string[]; units:72|144; date:string; kind:string; note:string }
+  | { type: "student.bindClassIn"; id: string; phone: string; uid: string }
   | { type: "student.profile"; id: string; profile: StudentProfileInput }
   | {
       type: "student.import";
+      batchId?: string;
       students: StudentProfileInput[];
       mode: "skip" | "update";
     }
@@ -718,6 +763,7 @@ export type Command = { operator?: string } & (
     }
   | {
       type: "credit.add";
+      orderId?:string;
       studentId: string;
       units: number;
       kind: string;
@@ -739,7 +785,7 @@ export type Command = { operator?: string } & (
       type: "service.add";
       studentId: string;
       content: string;
-      satisfaction?: string;
+      satisfaction?: string; stars?:number; stage?:string; evidence?:string;
     }
   | {
       type: "lesson.schedule";
@@ -774,6 +820,7 @@ export type Command = { operator?: string } & (
     }
   | {
       type: "lesson.cancel";
+      kind?:string; cancelledAt?:string; waived?:boolean;
       id: string;
       reason: string;
       responsibility: "学员" | "老师" | "平台";

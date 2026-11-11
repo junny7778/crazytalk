@@ -130,7 +130,7 @@ export default function Teachers() {
   const [start, setStart] = useState(addDays(DEMO_TODAY, 1));
   const [end, setEnd] = useState(addDays(DEMO_TODAY, 7));
   const [reason, setReason] = useState("");
-  const [cancel, setCancel] = useState(false);
+
   const [confirmName, setConfirmName] = useState("");
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState<
@@ -399,8 +399,11 @@ export default function Teachers() {
                 )}
               </div>
             </div>
+            <div className="row wrap">{teacher.photos?.map((photo,i)=><img key={i} width={120} src={photo} alt={teacher.name+" 展示照片 "+(i+1)}/>)}{teacher.introVideo && <video width={240} controls src={teacher.introVideo}/>}</div>
             <dl className="teacher-profile-grid" aria-label="老师基本资料">
               <div>
+                <dt>负责 TM</dt><dd>{data.accounts.find(a => a.id === teacher.tmAccountId)?.name || "待分配"}</dd>
+              </div><div>
                 <dt>SO</dt>
                 <dd>{teacher.so}</dd>
               </div>
@@ -910,6 +913,10 @@ export default function Teachers() {
                       placeholder="输入老师姓名"
                     />
                   </Field>
+                  <Field label="负责 TM"><Select value={edit.tmAccountId || ""} onValueChange={tmAccountId => setEdit({...edit,tmAccountId})}>
+                    <option value="">待分配</option>
+                    {data.accounts.filter(a => a.enabled && a.roleId === "tm").map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
+                  </Select></Field>
                   <Field label="SO" required>
                     <Select
                       value={edit.so}
@@ -922,6 +929,21 @@ export default function Teachers() {
                         ))}
                     </Select>
                   </Field>
+                  <Field label="展示照片"><input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={async e=>{
+                    const files=Array.from(e.currentTarget.files || []);
+                    try {const images=await Promise.all(files.map(file=>new Promise<string>((resolve,reject)=>{
+                      if(!["image/png","image/jpeg","image/webp"].includes(file.type))return reject(new Error("请选择图片"));
+                      const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(file);
+                    })));setEdit(current=>current && ({...current,photos:[...(current.photos||[]),...images]}));}catch(error){setPhotoError(String(error));}
+                  }}/></Field>
+                  <div className="row wrap">{edit.photos?.map((photo,i)=><button key={i} aria-label={`移除展示照片 ${i+1}`} onClick={()=>setEdit({...edit,photos:edit.photos?.filter((_,j)=>j!==i)})}><img src={photo} alt={`展示照片 ${i+1}`} width={64}/></button>)}</div>
+                  <Field label="上传介绍视频"><input type="file" accept="video/mp4,video/webm" onChange={e=>{
+                    const file=e.target.files?.[0];if(!file)return;
+                    if(!["video/mp4","video/webm"].includes(file.type)){setPhotoError("请选择 MP4 或 WebM 视频");return;}
+                    const reader=new FileReader();reader.onload=()=>setEdit(current=>current && ({...current,introVideo:String(reader.result)}));reader.onerror=()=>setPhotoError("读取视频失败");reader.readAsDataURL(file);
+                  }}/></Field>
+                  {edit.introVideo?.startsWith("data:video") ? <div><video width={240} controls src={edit.introVideo}/><Button onClick={()=>setEdit({...edit,introVideo:""})}>移除介绍视频</Button></div> :
+                  <Field label="介绍视频链接"><input type="url" placeholder="https://" value={edit.introVideo || ""} onChange={e=>setEdit({...edit,introVideo:e.target.value})}/></Field>}
                   <Field label="照片">
                     <div className="teacher-photo-picker">
                       <div className="teacher-photo-upload">
@@ -1347,7 +1369,7 @@ export default function Teachers() {
                     start,
                     end,
                     reason,
-                    cancelLessons: cancel,
+                    cancelLessons: false,
                   },
                   () => setLeave(false),
                 )
@@ -1392,22 +1414,7 @@ export default function Teachers() {
               {new Set(affected.map((l) => l.studentId)).size} 位学员。
             </span>
           </div>
-          <label className="select-row">
-            <input
-              type="radio"
-              checked={!cancel}
-              onChange={() => setCancel(false)}
-            />
-            先保留课程，由负责人逐个调整
-          </label>
-          <label className="select-row">
-            <input
-              type="radio"
-              checked={cancel}
-              onChange={() => setCancel(true)}
-            />
-            全部取消，不扣学员课时
-          </label>
+          <p>登记后通知负责教务逐节跟进。</p>
         </div>
       </Modal>
       <Modal

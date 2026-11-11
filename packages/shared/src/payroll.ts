@@ -49,7 +49,7 @@ export function initializePayroll(data: DemoState) {
   for (const p of data.payroll) {
     if (p.status !== "待确认" && !p.breakdownSnapshot) {
       p.breakdownSnapshot = payrollBreakdown(data, p.id);
-    } else if (!p.opening) {
+    } else if (p.status === "待确认" && !p.opening) {
       p.opening = payrollBreakdown(data, p.id).opening;
     }
   }

@@ -37,7 +37,7 @@
 }
 .student-time-options summary {
   cursor: pointer;
-  color: var(--ct-gray-600);
+  color: var(--ct-gray-700);
 }
 .student-time-options .row {
   margin-top: 12px;

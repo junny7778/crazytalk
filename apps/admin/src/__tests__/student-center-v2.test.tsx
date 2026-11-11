@@ -67,7 +67,6 @@ describe("学员中心确认方案", () => {
       .filter(Boolean);
     expect(headers).toEqual([
       "学生名字",
-      "学生群名",
       "渠道",
       "订单状态",
       "买单日期",
@@ -94,7 +93,6 @@ describe("学员中心确认方案", () => {
         .filter(Boolean),
     ).toEqual([
       "学生名字",
-      "学生群名",
       "渠道",
       "订单状态",
       "买单日期",
@@ -128,44 +126,9 @@ describe("学员中心确认方案", () => {
       /学员编号|CEFR|学习目标/,
     );
   });
-  it("本地待办不填处理总结也可完成，刷新后保留完成人与时间", async () => {
-    mount("/students/s1?tab=tasks");
-    await screen.findByRole("heading", { name: "待办事项" });
-    fireEvent.click(screen.getByRole("button", { name: "新增待办" }));
-    change("待办事项", "本次验收待办");
-    change("待办负责人", "Rita");
-    fireEvent.click(screen.getByRole("button", { name: "登记待办" }));
-    const item = (await screen.findAllByText("本次验收待办", { exact: true }))
-      .find((item) => item.closest("article"))
-      ?.closest("article");
-    if (!item) throw new Error("没有找到待办");
-    fireEvent.click(within(item).getByRole("button", { name: "标记完成" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认完成" }));
-    await waitFor(() =>
-      expect(
-        demoRepository
-          .read()
-          .tasks.find((task) => task.title === "本次验收待办")?.status,
-      ).toBe("已完成"),
-    );
-    const saved = demoRepository
-      .read()
-      .tasks.find((task) => task.title === "本次验收待办");
-    expect(saved?.result).toBe("");
-    expect(saved?.completedAt).toBeTruthy();
-    expect(saved?.completedBy).toBeTruthy();
-    cleanup();
-    mount("/students/s1?tab=tasks");
-    fireEvent.click(await screen.findByRole("button", { name: /^已完成（/ }));
-    const restored = (
-      await screen.findAllByText("本次验收待办", { exact: true })
-    )
-      .find((item) => item.closest("article"))
-      ?.closest("article");
-    if (!restored) throw new Error("待办未保留");
-    expect(
-      within(restored).getByText("处理结果：已完成，未补充说明"),
-    ).toBeTruthy();
+  it("暂缓待办入口，旧链接返回学员概述",async()=>{
+    mount("/students/s1?tab=tasks");await screen.findByRole("tab",{name:"概述信息"});
+    expect(screen.queryByRole("tab",{name:"待办事项"})).toBeNull();
   });
   it("保留0和未知值，剩余课时未核实不冒充总课时或要求补编号", async () => {
     demoRepository.execute({
@@ -197,8 +160,8 @@ describe("学员中心确认方案", () => {
     await screen.findByRole("tab", { name: "概述信息" });
     expect(screen.getByText("0")).toBeTruthy();
     expect(screen.getAllByText("未填写").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("tab", { name: "课时、续费与转介绍" }));
+    fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
     expect(await screen.findByText("录入初始剩余课时")).toBeTruthy();
-    expect(screen.getByText("暂无转介绍关系")).toBeTruthy();
+    expect(screen.queryByText("暂无转介绍关系")).toBeNull();
   });
 });

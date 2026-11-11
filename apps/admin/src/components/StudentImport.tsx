@@ -39,14 +39,15 @@ export default function StudentImport({
         `第 ${index + 1} 条：${parsed.error.issues.map((issue) => issue.message).join("；")}`,
       );
     if (!row.name.trim()) errors.push(`第 ${index + 1} 条：请补全学生名字。`);
-    const identity = row.groupName.trim()
+    const identity = row.importStudentId !== undefined ? row.importStudentId : row.groupName.trim()
       ? `${row.groupName.trim()}\u0000${row.name.trim()}`
       : "";
     if (identity && identities.has(identity))
       errors.push(
-        `第 ${index + 1} 条：文件内学生名字与学生群名重复，请先核对。`,
+        `第 ${index + 1} 条：文件内学员标识重复，请先核对。`,
       );
     if (identity) identities.add(identity);
+    if (row.importStudentId && !data.students.some(s => s.id === row.importStudentId)) errors.push(`第 ${index+1} 条：学员 ID 不存在`);
     if (studentImportMatches(data.students, row).length > 1)
       errors.push(
         `第 ${index + 1} 条：匹配到多份档案，请先人工核对；不会自动覆盖。`,
@@ -65,7 +66,7 @@ export default function StudentImport({
   }
   function edit(
     index: number,
-    field: "groupName" | "name" | "phone",
+    field: "importStudentId" | "name" | "phone",
     value: string,
   ) {
     setRows((list) =>
@@ -97,14 +98,13 @@ export default function StudentImport({
       setLoading(false);
     }
   }
-  function submit() {
+  async function submit() {
     try {
-      act({ type: "student.import", students: rows, mode });
-      toast(
-        mode === "skip"
-          ? `已导入 ${rows.length - existing} 位学员，跳过 ${existing} 位已有学员`
-          : `已导入 ${rows.length - existing} 位学员，更新 ${existing} 位已有学员`,
-      );
+      const bytes = new TextEncoder().encode(JSON.stringify(rows));
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      const batchId = Array.from(new Uint8Array(hash), n => n.toString(16).padStart(2, "0")).join("");
+      const result = act({ type: "student.import", students: rows, mode, batchId });
+      toast(result.message);
       close();
     } catch (reason) {
       setError(
@@ -175,7 +175,7 @@ export default function StudentImport({
             <p>
               {filename} · 识别 {rows.length} 位学员
               {skipped > 0 ? `，跳过 ${skipped} 行仅有序号的空记录` : ""}
-              。可直接修正学生群名、名字和手机号，展开查看完整原表信息。
+              。可直接修正学员 ID、名字和手机号，展开查看完整原表信息。
             </p>
             <details>
               <summary>查看 27 列字段对应关系</summary>
@@ -210,8 +210,7 @@ export default function StudentImport({
               </Select>
             </Field>
             <p className="muted">
-              仅当非空学生群名与学生名字均完全相同时匹配已有档案；不从群名提取编号，不按姓名或手机号单独合并。
-              群名为空或已改名时会新增档案，请先人工核对疑似重复。更改订单状态请通过档案内服务操作处理。
+              更新已有档案需填写学员 ID。留空将分配新 ID；同一批次重复提交只登记一次。更改订单状态请通过档案内服务操作处理。
             </p>
             {warnings.length > 0 && (
               <details>
@@ -238,7 +237,7 @@ export default function StudentImport({
                 <thead>
                   <tr>
                     <th>原序号</th>
-                    <th>学生群名</th>
+                    <th>学员 ID（新增留空）</th>
                     <th>学员姓名</th>
                     <th>手机号</th>
                     <th>匹配结果</th>
@@ -251,10 +250,10 @@ export default function StudentImport({
                       <td>{row.sourceSequence || index + 1}</td>
                       <td>
                         <input
-                          aria-label={`第${index + 1}条学生群名`}
-                          value={row.groupName}
+                          aria-label={`第${index + 1}条学员ID`}
+                          value={row.importStudentId || ""}
                           onChange={(event) =>
-                            edit(index, "groupName", event.target.value)
+                            edit(index, "importStudentId", event.target.value)
                           }
                           style={{ width: 130 }}
                         />

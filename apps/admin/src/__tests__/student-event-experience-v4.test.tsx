@@ -171,7 +171,7 @@ describe("学员事件驱动档案体验", () => {
     expect(screen.queryByRole("button", { name: "换老师" })).toBeNull();
     expect(screen.getByRole("button", { name: "登记反馈" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "记录回访" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "课时、续费与转介绍" }));
+    fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
     expect(screen.getByRole("button", { name: "加课时" })).toBeTruthy();
   });
 
@@ -200,7 +200,7 @@ describe("学员事件驱动档案体验", () => {
       await screen.findByRole("heading", { name: learner.name, level: 1 }),
     ).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("新的停课说明");
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(screen.getByRole("button", { name: "办理复课" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "调课" })).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));

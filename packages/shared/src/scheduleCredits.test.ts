@@ -113,6 +113,27 @@ function creditsFixture() {
   return data;
 }
 describe("排课提交余额拦截", () => {
+  describe.each(["固定课", "临时课"] as const)("%s标准课时", (kind) => {
+    it.each([[25, 1], [50, 2]])("%i 分钟占用并结算 %i 课时", (duration, units) => {
+      const scheduled = transition(creditsFixture(), {
+        ...booking(1, duration),
+        kind,
+        confirmedTeacher: true,
+      }).data;
+      const lesson = scheduled.lessons[0];
+      expect(lesson.plannedUnits).toBe(units);
+      expect(getScheduleCredits(scheduled, "s4", 1, units)).toMatchObject({
+        balance: 8, reserved: units, available: 8 - units,
+      });
+      lesson.status = "待确认";
+      const settled = transition(scheduled, {
+        type: "lesson.resolve", ids: [lesson.id], decision: "扣课", units, reason: "正常完课",
+      }).data;
+      expect(getScheduleCredits(settled, "s4", 1, units)).toMatchObject({
+        balance: 8 - units, reserved: 0, available: 8 - units,
+      });
+    });
+  });
   it("余额8时拒绝10节25分钟课程，原数据不变", () => {
     const data = creditsFixture();
     expect(() => transition(data, booking(10))).toThrow(/不足/);

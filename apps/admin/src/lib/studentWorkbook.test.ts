@@ -40,6 +40,7 @@ describe("学生课程信息表导入导出", () => {
     ];
     const profile = {
       ...emptyStudentProfile(),
+      id: student.id,
       code: student.code,
       name: student.name,
       groupName: student.groupName,

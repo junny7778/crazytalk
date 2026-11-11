@@ -51,7 +51,7 @@ export function useScheduleCredits(
         </small>
       )}
       <small>
-        剩余 {summary.balance} 课时 · 已排占用 {summary.reserved} 课时 · 可用{" "}
+        {summary.allocations.length ? "共享订单" : "个人余额"} · 剩余 {summary.balance} 课时 · 已排占用 {summary.reserved} 课时 · 可用{" "}
         {summary.available} 课时
       </small>
       <small>

@@ -96,12 +96,12 @@ describe("学生原表表单与客户操作", () => {
       "学员编号",
       "中文名",
       "CEFR 等级",
-      "项目",
       "学习目标",
       "学员状态",
       "课包有效期",
     ])
       expect(screen.queryByLabelText(label, { exact: true })).toBeNull();
+    expect(screen.getByLabelText("项目")).toBeTruthy();
     const fields = {
       学生名字: "表单数字化验收",
       学生群名: "家长学习服务群",
@@ -202,29 +202,13 @@ describe("学生原表表单与客户操作", () => {
       `/students/${saved?.id}?tab=credits&action=credit`,
     );
   });
-  it("续费记录业务日期金额，不擅自修改原表总课时", async () => {
-    const before = structuredClone(demoRepository.read().students[0]);
-    mount(<Action action="credit" />);
-    expect(screen.queryByText(/相当于.*分钟/)).toBeNull();
-    change("课时数", "4");
-    change("业务日期", "2026-10-20");
-    change("充值金额", "399.50");
-    fireEvent.click(screen.getByRole("button", { name: "确认加 4 课时" }));
-    await waitFor(() =>
-      expect(demoRepository.read().students[0].balance).toBe(
-        before.balance + 4,
-      ),
-    );
-    expect(demoRepository.read().students[0]).toMatchObject({
-      totalUnits: before.totalUnits,
-      renewalStatus: "是",
-    });
-    expect(demoRepository.read().credits[0]).toMatchObject({
-      date: "2026-10-20",
-      amount: 399.5,
-      units: 4,
-      type: "续费",
-    });
+  it("续费套餐登记订单日期和共享余额，保留原有个人余额", async()=>{
+    const before=structuredClone(demoRepository.read().students[0]);
+    mount(<Action action="credit"/>);choose("课时套餐","144 课时");change("业务日期","2026-10-20");
+    expect(screen.queryByLabelText("充值金额")).toBeNull();
+    fireEvent.click(screen.getByRole("button",{name:"确认加 144 课时"}));
+    await waitFor(()=>expect(demoRepository.read().orders?.[0]).toMatchObject({units:144,balance:144,date:"2026-10-20",studentIds:[before.id]}));
+    expect(demoRepository.read().students[0]).toMatchObject({balance:before.balance,totalUnits:before.totalUnits,renewalStatus:"是"});
   });
   it("登记介绍人和被介绍人关系，不擅自赠课", async () => {
     const students = demoRepository.read().students;
@@ -305,7 +289,7 @@ describe("学生原表表单与客户操作", () => {
       `/students/${student?.id}?tab=credits`,
     );
   });
-  it("充值可以关联现有转介绍关系，不额外改变转介绍奖励", async () => {
+  it("补偿去除金额和转介绍，历史关系仍保留", async () => {
     const students = demoRepository.read().students;
     demoRepository.execute({
       type: "referral.add",
@@ -314,22 +298,19 @@ describe("学生原表表单与客户操作", () => {
       date: "2026-10-20",
       note: "原始介绍",
     });
-    const relationship = demoRepository.read().referrals[0];
-    mount(<Action action="credit" />);
-    choose(
-      "关联转介绍",
-      `${students[1].name} 介绍 ${students[0].name} · 2026-10-20`,
-    );
-    change("课时数", "4");
-    fireEvent.click(screen.getByRole("button", { name: "确认加 4 课时" }));
-    await waitFor(() =>
-      expect(demoRepository.read().credits[0].referralId).toBe(relationship.id),
-    );
+    mount(<Action action="compensate"/>);
+    expect(screen.queryByLabelText("关联转介绍")).toBeNull();
+    expect(screen.queryByLabelText("充值金额")).toBeNull();
+    change("课时数","2");change("备注 / 原因","课中故障补偿");
+    fireEvent.click(screen.getByRole("button",{name:"确认加 2 课时"}));
+    await waitFor(()=>expect(demoRepository.read().credits[0]).toMatchObject({type:"补偿",units:2}));
+    expect(demoRepository.read().credits[0].referralId).toBeUndefined();
     expect(demoRepository.read().referrals).toHaveLength(1);
   });
   it("按客户课时口径登记1.5课时，总课时允许原表小数", async () => {
     const before = demoRepository.read().students[0].balance;
-    const creditView = mount(<Action action="credit" />);
+    const creditView = mount(<Action action="compensate" />);
+    change("备注 / 原因","核实补偿");
     expect(screen.getByLabelText("课时数").getAttribute("step")).toBe("any");
     change("课时数", "1.5");
     fireEvent.click(screen.getByRole("button", { name: "确认加 1.5 课时" }));

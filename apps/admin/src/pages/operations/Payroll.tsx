@@ -1,3 +1,4 @@
+import OfficePayroll from "./OfficePayroll";
 import ListPagination, { useListPage } from "../../components/ListPagination";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../../components/DataTransferButton";
@@ -115,9 +116,10 @@ export default function Payroll() {
         items={[
           { value: "monthly", label: "月度薪资" },
           { value: "rates", label: "单价" },
+          {value:"office",label:"老师与 SO 对账"},
         ]}
       />
-      {tab === "monthly" ? (
+      {tab==="office" ? <OfficePayroll/> : tab === "monthly" ? (
         <>
           <div className="grid-4">
             <StatCard

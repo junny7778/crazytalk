@@ -646,6 +646,7 @@ export default function StudentCourses({
                       : ""}
                     {formatStudentProgress(report.to)}
                   </p>
+                  {report.screenshot && <img src={report.screenshot} width={200} alt="当节教材结束页"/>}
                   {report.comment && <p>{report.comment}</p>}
                   <small>
                     {report.rating > 0 ? `${report.rating} 分 · ` : ""}

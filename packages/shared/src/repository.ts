@@ -36,15 +36,8 @@ function read(): DemoState {
           let upgraded = catalog !== memory.catalog || payrollUpgrade;
           memory.catalog = catalog;
           const noticeRecoveryKey = `${storageKey}:nancy-sync-notice-2026-11-05`;
-          if (
-            !localStorage.getItem(noticeRecoveryKey) &&
-            restoreLessonSyncNotice(memory)
-          ) {
-            // Persist before marking recovery complete so reloads cannot lose the repair.
-            localStorage.setItem(storageKey, JSON.stringify(memory));
-            localStorage.setItem(noticeRecoveryKey, "done");
-            upgraded = true;
-          }
+          const noticeRestored = !localStorage.getItem(noticeRecoveryKey) && restoreLessonSyncNotice(memory);
+          upgraded ||= noticeRestored;
           const storedTeachers = z
             .object({ teachers: z.array(z.record(z.unknown())) })
             .safeParse(input);
@@ -109,6 +102,7 @@ function read(): DemoState {
           }
           if (migrated.changed || upgraded) {
             localStorage.setItem(storageKey, JSON.stringify(migrated.data));
+            if (noticeRestored) localStorage.setItem(noticeRecoveryKey, "done");
             memory = migrated.data;
           }
           return memory;
@@ -167,19 +161,21 @@ export const demoRepository = {
             throw new Error("课程已有新的变更，请在上课记录中更正");
           const s = latest.students.find((s) => s.id === now.studentId);
           if (s && now.deducted && !old.deducted) {
-            if (!s.balanceKnown)
+            const order = now.orderId ? latest.orders?.find(o => o.id === now.orderId) : undefined;
+            if (!order && !s.balanceKnown)
               throw new Error("请先补录期初余额，再撤销扣课");
             const units = now.confirmedUnits;
             if (units === undefined)
               throw new Error("缺少已确认扣课数量，不能撤销余额");
-            s.balance += units;
+            if (order) order.balance += units; else s.balance += units;
             latest.credits.unshift({
               id: crypto.randomUUID(),
               studentId: s.id,
               date: DEMO_TODAY,
               type: "撤销扣课",
               units,
-              balance: s.balance,
+              balance: order?.balance ?? s.balance,
+              orderId: order?.id, lessonId: now.id,
               note: `撤销 ${now.date} ${now.time} 的确认`,
               operator: "Rita",
             });

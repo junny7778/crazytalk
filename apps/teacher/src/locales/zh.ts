@@ -102,7 +102,7 @@ const zh: Record<keyof typeof en, string> = {
   leaveEnd: "结束时间",
   reason: "原因",
   leaveReason: "简单说明请假原因",
-  leaveSent: "请假申请已提交。",
+  leaveSent: "请假已登记，受影响课程由教务跟进。",
   leaveRequired: "请选择有效时间并填写请假原因。",
   pendingApproval: "待审批",
   approved: "已通过",

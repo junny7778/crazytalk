@@ -45,7 +45,6 @@ import { downloadTable } from "../lib/export";
 
 const defaultColumns = [
   "name",
-  "groupName",
   "channel",
   "orderStatus",
   "teacherName",
@@ -57,7 +56,6 @@ const defaultColumns = [
 const studentColumnOrder = [
   "sourceSequence",
   "name",
-  "groupName",
   "phone",
   "channel",
   "orderStatus",
@@ -212,7 +210,7 @@ export default function Students() {
         (s) =>
           matchesView(s) &&
           (!q ||
-            `${s.name} ${s.groupName} ${s.phone} ${s.code}`
+            `${s.id} ${s.name} ${s.phone} ${s.code}`
               .toLowerCase()
               .includes(q.toLowerCase())) &&
           (!params.get("project") || s.project === params.get("project")) &&
@@ -309,10 +307,11 @@ export default function Students() {
             if (field.key === "name")
               return (
                 <Link
+                  aria-label={row.original.name}
                   className="student-name"
                   to={`/students/${row.original.id}`}
                 >
-                  <strong>{row.original.name}</strong>
+                  <strong>{row.original.name}</strong><small>{row.original.id}</small>
                 </Link>
               );
             if (field.key === "orderStatus" && value)
@@ -403,7 +402,7 @@ export default function Students() {
             name: "月度上课明细",
             headers: [
               "学生名字",
-              "学生群名",
+              "学员ID",
               "月份",
               "月应上课",
               "实际上课",
@@ -412,7 +411,7 @@ export default function Students() {
             rows: students.flatMap((s) =>
               s.monthlyRecords.map((r) => [
                 s.name,
-                s.groupName,
+                s.id,
                 r.month,
                 r.planned ?? "",
                 r.actual ?? "",
@@ -514,7 +513,7 @@ export default function Students() {
           <SearchInput
             value={q}
             onChange={(v) => update("q", v)}
-            placeholder="搜索学生名字、学生群名或手机号"
+            placeholder="搜索学员 ID、姓名或手机号"
           />
           {(
             [

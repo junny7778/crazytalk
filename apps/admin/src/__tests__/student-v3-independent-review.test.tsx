@@ -95,7 +95,7 @@ describe("学员中心 V3 独立验收", () => {
     for (const name of ["学生名字", "学生群名", "渠道", "教材", "上课时间"])
       expect(screen.queryByRole("button", { name })).toBeNull();
     fireEvent.click(screen.getByRole("link", { name: "Jayden" }));
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(screen.getByText("****1234")).toBeTruthy();
   });
   it("列表/周历同源，筛选与切周保留实际课程，课程在档案内打开", () => {

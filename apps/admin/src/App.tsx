@@ -1,3 +1,4 @@
+import { useSurveyPrefill } from "./lib/surveyPrefill";
 import AccountPasswordModal from "./components/AccountPasswordModal";
 import { hasSyncIssue, syncManagementPath } from "./lib/lessonSync";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -99,9 +100,10 @@ function Loading() {
   );
 }
 export default function App() {
-  const { data, can, roleId, accountId, setRole, preview, reset, scope } = useDemo();
+  const { data, can, act, roleId, accountId, setRole, preview, reset, scope } = useDemo();
   const navigate = useNavigate();
   const location = useLocation();
+  useSurveyPrefill(data.students, can("student.edit") && !preview && !location.pathname.startsWith("/teacher"), act);
   const isSettings = location.pathname === "/settings";
   const lastWorkLocation = useRef(location);
   useEffect(() => {
@@ -603,6 +605,15 @@ export default function App() {
         width={420}
       >
         <div className="stack">
+          {can("lesson.view") && data.lessons.flatMap(l => (["学员","老师"] as const).flatMap(person => {
+            const at = l.attendanceMessages?.[person];
+            if (!at || !(roleId === "admin" || roleId === (person === "老师" ? "tm" : "ops"))) return [];
+            return [{l, person, at}];
+          })).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at)).map(({l,person}) => <div className="inset" key={l.id+person}>
+            <strong>{person === "老师" ? "提醒 TM 老师没来" : "提醒学员上课"}</strong>
+            <p>{l.date} {l.time} · {person === "老师" ? data.teachers.find(t=>t.id===l.teacherId)?.name : data.students.find(s=>s.id===l.studentId)?.name}</p>
+            <Button size="sm" onClick={()=>{navigate("/lessons?lesson="+encodeURIComponent(l.id));setNotifications(false);}}>查看上课记录</Button>
+          </div>)}
           {data.tasks.filter(t=>t.sourceType==="teacher" && t.status==="待处理" && (roleId==="admin" || !accountId || t.owner===data.accounts.find(a=>a.id===accountId)?.name)).map(t=><div className="inset" key={t.id}>
             <strong>{t.title}</strong><p>{t.owner} · {t.note}</p>
             <Button size="sm" onClick={()=>{navigate("/lessons?student="+encodeURIComponent(t.studentId));setNotifications(false);}}>查看受影响课程</Button>

@@ -1,3 +1,8 @@
+import { splitRosterName } from "./studentNames";
+import { assignSampleTeams } from "./organization";
+import { unifyRoster } from "./unifyRoster";
+import { withRosterActivity } from "./rosterActivity";
+import LZString from "lz-string";
 import { initializePayroll } from "./payroll";
 import { autoSettleLessons } from "./autoLessonSettlement";
 import { restoreLessonSyncNotice } from "./restoreLessonSyncNotice";
@@ -16,16 +21,21 @@ import { migrateStudentIds, resolveStudentCommand } from "./studentIds";
 const storageKey = "crazytalk-demo-v1";
 export const STUDENT_ID_BACKUP_KEY = `${storageKey}:before-student-id-v2`;
 const storedFeedbackPresenceSchema = z.object({
+  students: z.array(z.object({ id: z.string(), code: z.unknown().optional() })),
   feedback: z.array(z.object({ id: z.string() }).passthrough()),
 });
 let memory: DemoState | undefined;
+function serialize(data: DemoState) {
+  const json=JSON.stringify(data);
+  return json.length>1000000 ? "lz:"+LZString.compressToUTF16(json) : json;
+}
 function read(): DemoState {
   if (memory) return memory;
   if (typeof localStorage !== "undefined") {
     const raw = localStorage.getItem(storageKey);
     if (raw) {
       try {
-        const input: unknown = JSON.parse(raw);
+        const input: unknown = JSON.parse(raw.startsWith("lz:") ? LZString.decompressFromUTF16(raw.slice(3)) : raw);
         const result = stateSchema.safeParse(input);
         if (result.success) {
           memory = result.data;
@@ -34,6 +44,8 @@ function read(): DemoState {
           const original = storedFeedbackPresenceSchema.parse(input);
           const catalog = migrateFeedbackCatalog(memory.catalog);
           let upgraded = catalog !== memory.catalog || payrollUpgrade;
+          const teamsUpdated = assignSampleTeams(memory);
+          upgraded ||= teamsUpdated;
           memory.catalog = catalog;
           const noticeRecoveryKey = `${storageKey}:nancy-sync-notice-2026-11-05`;
           const noticeRestored = !localStorage.getItem(noticeRecoveryKey) && restoreLessonSyncNotice(memory);
@@ -48,11 +60,23 @@ function read(): DemoState {
             )
           )
             upgraded = true;
+          const legacyCodes = new Map(original.students.filter(s => typeof s.code === "string").map(s => [s.id, String(s.code)]));
+          upgraded ||= legacyCodes.size > 0;
           for (const learner of memory.students) {
+            if (learner.englishName === undefined) {
+              const raw = learner.roster?.fields["学生"];
+              const names = splitRosterName(raw || learner.name);
+              learner.chineseName ||= names.chineseName;
+              learner.englishName = raw && learner.name !== raw && !/\p{Script=Han}/u.test(learner.name)
+                ? learner.name : names.englishName;
+              learner.name = learner.chineseName || learner.englishName || learner.name;
+              upgraded = true;
+            }
             if (
               !learner.orderStatus &&
               !learner.sourceSequence &&
-              !learner.code.startsWith("SYS-")
+              legacyCodes.has(learner.id) &&
+              !legacyCodes.get(learner.id)!.startsWith("SYS-")
             ) {
               learner.orderStatus = studentOrderStatus(learner.status);
               upgraded = true;
@@ -101,7 +125,7 @@ function read(): DemoState {
               localStorage.setItem(STUDENT_ID_BACKUP_KEY, raw);
           }
           if (migrated.changed || upgraded) {
-            localStorage.setItem(storageKey, JSON.stringify(migrated.data));
+            localStorage.setItem(storageKey, serialize(migrated.data));
             if (noticeRestored) localStorage.setItem(noticeRecoveryKey, "done");
             memory = migrated.data;
           }
@@ -121,16 +145,38 @@ function read(): DemoState {
 function save(data: DemoState) {
   initializePayroll(data);
   if (typeof localStorage !== "undefined")
-    localStorage.setItem(storageKey, JSON.stringify(data));
+    localStorage.setItem(storageKey, serialize(data));
   memory = data;
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event("crazytalk-change"));
 }
 export const demoRepository = {
   read,
+  populateRosterActivity() {
+    const before = read();
+    const after = withRosterActivity(unifyRoster(before));
+    if (after !== before) save(after);
+  },
   settleCompletedLessons(now = Date.now()) {
     const before = read();
-    const after = autoSettleLessons(before, now);
+    let updated = before;
+    for (const l of before.lessons) {
+      if (l.status === "已取消" || l.attendance === "账号待关联" || l.attendance === "无数据") continue;
+      for (const person of ["学员", "老师"] as const) {
+        const tags = person === "老师" ? l.teacherAttendance : l.studentAttendance;
+        const absent = tags ? tags.includes("缺席") : l.attendance === person + "缺席";
+        if (!absent) continue;
+        const start = Date.parse(l.date + "T" + l.time + ":00+08:00");
+        if (now < start || now >= start + l.duration * 60_000) continue;
+        if (l.attendanceMessages?.[person] || l.status === "已完成" || l.status === "缺席") continue;
+        updated = transition(updated, {
+          type: "lesson.attendance", id: l.id, person,
+          result: "未到堂", at: new Date(now).toISOString(),
+          operator: "系统考勤",
+        }).data;
+      }
+    }
+    const after = autoSettleLessons(updated, now);
     if (after !== before) save(after);
     return after;
   },
@@ -216,20 +262,3 @@ export const demoRepository = {
   },
 };
 export const DEMO_STORAGE_KEY = storageKey;
-
-export function demoNextCode(channel: string) {
-  const prefix: Record<string, string> = {
-    许老师: "X",
-    ToC: "R",
-    黄子妈妈: "EP",
-    艺动: "YD",
-  };
-  const p = prefix[channel] || "X";
-  const max = Math.max(
-    0,
-    ...read()
-      .students.filter((s) => s.code.startsWith(p))
-      .map((s) => Number(s.code.slice(p.length)) || 0),
-  );
-  return p + String(max + 1).padStart(4, "0");
-}

@@ -208,6 +208,7 @@ export default {
   unavailable: "Unavailable",
   startTime: "Start time",
   endTime: "End time",
+  payUnitRate: "Unit rate",
   student: "Student",
   level: "Level",
   noTeacher: "Teacher profile unavailable",

@@ -64,6 +64,7 @@ export function StudentActionModal({
   const isCredit = action === "credit" || action === "compensate";
   const [stars,setStars]=useState(0),[visitStage,setVisitStage]=useState("首三节"),[visitEvidence,setVisitEvidence]=useState("");
   const [units, setUnits] = useState(72);
+  const [memberQuery,setMemberQuery]=useState("");
   const [members,setMembers] = useState<string[]>([]);
   const [benefitOrder,setBenefitOrder]=useState("");
   const orderKey = useRef("");
@@ -79,6 +80,7 @@ export function StudentActionModal({
   const [lessonId, setLesson] = useState("");
   const [ack, setAck] = useState(false);
   const [error, setError] = useState("");
+  const [visitAttempted, setVisitAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -101,9 +103,10 @@ export function StudentActionModal({
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   useEffect(() => {
     setError("");
+    setVisitAttempted(false);
     setBenefitOrder("");setStars(0);setVisitEvidence("");setVisitStage("首三节");
     setUnits(action === "compensate" ? 1 : 72);
-    setMembers([student.id]); orderKey.current=crypto.randomUUID();
+    setMemberQuery(""); setMembers([student.id]); orderKey.current=crypto.randomUUID();
     setNote("");
     setAck(false);
     const nextFeedbackId = data.feedback.some(
@@ -233,6 +236,10 @@ export function StudentActionModal({
   };
   function submit() {
     if (!action || submitLock.current) return;
+    if (action === "visit" && (!stars || !note.trim())) {
+      setVisitAttempted(true);
+      return;
+    }
     submitLock.current = true;
     setSubmitting(true);
     try {
@@ -315,7 +322,7 @@ export function StudentActionModal({
           };
       }
       const r = act(cmd);
-      toast(r.message);
+      toast(action === "visit" ? `已为 ${student.name} 添加回访` : r.message);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "请检查填写内容");
@@ -389,6 +396,7 @@ export function StudentActionModal({
       }
     >
       <div className="stack">
+        {action === "visit" && <p>学员姓名：{student.name}</p>}
         {isCredit && (
           <>
             {["结课", "停课"].includes(student.status) && (
@@ -417,7 +425,11 @@ export function StudentActionModal({
             </Field>
             {["新购","续费","充值"].includes(kind) ? <>
               <Field label="课时套餐"><Select value={String(units)} onValueChange={value => setUnits(Number(value))}><option value="72">72 课时</option><option value="144">144 课时</option></Select></Field>
-              <fieldset><legend>共用本订单余额的学员</legend>{data.students.filter(s=>s.status!=="退费").map(s=><label key={s.id} className="select-row"><input type="checkbox" checked={members.includes(s.id)} disabled={s.id===student.id} onChange={e=>setMembers(e.target.checked?[...members,s.id]:members.filter(id=>id!==s.id))}/>{s.name} · {s.id}</label>)}</fieldset>
+              <fieldset className="order-member-picker"><legend>共用本订单余额的学员</legend>
+                <div className="order-member-tools"><input type="search" aria-label="搜索共用学员" placeholder="搜索姓名或学员 ID" value={memberQuery} onChange={e=>setMemberQuery(e.target.value)}/><small>已选 {members.length} 位</small></div>
+                <div className="order-member-list">{data.students.filter(s=>s.status!=="退费" && (s.name+" "+s.id).toLowerCase().includes(memberQuery.trim().toLowerCase())).map(s=><label key={s.id}>
+                  <input type="checkbox" checked={members.includes(s.id)} disabled={s.id===student.id} onChange={e=>setMembers(e.target.checked?[...members,s.id]:members.filter(id=>id!==s.id))}/><span>{s.name}</span><small>{s.id}</small></label>)}
+                  {!data.students.some(s=>s.status!=="退费" && (s.name+" "+s.id).toLowerCase().includes(memberQuery.trim().toLowerCase())) && <p className="muted">没有匹配的学员</p>}</div></fieldset>
             </> : <Field label="课时数" required><input aria-label="课时数" type="number" min="0" step="any" value={units} onChange={e=>setUnits(Number(e.target.value))}/></Field>}
             {["补偿","赠送"].includes(kind) && !!data.orders?.some(o=>o.studentIds.includes(student.id)) && <Field label="课时入账归属"><Select value={benefitOrder} onValueChange={setBenefitOrder}>
               <option value="">学员个人余额</option>{data.orders.filter(o=>o.studentIds.includes(student.id)).map(o=><option key={o.id} value={o.id}>{o.date} · {o.units} 节套餐 · {o.id.slice(0,8)}</option>)}</Select></Field>}
@@ -657,14 +669,15 @@ export function StudentActionModal({
             固定课需符合新老师的常规时间；临时课超出常规时间时，需与老师确认。
           </small>
         )}
-        {action==="visit" && <>
+        {action==="visit" && <><div className="form-grid">
           <Field label="回访节点"><Select value={visitStage} onValueChange={setVisitStage}>{["首三节","首月","月度跟进","换师后三节","续费跟进"].map(s=><option key={s}>{s}</option>)}</Select></Field>
-          <Field label="星级评价" required><Select value={String(stars)} onValueChange={v=>setStars(Number(v))}><option value="0">请选择星级</option>{[1,2,3,4,5].map(n=><option key={n} value={String(n)}>{n} 星</option>)}</Select></Field>
-          {[1,2,5].includes(stars) && <Field label="反馈截图"><input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>setVisitEvidence(String(r.result));r.readAsDataURL(f);}}}/></Field>}
+          <Field label="星级评价" required error={visitAttempted && !stars ? "请选择星级" : undefined}><Select value={String(stars)} onValueChange={v=>setStars(Number(v))}><option value="0">请选择星级</option>{[1,2,3,4,5].map(n=><option key={n} value={String(n)}>{n} 星</option>)}</Select></Field>
+          </div>{[1,2,5].includes(stars) && <Field label="反馈截图"><input className="media-file-field" type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>setVisitEvidence(String(r.result));r.readAsDataURL(f);}}}/></Field>}
         </>}
         {
           <Field
             label={action === "visit" ? "回访内容" : "备注 / 原因"}
+            error={action === "visit" && visitAttempted && !note.trim() ? "请填写回访内容" : undefined}
             required={
               (!isCredit && action !== "referral") ||
               (isCredit && ["补偿", "赠送"].includes(kind))

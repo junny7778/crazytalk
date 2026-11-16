@@ -296,7 +296,7 @@ export default function StudentCourses({
                 <table className="sc-lesson-table">
                   <thead>
                     <tr>
-                      <th>上课时间</th>
+                      <th>上课时间</th><th>时长</th><th>课程类型</th>
                       <th>老师</th>
                       <th>教材</th>
                       <th>状态</th>
@@ -316,9 +316,7 @@ export default function StudentCourses({
                           >
                             {lesson.date} {lesson.time}
                           </button>
-                          <small>
-                            {lesson.duration} 分钟 · {lesson.kind}
-                          </small>
+                          </td><td>{lesson.duration} 分钟</td><td>{lesson.kind}
                         </td>
                         <td>{teacherName(data, lesson.teacherId)}</td>
                         <td>{lesson.material || "未填写"}</td>

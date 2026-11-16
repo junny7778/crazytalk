@@ -54,7 +54,6 @@ function choose(label: string, option: string) {
 function originalProfile() {
   return {
     ...emptyStudentProfile(),
-    code: "QA901",
     name: "独立验收学员",
     groupName: "QA901专属学习群",
     sourceSequence: "51",
@@ -96,7 +95,7 @@ function importProfile() {
     students: [originalProfile()],
     mode: "skip",
   });
-  return demoRepository.read().students.find((s) => s.code === "QA901")!;
+  return demoRepository.read().students.find((s) => s.name === "独立验收学员")!;
 }
 beforeEach(() => {
   localStorage.clear();
@@ -456,7 +455,7 @@ describe("独立学员数字化验收", () => {
     });
     const student = demoRepository
       .read()
-      .students.find((s) => s.code === "QA901")!;
+      .students.find((s) => s.name === "独立验收学员")!;
     expect(student.lastLesson).toBe("");
     mount("/students?view=inactive&q=QA901");
     expect(screen.queryByRole("link", { name: "独立验收学员" })).toBeNull();

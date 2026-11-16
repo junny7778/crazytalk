@@ -66,7 +66,12 @@ export default function StudentCredits({
   }
   return (
     <div className="stack">
-      <Panel title="套餐订单">{data.orders?.some(o=>o.studentIds.includes(student.id)) ? data.orders.filter(o=>o.studentIds.includes(student.id)).map(o=><p key={o.id}>{o.date} · {o.units} 节套餐 · 共享余额 {o.balance} 节 · {o.studentIds.map(id=>data.students.find(s=>s.id===id)?.name || id).join("、")}</p>) : <p>暂无套餐订单</p>}</Panel>
+      <Panel title="套餐订单">
+        {data.orders?.some(order=>order.studentIds.includes(student.id)) ? <div className="table-wrap"><table>
+          <thead><tr><th>订单日期</th><th>套餐课时</th><th>共享余额</th><th>共用学员</th></tr></thead>
+          <tbody>{data.orders.filter(order=>order.studentIds.includes(student.id)).map(order=><tr key={order.id}><td>{order.date}</td><td>{order.units}</td><td>{order.balance}</td><td>{order.studentIds.map(id=>data.students.find(s=>s.id===id)?.name || id).join("、")}</td></tr>)}</tbody>
+        </table></div> : <p>暂无套餐订单</p>}
+      </Panel>
       <Modal open={deductOpen} onClose={() => setDeductOpen(false)} title={`给 ${student.name} 扣减课时`}
         footer={<><Button onClick={() => setDeductOpen(false)}>取消</Button><Button variant="danger-solid" disabled={!canDeduct} onClick={saveDeduction}>确认扣减</Button></>}>
         <div className="stack">

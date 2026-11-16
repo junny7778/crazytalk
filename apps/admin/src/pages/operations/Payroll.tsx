@@ -204,7 +204,7 @@ export default function Payroll() {
                         }
                       />
                     </th>
-                    <th>老师 / SO</th>
+                    <th>老师</th><th>SO</th>
                     <th className="text-right">课时</th>
                     <th className="text-right">课酬</th>
                     <th className="text-right">扣款</th>
@@ -238,7 +238,7 @@ export default function Payroll() {
                         >
                           {teacher(p.teacherId)?.name}
                         </button>
-                        <small>{teacher(p.teacherId)?.so}</small>
+                        </td><td>{teacher(p.teacherId)?.so || "—"}
                       </td>
                       <td className="text-right">{breakdown(p).units}</td>
                       <td className="text-right">{display(base(p))}</td>

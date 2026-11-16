@@ -382,17 +382,16 @@ export function StudentSchedulingPanel({
       )}
       {saved?.mode === "fixed" && (
         <section className="schedule-plan-section" aria-label="固定排课方案">
-          <div className="schedule-plan-toolbar">
-            <h4>推荐排课方案</h4>
+          <h4>推荐排课方案</h4><div className="schedule-plan-toolbar plan-match-filters">
             <Field label="匹配策略"><Select value={priority} onValueChange={setPriority}><option>时间优先</option><option>老师优先</option></Select></Field>
             <Field label="锁课保留分钟"><input type="number" min={1} value={holdMinutes} onChange={e=>setHoldMinutes(Number(e.target.value))}/></Field>
             {data.slotLocks?.some(l=>l.studentId===student.id && Date.parse(l.expiresAt)>Date.now()) && <Button disabled={preview||!can("schedule.create")} onClick={()=>act({type:"slot.release",studentId:student.id})}>释放当前锁课</Button>}
-            <input
+            <Field label="推荐老师"><input
               aria-label="搜索推荐老师"
               placeholder="搜索老师姓名"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-            />
+            /></Field>
           </div>
           <div className="schedule-match-list">
             {fixedPlans

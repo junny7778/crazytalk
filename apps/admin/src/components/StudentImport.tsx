@@ -1,6 +1,6 @@
+import {rosterHeaders} from "../lib/customerRoster";
 import { useState } from "react";
 import {
-  emptyStudentProfile,
   studentProfileSchema,
   studentImportMatches,
   type StudentProfileInput,
@@ -10,8 +10,6 @@ import { Button, Field, Modal, Select, useToast } from "@crazytalk/ui";
 import { downloadTable } from "../lib/export";
 import {
   readStudentWorkbook,
-  studentWorkbookHeaders,
-  studentWorkbookRow,
 } from "../lib/studentWorkbook";
 
 export default function StudentImport({
@@ -28,8 +26,10 @@ export default function StudentImport({
   const [skipped, setSkipped] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"skip" | "update">("skip");
+  const [mode, setMode] = useState<"skip" | "update">("update");
   const [filename, setFilename] = useState("");
+  const [page,setPage]=useState(0);
+  const headers=rosterHeaders;
   const identities = new Set<string>();
   const errors: string[] = [];
   rows.forEach((row, index) => {
@@ -38,10 +38,9 @@ export default function StudentImport({
       errors.push(
         `第 ${index + 1} 条：${parsed.error.issues.map((issue) => issue.message).join("；")}`,
       );
-    if (!row.name.trim()) errors.push(`第 ${index + 1} 条：请补全学生名字。`);
-    const identity = row.importStudentId !== undefined ? row.importStudentId : row.groupName.trim()
-      ? `${row.groupName.trim()}\u0000${row.name.trim()}`
-      : "";
+    if (!row.chineseName.trim() && !studentImportMatches(data.students, row).length)
+      errors.push(`第 ${index + 1} 条：请补全学生中文名。`);
+    const identity = row.importStudentId || row.roster?.key || "";
     if (identity && identities.has(identity))
       errors.push(
         `第 ${index + 1} 条：文件内学员标识重复，请先核对。`,
@@ -79,7 +78,7 @@ export default function StudentImport({
     setError("");
     setRows([]);
     setWarnings([]);
-    setFilename(file.name);
+    setPage(0);setFilename(file.name);
     try {
       if (!file.name.toLowerCase().endsWith(".xlsx"))
         throw new Error("请上传 .xlsx 格式的学生课程信息表。");
@@ -100,7 +99,7 @@ export default function StudentImport({
   }
   async function submit() {
     try {
-      const bytes = new TextEncoder().encode(JSON.stringify(rows));
+      const bytes = new TextEncoder().encode(JSON.stringify([mode,rows]));
       const hash = await crypto.subtle.digest("SHA-256", bytes);
       const batchId = Array.from(new Uint8Array(hash), n => n.toString(16).padStart(2, "0")).join("");
       const result = act({ type: "student.import", students: rows, mode, batchId });
@@ -118,7 +117,7 @@ export default function StudentImport({
       onClose={close}
       width={1000}
       title="导入学员课程信息"
-      description="支持原始学生课程信息表和模板，先核对完整信息，再确认保存。"
+      description="上传学生信息表，核对后保存。"
       footer={
         <>
           <Button onClick={close}>取消</Button>
@@ -152,8 +151,8 @@ export default function StudentImport({
             onClick={() => {
               void downloadTable(
                 "学生课程信息导入模板",
-                studentWorkbookHeaders,
-                [studentWorkbookRow(emptyStudentProfile())],
+                ["学员ID", "学生中文名", "学生英文名", ...rosterHeaders],
+                [],
               ).catch(() => setError("模板下载失败，请重试。"));
             }}
           >
@@ -161,8 +160,7 @@ export default function StudentImport({
           </Button>
         </div>
         <p className="muted">
-          原表 27
-          列将完整保留。手机号、年龄和课时可留空，不会自动补值；总课时不等于剩余课时。
+          请使用学生信息表模板。手机号、年龄和课时可留空，不会自动补值；总课时不等于剩余课时。
         </p>
         {loading && <p role="status">正在读取文件…</p>}
         {error && (
@@ -178,7 +176,7 @@ export default function StudentImport({
               。可直接修正学员 ID、名字和手机号，展开查看完整原表信息。
             </p>
             <details>
-              <summary>查看 27 列字段对应关系</summary>
+              <summary>查看 {headers.length} 列字段对应关系</summary>
               <p className="muted">
                 按表头名称匹配，原表的两行合并表头会自动展开。
               </p>
@@ -189,7 +187,7 @@ export default function StudentImport({
                   gap: 8,
                 }}
               >
-                {studentWorkbookHeaders.map((header) => (
+                {headers.map((header) => (
                   <span key={header}>
                     {header} → {header}
                   </span>
@@ -210,7 +208,7 @@ export default function StudentImport({
               </Select>
             </Field>
             <p className="muted">
-              更新已有档案需填写学员 ID。留空将分配新 ID；同一批次重复提交只登记一次。更改订单状态请通过档案内服务操作处理。
+              新版学生表按原表学员标识和拉群日期匹配；导出后可按学员 ID 更新。新记录分配独立 ID，同一批次重复提交只登记一次。更改订单状态请通过档案内服务操作处理。
             </p>
             {warnings.length > 0 && (
               <details>
@@ -232,6 +230,7 @@ export default function StudentImport({
                 </ul>
               </div>
             )}
+            {rows.length>50 && <div className="row"><Button size="sm" disabled={page===0} onClick={()=>setPage(page-1)}>上一页</Button><span>{page+1} / {Math.ceil(rows.length/50)}</span><Button size="sm" disabled={(page+1)*50>=rows.length} onClick={()=>setPage(page+1)}>下一页</Button></div>}
             <div className="table-wrap">
               <table>
                 <thead>
@@ -245,7 +244,7 @@ export default function StudentImport({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, index) => (
+                  {rows.slice(page*50,page*50+50).map((row, offset) => {const index=page*50+offset;return (
                     <tr key={index}>
                       <td>{row.sourceSequence || index + 1}</td>
                       <td>
@@ -291,13 +290,13 @@ export default function StudentImport({
                       </td>
                       <td>
                         <details>
-                          <summary>完整 27 列</summary>
+                          <summary>完整 {headers.length} 列</summary>
                           <dl>
-                            {studentWorkbookRow(row, data).map(
+                            {rosterHeaders.map(h=>row.roster?.fields[h] || "").map(
                               (value, column) => (
                                 <div key={column} style={{ marginBottom: 8 }}>
                                   <dt className="muted">
-                                    {studentWorkbookHeaders[column]}
+                                    {headers[column]}
                                   </dt>
                                   <dd
                                     style={{
@@ -314,7 +313,7 @@ export default function StudentImport({
                         </details>
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>

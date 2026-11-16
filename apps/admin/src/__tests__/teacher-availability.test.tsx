@@ -129,7 +129,7 @@ describe("老师课表视图", () => {
 });
 
 describe("老师列表显示列", () => {
-  it("老师名下学员的旧进度统一显示为三层斜杠格式", () => {
+  it("老师名下学员的教材与学习进度分列，旧进度按统一格式展示", () => {
     const student = demoRepository
       .read()
       .students.find((item) => item.teacherId === "t1");
@@ -137,7 +137,9 @@ describe("老师列表显示列", () => {
     student.material = "Power Up 3";
     student.unit = "Unit 1 · p.4";
     mount("/teachers/t1?tab=students");
-    expect(screen.getByText("Power Up 3 / Unit 1 / P4")).toBeTruthy();
+    const row = screen.getByRole("link", {name: student.name}).closest("tr")!;
+    expect(within(row).getByRole("cell", {name: "Power Up 3"})).toBeTruthy();
+    expect(within(row).getByRole("cell", {name: "Unit 1 / P4"})).toBeTruthy();
   });
   it("独立展示等级，可切换列并恢复默认，筛选后保留列选择", () => {
     mount("/teachers");

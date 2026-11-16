@@ -16,8 +16,9 @@ export function recommendedTags(s: Student) {
   const tags = new Set<string>(),
     age = s.age;
   const level = s.level.match(/^L([123])(?:$|\b)/)?.[1];
-  if (age != null && age >= 3 && level) {
-    const tier = age <= 5 ? "幼儿" : age <= 9 ? "少儿" : "大童";
+  const tier = age == null ? s.ageText.match(/^(幼儿|少儿|大童)/)?.[1]
+    : age < 3 ? undefined : age <= 5 ? "幼儿" : age <= 9 ? "少儿" : "大童";
+  if (tier && level) {
     tags.add(
       tier === "幼儿"
         ? "擅长低龄(3-5岁)"

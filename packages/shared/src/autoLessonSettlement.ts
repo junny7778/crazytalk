@@ -11,6 +11,8 @@ export function canAutoSettleLesson(lesson: Lesson, now: number): boolean {
     lesson.attendance === "正常" &&
     !lesson.requiresScreenshot &&
     !lesson.autoSettlementPaused &&
+    !(lesson.attendanceMessages?.学员 && !lesson.studentIn) &&
+    !(lesson.attendanceMessages?.老师 && !lesson.teacherIn) &&
     !lesson.deducted &&
     end <= now &&
     Number.isFinite(lesson.confirmedUnits) &&

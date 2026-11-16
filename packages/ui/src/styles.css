@@ -95,6 +95,9 @@ a {
   color: var(--ct-brand-700);
   text-decoration: none;
 }
+:where(h1, h2, h3, h4, h5, h6, strong, b) {
+  font-weight: 600;
+}
 h1,
 h2,
 h3,
@@ -103,7 +106,7 @@ p {
 }
 h1 {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 32px;
 }
 h2 {
@@ -167,7 +170,7 @@ textarea {
   padding: 0 20px;
   border-radius: 9999px;
   border: 1px solid transparent;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 14px;
   white-space: nowrap;
   transition:
@@ -243,7 +246,7 @@ textarea {
   padding: 1px 8px;
   border-radius: 6px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 18px;
 }
 .badge-neutral {
@@ -410,7 +413,7 @@ textarea {
   padding: 0 24px;
   border-radius: 6px;
   color: var(--ct-gray-700);
-  font-weight: 700;
+  font-weight: 600;
 }
 .tabs-segment button.active {
   background: var(--ct-white);
@@ -450,14 +453,14 @@ textarea {
 .tab-count {
   margin-left: 7px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  font-weight: 700;
+  font-weight: 600;
   background: var(--ct-brand-50);
   color: var(--ct-brand-700);
   flex-shrink: 0;
@@ -487,11 +490,11 @@ textarea {
 .stat-card > .row {
   font-size: 12px;
   color: var(--ct-gray-500);
-  font-weight: 600;
+  font-weight: 500;
 }
 .stat-value {
   font-size: 28px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 36px;
   margin: 10px 0 6px;
 }
@@ -513,7 +516,7 @@ th {
   background: var(--ct-gray-100);
   height: 44px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ct-gray-700);
   padding: 0 16px;
 }
@@ -541,7 +544,7 @@ th:last-child {
   border: 0;
   background: transparent;
   color: var(--ct-brand-700);
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
 }
 .pagination {
@@ -570,7 +573,7 @@ th:last-child {
   flex-direction: column;
   gap: 8px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .field input,
 .field .ct-select-trigger,
@@ -1145,3 +1148,6 @@ th:last-child {
   right: 24px;
   bottom: 20px;
 }
+
+.media-file-field[type=file] { width: 100%; min-width: 0; height: auto; padding: 8px 12px; color: var(--ct-gray-500); background: var(--ct-gray-50); border: 1px dashed var(--ct-gray-300); border-radius: 8px; }
+.media-file-field::file-selector-button { font: inherit; color: var(--ct-brand-700); padding: 6px 12px; margin-right: 12px; background: var(--ct-white); border: 1px solid var(--ct-gray-200); border-radius: 999px; cursor: pointer; }

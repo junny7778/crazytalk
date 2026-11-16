@@ -43,7 +43,8 @@ export function officePay(data: DemoState, t: PayTerms): Line[] {
           Date.parse(cancellation.at)) /
         60000
       : null;
-    const issue = l.incident?.reason || cancellation?.kind || l.attendance;
+    const teacherAbsent = personAttendance(l, "老师").includes("缺席");
+    const issue = teacherAbsent ? "老师缺席" : l.incident?.reason || cancellation?.kind || l.attendance;
     const source = l.date + " " + l.time + " · " + l.id;
     const absent =
       (issue === "学员请假" && lead !== null && lead < 30) ||
@@ -67,7 +68,7 @@ export function officePay(data: DemoState, t: PayTerms): Line[] {
         : l.duration / 60;
     if (
       t.mode === "NP" &&
-      (completed || absent) &&
+      (completed || absent) && issue !== "老师缺席" &&
       !issue.includes("网络") &&
       !issue.includes("教材")
     )

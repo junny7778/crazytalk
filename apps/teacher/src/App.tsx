@@ -966,9 +966,9 @@ export default function TeacherApp() {
             <MonthSelect value={month} onChange={setMonth} t={t} />
             {data.settlements?.some(r=>r.teacherId===teacher.id && r.month===month) ?
               data.settlements.filter(r=>r.teacherId===teacher.id && r.month===month).map(r=><FeatureCard key={r.at} title={language==="en"?"Confirmed earnings":"已确认薪资"}>
-                <strong>PHP {r.lines.reduce((n,l)=>n+(l.teacher||0),0).toFixed(2)}</strong>{r.lines.map((l,i)=><p key={i}>{l.source} · {l.label} · PHP {l.teacher?.toFixed(2)}</p>)}</FeatureCard>) :
+                <strong>PHP {r.lines.reduce((n,l)=>n+(l.teacher||0),0).toFixed(2)}</strong>{r.lines.map((l,i)=><dl className="teacher-payslip-facts" key={i}><dt>{language==="en"?"Source":"来源"}</dt><dd>{l.source}</dd><dt>{language==="en"?"Pay item":"计薪项目"}</dt><dd>{l.label}</dd><dt>{language==="en"?"Amount":"金额"}</dt><dd>PHP {l.teacher?.toFixed(2)}</dd></dl>)}</FeatureCard>) :
             <PayContent
-              pay={(() => { const record = data.payroll.find((p) => p.teacherId === teacher.id && p.month === month); return record ? payrollBreakdown(data, record.id) : undefined; })()}
+              pay={(() => { const hasOfficeTerms = data.payTerms?.some(t => t.teacherId === teacher.id && t.month === month); const record = data.payroll.find((p) => p.teacherId === teacher.id && p.month === month); return !hasOfficeTerms && record ? payrollBreakdown(data, record.id) : undefined; })()}
               payroll={data.payroll.find(
                 (p) => p.teacherId === teacher.id && p.month === month,
               )}

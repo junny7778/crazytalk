@@ -62,7 +62,7 @@ describe("学生反馈表数字化专项", () => {
     expect(screen.getByRole("columnheader", { name: "客服处理进度" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "TM 判定" })).toBeTruthy();
     fireEvent.change(
-      screen.getByRole("textbox", { name: "搜索学员、老师、反馈或跟进内容" }),
+      screen.getByRole("textbox", { name: "搜索学员姓名或 ID、老师、反馈或跟进内容" }),
       { target: { value: "麦克风" } },
     );
     expect(screen.getByText("共 1 条反馈")).toBeTruthy();
@@ -75,7 +75,7 @@ describe("学生反馈表数字化专项", () => {
   it("详情完整包含原表21项，客服和TM分别保存，失败结论不等同未完成，跟进可追加", async () => {
     const record = demoRepository.read().feedback[0];
     mount(`/feedback/${record.id}`);
-    for (const label of ["反馈日期", "项目／渠道", "教务", "学员编号", "老师", "SO", "学员反馈（原话）"])
+    for (const label of ["反馈日期", "项目／渠道", "教务", "学员 ID", "老师", "SO", "学员反馈（原话）"])
       expect(screen.getAllByText(label, { exact: true }).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "更新客服处理" }));
     expect(screen.queryByRole("button", { name: "提交责任判定" })).toBeNull();

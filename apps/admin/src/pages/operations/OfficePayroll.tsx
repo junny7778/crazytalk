@@ -16,7 +16,7 @@ export default function OfficePayroll() {
   );
   return (
     <Panel title="老师与 SO 周期对账">
-      <div className="row wrap">
+      <div className="report-filters">
         <Field label="结算月">
           <input
             type="month"
@@ -49,43 +49,57 @@ export default function OfficePayroll() {
           </Select>
         </Field>
       </div>
-      <div className="table-wrap"><table>
-        <thead>
-          <tr>
-            <th>SO</th>
-            <th>老师已核金额</th>
-            <th>SO 已核金额</th>
-            <th>待核明细</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[...new Set(terms.map((t) => t.so))].map((s) => {
-            const group = rows.filter((r) => r.so === s);
-            return (
-              <tr key={s}>
-                <td>{s}</td>
-                <td>
-                  {can("field.pay_amount")
-                    ? group.reduce((n, r) => n + (r.teacher ?? 0), 0).toFixed(2)
-                    : "—"}
-                </td>
-                <td>
-                  {can("field.pay_amount")
-                    ? group.reduce((n, r) => n + (r.office ?? 0), 0).toFixed(2)
-                    : "—"}
-                </td>
-                <td>
-                  {
-                    group.filter((r) => r.teacher === null || r.office === null)
-                      .length
-                  }
-                </td>
+      {!!terms.length && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>SO</th>
+                <th>老师已核金额</th>
+                <th>SO 已核金额</th>
+                <th>待核明细</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table></div>
-      {!terms.length && <EmptyState title="暂无本期计薪资料" description="选择老师后可查看或登记本期计薪条件。"/>}
+            </thead>
+            <tbody>
+              {[...new Set(terms.map((t) => t.so))].map((s) => {
+                const group = rows.filter((r) => r.so === s);
+                return (
+                  <tr key={s}>
+                    <td>{s}</td>
+                    <td>
+                      {can("field.pay_amount")
+                        ? group
+                            .reduce((n, r) => n + (r.teacher ?? 0), 0)
+                            .toFixed(2)
+                        : "—"}
+                    </td>
+                    <td>
+                      {can("field.pay_amount")
+                        ? group
+                            .reduce((n, r) => n + (r.office ?? 0), 0)
+                            .toFixed(2)
+                        : "—"}
+                    </td>
+                    <td>
+                      {
+                        group.filter(
+                          (r) => r.teacher === null || r.office === null,
+                        ).length
+                      }
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!terms.length && !id && (
+        <EmptyState
+          title="暂无本期计薪资料"
+          description="选择老师后可查看或登记本期计薪条件。"
+        />
+      )}
       {id && <PayEditor key={id + month} data={data} id={id} month={month} />}
     </Panel>
   );
@@ -141,11 +155,14 @@ function PayEditor({
   if (!can("field.pay_amount")) return <p>无金额查看权限</p>;
   const rows = saved ? officePay(data, saved) : [];
   return (
-    <section>
+    <section className="pay-period-editor">
       <h3>
         {teacher.name} · {month}
       </h3>
-      <fieldset disabled={frozen || !can("pay_rate.edit")}>
+      <fieldset
+        className="pay-period-fields"
+        disabled={frozen || !can("pay_rate.edit")}
+      >
         <Field label="计薪方式">
           <Select
             value={form.mode}
@@ -238,6 +255,7 @@ function PayEditor({
           </>
         )}
         <Button
+          variant="primary"
           onClick={() => {
             try {
               act({ type: "pay.terms", terms: form });
@@ -250,26 +268,30 @@ function PayEditor({
           保存计薪条件
         </Button>
       </fieldset>
-      <div className="table-wrap"><table>
-        <thead>
-          <tr>
-            <th>来源</th>
-            <th>项目</th>
-            <th>老师 PHP</th>
-            <th>SO PHP</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td>{r.source}</td>
-              <td>{r.label}</td>
-              <td>{r.teacher ?? "待核"}</td>
-              <td>{r.office ?? "待核"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table></div>
+      {!!rows.length && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>来源</th>
+                <th>项目</th>
+                <th>老师 PHP</th>
+                <th>SO PHP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.source}</td>
+                  <td>{r.label}</td>
+                  <td>{r.teacher ?? "待核"}</td>
+                  <td>{r.office ?? "待核"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {can("payroll.confirm") && (
         <Button
           disabled={
@@ -293,7 +315,7 @@ function PayEditor({
           {frozen ? "已确认" : "确认本期结算"}
         </Button>
       )}
-      <p role="status">{error}</p>
+      {error && <p role="status">{error}</p>}
     </section>
   );
 }

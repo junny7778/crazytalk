@@ -26,7 +26,7 @@ describe("学生表单数字化业务", () => {
       status: "待排课",
       balance: 0,
     });
-    expect(student.code).not.toBe("X0028");
+    expect(student).not.toHaveProperty("code");
     expect(student.id).toBeTruthy();
     expect(student.balanceKnown).toBe(true);
     expect(
@@ -37,7 +37,7 @@ describe("学生表单数字化业务", () => {
     ).toBe(true);
   });
 
-  it("导入只匹配相同非空群名和名字，重复和歧义均原子拒绝", () => {
+  it("导入按 ID 更新，同群同名不覆盖，重复或未知 ID 原子拒绝", () => {
     const before = createSeed();
     const profile = {
       ...emptyStudentProfile(),
@@ -53,7 +53,7 @@ describe("学生表单数字化业务", () => {
     const student = imported.students.at(-1)!;
     const updated = transition(imported, {
       type: "student.import",
-      students: [{ ...profile, totalUnits: 40 }],
+      students: [{ ...profile, importStudentId: student.id, totalUnits: 40 }],
       mode: "update",
     }).data;
     expect(updated.students).toHaveLength(imported.students.length);
@@ -62,26 +62,25 @@ describe("学生表单数字化业务", () => {
     ).toBe(40);
     const renamed = transition(imported, {
       type: "student.import",
-      students: [{ ...profile, groupName: "另一个学习群" }],
+      students: [profile],
       mode: "update",
     }).data;
     expect(renamed.students).toHaveLength(imported.students.length + 1);
     expect(() =>
       transition(before, {
         type: "student.import",
-        students: [profile, profile],
+        students: [0, 1].map(() => ({...profile, importStudentId: before.students[0].id})),
         mode: "skip",
       }),
     ).toThrow(/重复/);
-    imported.students.push({ ...student, id: "another", code: "another" });
     const snapshot = structuredClone(imported);
     expect(() =>
       transition(imported, {
         type: "student.import",
-        students: [profile],
+        students: [{ ...profile, importStudentId: "99999999" }],
         mode: "update",
       }),
-    ).toThrow(/多份档案/);
+    ).toThrow(/ID 不存在/);
     expect(imported).toEqual(snapshot);
   });
 
@@ -148,7 +147,7 @@ describe("学生表单数字化业务", () => {
     expect(() =>
       transition(before, {
         type: "student.import",
-        students: [changed],
+        students: [{ ...changed, importStudentId: student.id }],
         mode: "update",
       }),
     ).toThrow(/换老师/);
@@ -156,7 +155,7 @@ describe("学生表单数字化业务", () => {
     const ordinary = transition(before, {
       type: "student.import",
       students: [
-        { ...studentProfileSchema.parse(student), phone: "13812345678" },
+        { ...studentProfileSchema.parse(student), importStudentId: student.id, phone: "13812345678" },
       ],
       mode: "update",
     }).data;

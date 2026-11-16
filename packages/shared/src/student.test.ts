@@ -13,7 +13,6 @@ import { assertStudentCommandAccess } from "./react";
 import { demoRepository, DEMO_STORAGE_KEY } from "./repository";
 const profile = () => ({
   ...emptyStudentProfile(),
-  code: "IMP001",
   name: "原表学员",
   teacherName: "未建档老师",
   groupName: "学习群",
@@ -54,7 +53,7 @@ describe("student digital profiles", () => {
       mode: "skip",
     }).data;
     const stored = stateSchema.parse(JSON.parse(JSON.stringify(made)));
-    const learner = stored.students.find((student) => student.code === p.code);
+    const learner = stored.students.find((student) => student.name === p.name);
     if (!learner) throw new Error("原表学员未导入");
     expect(studentProfileSchema.parse(learner)).toEqual(p);
     expect(learner.age).toBeNull();
@@ -81,7 +80,6 @@ describe("student digital profiles", () => {
     for (const key of Object.keys(emptyStudentProfile()))
       if (
         ![
-          "code",
           "name",
           "chineseName",
           "age",
@@ -112,15 +110,15 @@ describe("student digital profiles", () => {
     expect(() =>
       transition(before, {
         type: "student.import",
-        students: [profile(), { ...profile(), code: "IMP002", phone: "123" }],
+        students: [profile(), { ...profile(), phone: "123" }],
         mode: "skip",
       }),
     ).toThrow();
-    expect(before.students.some((s) => s.code === "IMP001")).toBe(false);
+    expect(before.students.some((s) => s.name === profile().name)).toBe(false);
     expect(() =>
       transition(before, {
         type: "student.import",
-        students: [profile(), profile()],
+        students: [0, 1].map(() => ({ ...profile(), importStudentId: before.students[0].id })),
         mode: "skip",
       }),
     ).toThrow(/重复/);
@@ -150,6 +148,7 @@ describe("student digital profiles", () => {
     ];
     const changed = {
       ...profile(),
+      importStudentId: learner.id,
       name: "更新名字",
       phone: "",
       owner: "不要覆盖",
@@ -363,6 +362,7 @@ describe("student digital profiles", () => {
     });
     const incoming = {
       ...profile(),
+      importStudentId: learner.id,
       monthlyRecords: [
         {
           id: "new-original",
@@ -388,40 +388,13 @@ describe("student digital profiles", () => {
       )?.actual,
     ).toBeNull();
   });
-  it("matches student codes without case sensitivity for create, profile and import", () => {
+  it("matches skip and update imports by student ID", () => {
     const state = createSeed();
     const learner = state.students[0];
-    expect(() =>
-      transition(state, {
-        type: "student.create",
-        student: { ...profile(), code: learner.code.toLowerCase() },
-      }),
-    ).toThrow(/编号/);
-    const other = state.students[1];
-    expect(() =>
-      transition(state, {
-        type: "student.profile",
-        id: other.id,
-        profile: {
-          ...studentProfileSchema.parse(other),
-          code: learner.code.toLowerCase(),
-        },
-      }),
-    ).toThrow(/编号/);
-    expect(() =>
-      transition(state, {
-        type: "student.import",
-        mode: "update",
-        students: [
-          profile(),
-          { ...profile(), code: profile().code.toLowerCase() },
-        ],
-      }),
-    ).toThrow(/重复/);
     const skipped = transition(state, {
       type: "student.import",
       mode: "skip",
-      students: [{ ...profile(), code: learner.code.toLowerCase() }],
+      students: [{ ...profile(), importStudentId: learner.id }],
     }).data;
     expect(skipped.students).toHaveLength(state.students.length);
     const updated = transition(state, {
@@ -430,7 +403,7 @@ describe("student digital profiles", () => {
       students: [
         {
           ...profile(),
-          code: learner.code.toLowerCase(),
+          importStudentId: learner.id,
           teacherName: learner.teacherName,
           teacherId: learner.teacherId,
         },

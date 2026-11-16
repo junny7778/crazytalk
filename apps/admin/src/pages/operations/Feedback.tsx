@@ -1,4 +1,6 @@
+import {organizationView} from "@crazytalk/shared";
 import ListPagination, { useListPage } from "../../components/ListPagination";
+import FeedbackContentPreview from "../../components/FeedbackContentPreview";
 import FeedbackHistory from "../../components/FeedbackHistory";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../../components/DataTransferButton";
@@ -11,7 +13,6 @@ import {
 } from "react-router-dom";
 import {
   ArrowLeft,
-  ArrowRight,
   MessageSquarePlus,
   Pencil,
   Plus,
@@ -227,18 +228,29 @@ function TeacherMeasures({ feedback }: { feedback: FeedbackRecord }) {
     </Panel>
   );
 }
+type ProcessingAction = "customer" | "tm" | "follow";
+
 export function Processing({
   feedback,
   onDirtyChange,
+  initialAction,
+  onClose,
 }: {
   feedback: FeedbackRecord;
+  initialAction?: ProcessingAction;
+  onClose?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { can } = useDemo();
   const run = useBusinessAction();
-  const [editingCustomer, setEditingCustomer] = useState(false);
-  const [editingTM, setEditingTM] = useState(false);
-  const [addingFollow, setAddingFollow] = useState(false);
+  const [action, setAction] = useState<ProcessingAction | undefined>(initialAction);
+  const editingCustomer = action === "customer";
+  const editingTM = action === "tm";
+  const addingFollow = action === "follow";
+  function closeAction() {
+    setAction(undefined);
+    onClose?.();
+  }
   const [progress, setProgress] = useState(feedback.customerProgress);
   const [customerResult, setCustomerResult] = useState(feedback.customerResult);
   const [customerNote, setCustomerNote] = useState(feedback.processNote);
@@ -264,6 +276,7 @@ export function Processing({
   }, [dirty, onDirtyChange]);
   return (
     <>
+      {!initialAction && <>
       <Panel
         title="客服处理"
         action={
@@ -275,7 +288,7 @@ export function Processing({
                   setProgress(feedback.customerProgress);
                   setCustomerResult(feedback.customerResult);
                   setCustomerNote(feedback.processNote);
-                  setEditingCustomer(true);
+                  setAction("customer");
                 }}
               >
                 更新客服处理
@@ -312,7 +325,7 @@ export function Processing({
                   setResult(feedback.tmResult);
                   setDate(feedback.tmDate);
                   setTMNote(feedback.tmNote);
-                  setEditingTM(true);
+                  setAction("tm");
                 }}
               >
                 更新 TM 判定
@@ -344,7 +357,7 @@ export function Processing({
         action={
           (can("feedback.process") || can("feedback.verdict")) &&
           !addingFollow && (
-            <Button size="sm" onClick={() => setAddingFollow(true)}>
+            <Button size="sm" onClick={() => setAction("follow")}>
               添加跟进
             </Button>
           )
@@ -352,6 +365,7 @@ export function Processing({
       >
         <FeedbackHistory entries={feedback.followUps} />
       </Panel>
+      </>}
       <Modal
         open={can("feedback.process") && editingCustomer}
         title="更新客服处理"
@@ -359,7 +373,7 @@ export function Processing({
           setProgress(feedback.customerProgress);
           setCustomerResult(feedback.customerResult);
           setCustomerNote(feedback.processNote);
-          setEditingCustomer(false);
+          closeAction();
         }}
         width={640}
       >
@@ -402,7 +416,7 @@ export function Processing({
                     result: customerResult,
                     note: customerNote,
                   },
-                  () => setEditingCustomer(false),
+                  closeAction,
                 )
               }
             >
@@ -413,7 +427,7 @@ export function Processing({
                 setProgress(feedback.customerProgress);
                 setCustomerResult(feedback.customerResult);
                 setCustomerNote(feedback.processNote);
-                setEditingCustomer(false);
+                closeAction();
               }}
             >
               取消客服编辑
@@ -429,7 +443,7 @@ export function Processing({
           setResult(feedback.tmResult);
           setDate(feedback.tmDate);
           setTMNote(feedback.tmNote);
-          setEditingTM(false);
+          closeAction();
         }}
         width={640}
       >
@@ -481,7 +495,7 @@ export function Processing({
                     date,
                     note: tmNote,
                   },
-                  () => setEditingTM(false),
+                  closeAction,
                 )
               }
             >
@@ -493,7 +507,7 @@ export function Processing({
                 setResult(feedback.tmResult);
                 setDate(feedback.tmDate);
                 setTMNote(feedback.tmNote);
-                setEditingTM(false);
+                closeAction();
               }}
             >
               取消 TM 编辑
@@ -509,7 +523,7 @@ export function Processing({
         title="添加跟进"
         onClose={() => {
           setFollow("");
-          setAddingFollow(false);
+          closeAction();
         }}
         width={640}
       >
@@ -545,7 +559,7 @@ export function Processing({
                 },
                 () => {
                   setFollow("");
-                  setAddingFollow(false);
+                  closeAction();
                 },
               )
             }
@@ -555,7 +569,7 @@ export function Processing({
           <Button
             onClick={() => {
               setFollow("");
-              setAddingFollow(false);
+              closeAction();
             }}
           >
             取消添加
@@ -566,8 +580,10 @@ export function Processing({
   );
 }
 const columnOptions = [
-  { id: "code", label: "学员编号" },
-  { id: "source", label: "项目／渠道" },
+  { id: "studentId", label: "学员 ID" },
+  { id: "source", label: "反馈来源" },
+  { id: "project", label: "当前项目" },
+  { id: "channel", label: "当前渠道" },
   { id: "owner", label: "教务" },
   { id: "so", label: "SO" },
   { id: "rating", label: "评价" },
@@ -734,11 +750,19 @@ function FeedbackContext({ feedback }: { feedback: FeedbackRecord }) {
   );
 }
 
+const feedbackPriority: Record<FeedbackRecord["status"], number> = {
+  待处理: 0,
+  处理中: 1,
+  等待判定: 1,
+  已完成: 2,
+};
+
 export default function Feedback() {
-  const { data, can } = useDemo();
+  const { data: allData, can } = useDemo();
   const navigate = useNavigate();
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
+  const data=organizationView(allData,params);
   const run = useBusinessAction();
   const [editor, setEditor] = useState<"new" | "edit" | null>(
     params.get("new") === "1" ? "new" : null,
@@ -753,9 +777,12 @@ export default function Feedback() {
     "customer",
     "tm",
   ]);
+  const [quickAction, setQuickAction] = useState<{ id: string; action: ProcessingAction } | null>(null);
+  const quickRecord = data.feedback.find(item => item.id === quickAction?.id);
   const [preview, setPreview] = useState<string | null>(null);
   const tab = params.get("tab") === "actions" ? "actions" : "records";
-  const view = params.get("view") || "全部";
+  const requestedView = params.get("view");
+  const view = requestedView === "等我处理" ? "待处理" : requestedView || "全部";
   const query = params.get("q") || "";
   const feedback = data.feedback.find((item) => item.id === id);
   const student = (studentId: string) =>
@@ -802,22 +829,24 @@ export default function Feedback() {
           )) &&
         (view === "全部" ||
           (view === "未完成" && item.status !== "已完成") ||
-          (view === "等我处理"
-            ? item.status === "待处理"
-            : item.status === view)) &&
+          item.status === view) &&
         (!query ||
-          `${student(item.studentId)?.code} ${student(item.studentId)?.name} ${teacherLabel(item)} ${item.content} ${feedbackCategories(item).join(" ")} ${item.processNote} ${item.tmNote} ${item.followUps.map((entry) => entry.content).join(" ")}`
+          `${item.studentId} ${student(item.studentId)?.name} ${teacherLabel(item)} ${item.content} ${feedbackCategories(item).join(" ")} ${item.processNote} ${item.tmNote} ${item.followUps.map((entry) => entry.content).join(" ")}`
             .toLowerCase()
             .includes(query.toLowerCase())),
     )
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort((a, b) => feedbackPriority[a.status] - feedbackPriority[b.status] || b.date.localeCompare(a.date));
   const listPage0 = useListPage(filtered);
   const exportRecords = () =>
     exportCsv("学生反馈", [
       [
         "反馈日期",
-        "项目/渠道",
+        "反馈来源",
+        "当前项目",
+        "当前渠道",
         "教务",
+        "学员 ID",
+        "学员 ID",
         "学员名称",
         "反馈阶段",
         "反馈等级",
@@ -844,8 +873,12 @@ export default function Feedback() {
         return [
           item.date,
           source(item),
+          student(item.studentId)?.project || "",
+          student(item.studentId)?.channel || "",
           item.owner,
-          `${student(item.studentId)?.code || ""} ${student(item.studentId)?.name || ""}`.trim(),
+          item.studentId,
+          item.studentId || "",
+          student(item.studentId)?.name || "",
           item.stage,
           item.grade,
           ...[0, 1, 2].map((index) =>
@@ -868,7 +901,7 @@ export default function Feedback() {
         ];
       }),
     ]);
-  const activeFilters = [
+  const activeFilters = view !== "全部" || [
     "from",
     "to",
     "project",
@@ -911,9 +944,9 @@ export default function Feedback() {
                   <Value label="反馈日期">{feedback.date}</Value>
                   <Value label="项目／渠道">{source(feedback)}</Value>
                   <Value label="教务">{feedback.owner}</Value>
-                  <Value label="学员编号">
+                  <Value label="学员 ID">
                     <Link to={`/students/${feedback.studentId}`}>
-                      {student(feedback.studentId)?.code}
+                      {feedback.studentId}
                     </Link>
                   </Value>
                   <Value label="老师">
@@ -1043,8 +1076,20 @@ export default function Feedback() {
                 <SearchInput
                   value={query}
                   onChange={(value) => update("q", value)}
-                  placeholder="搜索学员、老师、反馈或跟进内容"
+                  placeholder="搜索学员姓名或 ID、老师、反馈或跟进内容"
                 />
+                <Field label="反馈状态">
+                  <OptionalSelect
+                    label="反馈状态"
+                    value={view === "全部" ? "" : view}
+                    onChange={(value) => {
+                      listPage0.setPage(1);
+                      update("view", value);
+                    }}
+                    options={["未完成", "已完成"]}
+                    placeholder="全部反馈状态"
+                  />
+                </Field>
                 <Field label="项目／渠道筛选">
                   <OptionalSelect
                     label="项目／渠道筛选"
@@ -1195,16 +1240,6 @@ export default function Feedback() {
                 </div>
               )}
               <div className="feedback-list-summary">
-                <Tabs
-                  variant="chips"
-                  value={view}
-                  onChange={(value) => update("view", value)}
-                  items={[
-                    { value: "全部", label: "全部" },
-                    { value: "未完成", label: "未完成" },
-                    { value: "已完成", label: "已完成" },
-                  ]}
-                />
                 <div className="row">
                   {activeFilters && !params.has("from") && (
                     <Button
@@ -1229,9 +1264,9 @@ export default function Feedback() {
                       {columnOptions
                         .filter((column) => columns.includes(column.id))
                         .map((column) => (
-                          <th key={column.id}>{column.label}</th>
+                          <th key={column.id} className={column.id === "content" ? "feedback-content-cell" : undefined}>{column.label}</th>
                         ))}
-                      <th />
+                      <th>操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1252,8 +1287,10 @@ export default function Feedback() {
                           .filter((column) => columns.includes(column.id))
                           .map((column) => {
                             const values: Record<string, ReactNode> = {
-                              code: student(item.studentId)?.code,
+                              studentId: item.studentId,
                               source: source(item),
+                              project: student(item.studentId)?.project,
+                              channel: student(item.studentId)?.channel,
                               owner: item.owner,
                               so: so(item),
                               rating: (
@@ -1284,16 +1321,13 @@ export default function Feedback() {
                               tmDate: item.tmDate,
                             };
                             return (
-                              <td key={column.id}>
-                                {column.id === "content" ||
-                                column.id === "category" ? (
+                              <td key={column.id} className={column.id === "content" ? "feedback-content-cell" : undefined}>
+                                {column.id === "content" ? (
+                                  <FeedbackContentPreview content={item.content} />
+                                ) : column.id === "category" ? (
                                   <span
                                     className="feedback-summary-text"
-                                    title={
-                                      column.id === "content"
-                                        ? item.content
-                                        : feedbackCategories(item).join("、")
-                                    }
+                                    title={feedbackCategories(item).join("、")}
                                   >
                                     {values[column.id] || "—"}
                                   </span>
@@ -1303,14 +1337,20 @@ export default function Feedback() {
                               </td>
                             );
                           })}
-                        <td>
+                        <td onClick={event => event.stopPropagation()}>
+                          <div className="feedback-row-actions">
                           <Link
+                            className="btn btn-ghost btn-xs"
                             to={`/feedback/${item.id}`}
                             onClick={(event) => event.stopPropagation()}
                             aria-label={`查看 ${student(item.studentId)?.name} 的反馈`}
                           >
-                            查看处理 <ArrowRight size={16} />
+                            查看处理
                           </Link>
+                          {can("feedback.process") && <Button size="xs" variant="ghost" onClick={() => setQuickAction({id: item.id, action: "customer"})}>客服处理</Button>}
+                          {can("feedback.verdict") && <Button size="xs" variant="ghost" onClick={() => setQuickAction({id: item.id, action: "tm"})}>TM 判定</Button>}
+                          {(can("feedback.process") || can("feedback.verdict")) && <Button size="xs" variant="ghost" onClick={() => setQuickAction({id: item.id, action: "follow"})}>添加跟进</Button>}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1428,6 +1468,7 @@ export default function Feedback() {
           )}
         </>
       )}
+      {quickRecord && quickAction && <Processing key={quickRecord.id} feedback={quickRecord} initialAction={quickAction.action} onClose={() => setQuickAction(null)} />}
       {editor && can("feedback.create") && (
         <FeedbackEditor
           key={`${editor}-${feedback?.id || "new"}`}

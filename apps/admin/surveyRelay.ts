@@ -10,19 +10,9 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { z } from "zod";
 
-const answers = z.object({
-  age: z.number().int().min(1).max(120),
-  level: z.enum(["L0", "L1", "L2", "L3", "L4", "待评估"]),
-  personality: z.string().max(80),
-  interests: z.string().max(500),
-  experience: z.string().max(500),
-  material: z.string().max(500),
-  times: z.string().max(500),
-  needs: z.string().max(1000),
-});
-type Entry = { secret: string; answers?: z.infer<typeof answers> };
+import { matchingSurveyAnswers } from "../../packages/shared/src/studentSurvey";
+type Entry = { secret: string; chineseName?: string; answers?: unknown; nameEdited?: boolean; submittedAt?: string };
 export function surveyRelay(): Plugin {
   const root = join(
     tmpdir(),
@@ -40,6 +30,9 @@ export function surveyRelay(): Plugin {
     /^[a-f0-9-]{36}$/.test(token) && existsSync(join(root, token))
       ? JSON.parse(readFileSync(join(root, token), "utf8"))
       : undefined;
+  const submission = (entry: Entry) => ({
+    submitted: !!entry.answers, answers: entry.answers, nameEdited: entry.nameEdited, submittedAt: entry.submittedAt,
+  });
   return {
     name: "student-survey-relay",
     configureServer(server) {
@@ -53,7 +46,7 @@ export function surveyRelay(): Plugin {
           res.end(JSON.stringify(value));
         };
         if (
-          req.method === "POST" &&
+          (req.method === "POST" || req.method === "PATCH") &&
           req.headers["content-type"] !== "application/json"
         )
           return reply(415, {});
@@ -69,25 +62,48 @@ export function surveyRelay(): Plugin {
             )
           )
             return reply(403, {});
-          const token = randomUUID(),
-            secret = randomUUID();
-          save(token, { secret });
-          return reply(201, { token, secret });
+        }
+        if (req.method === "PATCH" && (!entry || req.headers.authorization !== "Bearer " + entry.secret))
+          return reply(entry ? 403 : 404, {});
+        if ((!token && req.method === "POST") || req.method === "PATCH") {
+          let body = "";
+          for await (const chunk of req) {
+            body += chunk;
+            if (Buffer.byteLength(body) > 16384) return reply(413, {});
+          }
+          let chineseName = "";
+          try {
+            const input = body ? JSON.parse(body) : {};
+            if (input.chineseName !== undefined && typeof input.chineseName !== "string") return reply(400, {});
+            chineseName = input.chineseName?.trim() || "";
+          } catch {
+            return reply(400, {});
+          }
+          if (req.method === "PATCH") {
+            const current = read(token);
+            if (!current) return reply(404, {});
+            if (!current.answers && chineseName !== current.chineseName)
+              save(token, { ...current, chineseName });
+            return reply(200, submission(current));
+          }
+          const nextToken = randomUUID(), secret = randomUUID();
+          save(nextToken, { secret, chineseName });
+          return reply(201, { token: nextToken, secret });
         }
         if (!entry) return reply(404, {});
         if (req.method === "GET")
           return reply(
             200,
             req.headers.authorization === "Bearer " + entry.secret
-              ? { submitted: !!entry.answers, answers: entry.answers }
-              : { submitted: !!entry.answers },
+              ? submission(entry)
+              : { submitted: !!entry.answers, ...(!entry.answers && {chineseName: entry.chineseName || ""}) },
           );
         if (
           req.method === "DELETE" &&
           req.headers.authorization === "Bearer " + entry.secret
         ) {
           unlinkSync(join(root, token));
-          return reply(200, {});
+          return reply(200, submission(entry));
         }
         if (req.method !== "POST") return reply(405, {});
         if (entry.answers) return reply(409, {});
@@ -97,12 +113,14 @@ export function surveyRelay(): Plugin {
             body += chunk;
             if (Buffer.byteLength(body) > 16384) return reply(413, {});
           }
-          const parsed = answers.safeParse(JSON.parse(body));
+          const input = JSON.parse(body);
+          const parsed = matchingSurveyAnswers.safeParse(input);
           if (!parsed.success) return reply(400, {});
           const latest = read(token);
           if (!latest) return reply(404, {});
           if (latest.answers) return reply(409, {});
-          save(token, { ...latest, answers: parsed.data });
+          save(token, { ...latest, answers: parsed.data, submittedAt: new Date().toISOString(),
+            nameEdited: input.initialName !== parsed.data.chineseName });
           return reply(200, {});
         } catch {
           return reply(400, {});

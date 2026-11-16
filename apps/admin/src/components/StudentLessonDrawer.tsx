@@ -4,6 +4,8 @@ import { useDemo } from "@crazytalk/shared/react";
 import {
   DEMO_TODAY,
   type Lesson,
+  cancellationCharge,
+  canChangeStudentLesson,
   teacherName,
   lessonSchema,
   canSubmitLessonReport,
@@ -48,9 +50,11 @@ export function StudentLessonDrawer({
   lessonId,
   onClose,
   onReschedule,
+  cancelDirectly = false,
 }: {
   lessonId: string | null;
   onClose: () => void;
+  cancelDirectly?: boolean;
   onReschedule?: (lessonId: string) => void;
 }) {
   const { data, can, act } = useDemo();
@@ -75,12 +79,12 @@ export function StudentLessonDrawer({
   const [discard, setDiscard] = useState<"close" | "back" | null>(null);
   const lesson = data.lessons.find((item) => item.id === lessonId);
   useEffect(() => {
-    setEditing(null);setCancelKind("学员请假");setWaived(false);setResponsibility("学员");
+    setEditing(cancelDirectly ? "cancel" : null);setCancelKind("学员请假");setWaived(false);setResponsibility("学员");
     setError("");
     setReason("");
     setUnits("");
     setDiscard(null);
-  }, [lessonId]);
+  }, [lessonId, cancelDirectly]);
   if (!lesson) return null;
   const student = data.students.find((item) => item.id === lesson.studentId);
   const report = data.reports.find((item) => item.lessonId === lesson.id);
@@ -110,14 +114,11 @@ export function StudentLessonDrawer({
     lesson.date <= DEMO_TODAY &&
     lesson.status !== "未开始" &&
     can(pending ? "lesson.confirm" : "lesson.correct");
-  const canChange =
-    lesson.status === "未开始" &&
-    lesson.date >= DEMO_TODAY &&
-    can("student.reschedule") &&
-    !["停课", "结课", "退费"].includes(student?.status || "");
+  const canChange = can("student.reschedule") && canChangeStudentLesson(student, lesson);
+  const charge = editing === "cancel" ? cancellationCharge(lesson, responsibility, cancelKind, waived, new Date().toISOString()) : undefined;
   const dirty =
     editing === "cancel"
-      ? !!reason.trim() || responsibility !== "学员"
+      ? !!reason.trim() || responsibility !== "学员" || waived || cancelKind !== "学员请假"
       : editing === "correct" &&
         (!!reason.trim() ||
           deduct !== (lesson.deducted || pending) ||
@@ -201,8 +202,10 @@ export function StudentLessonDrawer({
     setSaving(true);
     try {
       if (editing === "cancel") {
+        if (!canChange) throw new Error("这节课当前无法取消");
         act({ type: "lesson.cancel", id: lesson.id, reason, responsibility,kind:cancelKind,waived });
-        toast("课程已取消，课时结果已记录");
+        toast(`${student?.name} ${lesson.date} ${lesson.time} 的课程已取消`);
+        if (cancelDirectly) onClose();
       } else if (pending) {
         act({
           type: "lesson.resolve",
@@ -241,14 +244,15 @@ export function StudentLessonDrawer({
       <Drawer
         open
         onClose={() => requestClose("close")}
-        title="课程详情"
+        title={cancelDirectly ? "取消课程" : "课程详情"}
         description={`${student?.name || "学员"} · ${lesson.date} ${lesson.time}`}
         width={620}
         footer={
           editing ? (
             <>
-              <Button disabled={saving} onClick={() => requestClose("back")}>
-                返回详情
+              {editing === "cancel" && <small>{charge === undefined ? "本次不调整课时" : `预计扣除 ${charge} 课时`}</small>}
+              <Button disabled={saving} onClick={() => requestClose(cancelDirectly ? "close" : "back")}>
+                {cancelDirectly ? "关闭" : "返回详情"}
               </Button>
               <Button
                 loading={saving}

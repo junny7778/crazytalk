@@ -337,10 +337,10 @@ export function CloseLesson({
         </div>
       </div>
       <div className="teacher-card teacher-form">
-        <Field label={language==="en"?"Ending page screenshot":"教材结束页截图"} required><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{
+        <Field label={language==="en"?"Ending page screenshot":"教材结束页截图"} required><input className="media-file-field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{
           const file=e.target.files?.[0];if(!file)return;
           const reader=new FileReader();reader.onload=()=>{setScreenshot(String(reader.result));setError("");};reader.onerror=()=>setError(language==="en"?"Upload failed":"读取失败");reader.readAsDataURL(file);
-        }}/></Field>{screenshot && <img src={screenshot} alt={language==="en"?"Ending page":"结束页"} width={180}/>}
+        }}/></Field>{screenshot && <img className="lesson-page-preview" src={screenshot} alt={language==="en"?"Ending page":"结束页"} width={180}/>}
         <div className="teacher-facts">
           <span>{t("material")}</span>
           <Field label={t("material")} required>
@@ -870,7 +870,7 @@ export function PayContent({
             <p className="teacher-inline-hint">{t("openingPayHint")}</p>
             {pay.rows.map((row) => (
               <div className="teacher-pay-lesson" key={row.lessonId}>
-                <span>{row.date.slice(5)} · {row.time}<small>{findStudent(row.studentId)?.name} · {row.units} × {currency(row.rate)}</small></span>
+                <div className="teacher-payslip-facts"><span>{t("startTime")}</span><p>{row.date} {row.time}</p><span>{t("student")}</span><p>{findStudent(row.studentId)?.name || "—"}</p><span>{t("lessons")}</span><p>{row.units}</p><span>{t("payUnitRate")}</span><p>{currency(row.rate)}</p></div>
                 <strong>{currency(row.amount)}</strong>
               </div>
             ))}

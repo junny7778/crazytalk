@@ -1,3 +1,4 @@
+import {organizationView} from "@crazytalk/shared";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useDemo } from "@crazytalk/shared/react";
@@ -10,8 +11,9 @@ import {
 import { useBusinessAction } from "../pages/operations/common";
 import ListPagination, { useListPage } from "./ListPagination";
 export default function ClassInSyncManagement() {
-  const { data, can } = useDemo();
+  const { data: allData, can } = useDemo();
   const [params, setParams] = useSearchParams();
+  const data=organizationView(allData,params);
   const run = useBusinessAction();
   const [busy, setBusy] = useState<string[]>([]);
   const target = params.get("lesson");

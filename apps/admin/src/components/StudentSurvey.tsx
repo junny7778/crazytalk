@@ -1,112 +1,155 @@
-import {recommendedTags} from "@crazytalk/shared";
+import { demoRepository, matchingSurveyAnswers, matchingSurveyQuestions, recommendedTags } from "@crazytalk/shared";
 import { useEffect, useState } from "react";
+import { BookOpenText, Check } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { useDemo } from "@crazytalk/shared/react";
-import { Select, Button, Field, Panel } from "@crazytalk/ui";
+import { Badge, Button, Panel, useToast } from "@crazytalk/ui";
 import type { Student } from "@crazytalk/shared";
+
+function answerRows(original: NonNullable<Student["surveyOriginal"]>): [string, string][] {
+  if ("chineseName" in original)
+    return matchingSurveyQuestions.map(({ key, title }) => {
+      const value = original[key];
+      return [title, Array.isArray(value) ? value.join("、") : value];
+    });
+  return Object.entries({
+    年龄: original.age + " 岁", 口语等级: original.level, 性格: original.personality,
+    外教课经验: original.experience, 意向时段: original.times, 起始教材: original.material,
+    兴趣: original.interests, 教学需求: original.needs,
+  });
+}
 
 export function SurveyLink({ student }: { student: Student }) {
   const { act, can } = useDemo(),
     [error, setError] = useState("");
+  const toast = useToast();
+  const previous = !!student.surveyOriginal && !student.surveySubmittedAt;
+  const editable = can("student.edit");
   useEffect(() => {
-    if (
-      !student.surveyToken ||
-      !student.surveySecret ||
-      student.surveySubmittedAt ||
-      !can("student.edit")
-    )
-      return;
-    let active = true;
-    async function sync() {
-      try {
-        const response = await fetch("/api/intake/" + student.surveyToken, {
-          headers: { Authorization: "Bearer " + student.surveySecret },
-        });
-        if (!active) return;
-        if (response.status === 404) {
-          setError("链接已失效，请重新生成问卷链接");
-          return;
-        }
-        if (!response.ok) return;
-        const result = await response.json();
-        if (active && result.answers)
-          act({
-            type: "survey.submit",
-            token: student.surveyToken!,
-            answers: result.answers,
-          });
-      } catch (e) {
-        if (active) setError(String(e));
-      }
+    if (!editable || !student.surveyToken || student.surveySubmittedAt) return;
+    const controller = new AbortController();
+    fetch("/api/intake/" + student.surveyToken, { signal: controller.signal })
+      .then(response => {
+        if (!controller.signal.aborted && response.status === 404)
+          setError("问卷链接已失效，请重新生成链接");
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [editable, student.surveyToken, student.surveySubmittedAt]);
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(new URL("/intake/" + student.surveyToken, location.origin).href);
+      toast("问卷链接已复制");
+    } catch {
+      setError("复制失败，可右键或长按「打开专属问卷」复制链接");
     }
-    void sync();
-    const timer = setInterval(sync, 5000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [student.surveyToken, student.surveySecret, student.surveySubmittedAt]);
+  }
+  const [issuing, setIssuing] = useState(false);
   async function issue() {
+    setIssuing(true);
     try {
       const response = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({chineseName: student.chineseName}),
       });
       if (!response.ok) throw new Error("问卷服务暂不可用");
       const next = await response.json();
-      if (student.surveyToken && student.surveySecret)
-        await fetch("/api/intake/" + student.surveyToken, {
+      if (student.surveyToken && student.surveySecret) {
+        const old = await fetch("/api/intake/" + student.surveyToken, {
           method: "DELETE",
           headers: { Authorization: "Bearer " + student.surveySecret },
         });
+        if (!old.ok && old.status !== 404) throw new Error("重新生成失败，请重试");
+        if (old.ok) {
+          const result = await old.json();
+          const current = demoRepository.read().students.find(s => s.id === student.id);
+          if (result.answers && current?.surveyToken === student.surveyToken && !current.surveySubmittedAt)
+            act({type: "survey.submit", token: student.surveyToken, answers: result.answers,
+              submittedAt: result.submittedAt, nameEdited: result.nameEdited});
+        }
+      }
       act({ type: "survey.issue", id: student.id, ...next });
       setError("");
     } catch (e) {
       setError(String(e));
+    } finally {
+      setIssuing(false);
     }
   }
-  if (!can("student.edit")) return null;
+  if (!editable) return null;
   return (
-    <Panel title="学员问卷与画像">
-      <p>
-        {student.surveySubmittedAt
-          ? "已提交 · " + new Date(student.surveySubmittedAt).toLocaleString()
-          : "待填写"}{" "}
-        · {student.id}
-      </p>
-      {student.surveyToken && (
-        <p>
-          <a
-            href={"/intake/" + student.surveyToken}
-            target="_blank"
-            rel="noreferrer"
-          >
-            打开专属问卷
-          </a>
-        </p>
+    <Panel
+      title="学员问卷与画像"
+      action={
+        <Button size="sm" onClick={issue} disabled={issuing}>
+          {issuing
+            ? "生成中…"
+            : student.surveyToken
+              ? "重新生成链接"
+              : "生成专属链接"}
+        </Button>
+      }
+    >
+      <dl className="profile-summary-fields">
+        <div>
+          <dt>问卷状态</dt>
+          <dd>
+            <Badge tone={student.surveySubmittedAt ? "success" : "neutral"}>
+              {student.surveySubmittedAt ? "已填写" : student.surveyToken ? "待填写" : "未生成"}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>{previous ? "上次提交时间" : "提交时间"}</dt>
+          <dd>
+            {student.surveySubmittedAt
+              ? new Date(student.surveySubmittedAt).toLocaleString()
+              : previous && student.surveyPreviousSubmittedAt ? new Date(student.surveyPreviousSubmittedAt).toLocaleString() : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt>专属问卷</dt>
+          <dd>
+            {student.surveyToken ? (
+              <div className="row wrap survey-link-actions">
+                <button type="button" className="text-link" onClick={copyLink}>复制链接</button>
+                <a
+                  className="text-link"
+                  href={"/intake/" + student.surveyToken}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  打开专属问卷
+                </a>
+              </div>
+            ) : (
+              "待生成"
+            )}
+          </dd>
+        </div>
+      </dl>
+      {student.surveyOriginal && (
+        <section className="profile-survey-details" aria-label="问卷原答">
+          <h3>{previous ? "上次提交的问卷原答" : "问卷原答"}</h3>
+          <dl className="profile-summary-fields">
+            {answerRows(student.surveyOriginal).map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value || "未填写"}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="profile-related">
+            <span>推荐老师标签</span>
+            {recommendedTags(student).map((tag) => (
+              <Badge key={tag} tone="neutral">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        </section>
       )}
-      <Button onClick={issue}>
-        {student.surveyToken ? "重新生成链接" : "生成专属链接"}
-      </Button>
-      {student.surveySubmittedAt && (
-        <p>
-          {[
-            student.age + " 岁",
-            student.level,
-            student.personality,
-            student.interests,
-            student.preferences,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      )}
-      {student.surveyOriginal && <details><summary>查看问卷原答及匹配依据</summary>
-        <p>意向时段：{student.surveyOriginal.times || "未填写"} · 教材：{student.surveyOriginal.material || "未填写"}</p>
-        <p>教学需求：{student.surveyOriginal.needs || "未填写"} · 兴趣：{student.surveyOriginal.interests || "未填写"}</p>
-        <p>推荐老师标签：{recommendedTags(student).join("、") || "待教务评估"}</p>
-      </details>}
-      <small>在可访问同一开发服务的设备上填写。重新生成会替换旧链接。</small>
       {error && <p role="alert">{error}</p>}
     </Panel>
   );
@@ -114,8 +157,13 @@ export function SurveyLink({ student }: { student: Student }) {
 
 export default function StudentSurvey() {
   const { token } = useParams();
-  const [level,setLevel]=useState("L0");
-  const [personality,setPersonality]=useState("活泼外向");
+  return <SurveyForm key={token} token={token} />;
+}
+
+function SurveyForm({ token }: { token?: string }) {
+  const [initialName, setInitialName] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false),
     [error, setError] = useState(""),
     [ready, setReady] = useState(false);
@@ -126,6 +174,7 @@ export default function StudentSurvey() {
         if (!r.ok) throw new Error("问卷链接已失效");
         const j = await r.json();
         if (active) {
+          setInitialName(j.chineseName || "");
           setDone(j.submitted);
           setReady(true);
         }
@@ -139,81 +188,86 @@ export default function StudentSurvey() {
   }, [token]);
   if (!ready)
     return (
-      <Panel title="学员问卷">
-        <p>{error || "正在读取问卷…"}</p>
-      </Panel>
+      <main className="student-survey-page">
+        <Panel title="学员问卷">
+          <p>{error || "正在读取问卷…"}</p>
+        </Panel>
+      </main>
     );
   if (done)
     return (
-      <Panel title="已收到学员资料">
-        <p>教务将根据填写的信息匹配老师。</p>
-      </Panel>
+      <main className="survey-complete">
+        <section className="survey-receipt" aria-labelledby="survey-received">
+          <div className="survey-complete-book" aria-hidden="true">
+            <BookOpenText size={84} strokeWidth={1.35} fill="white" />
+            <span className="survey-check"><Check size={26} strokeWidth={3} /></span>
+          </div>
+          <h1 id="survey-received">已收到学员资料</h1>
+          <p>感谢填写！教务将根据学员的情况匹配合适的外教。</p>
+        </section>
+      </main>
     );
   return (
     <main className="student-survey-page">
-      <Panel title="学员信息问卷">
-        <form
-          className="stack"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            const field = (k: string) => String(f.get(k) || "").trim();
-            try {
-              const response = await fetch("/api/intake/" + token, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  age: Number(field("age")),
-                  level: field("level"),
-                  personality: field("personality"),
-                  interests: field("interests"),
-                  experience: field("experience"),
-                  material: field("material"),
-                  times: field("times"),
-                  needs: field("needs"),
-                }),
-              });
-              if (!response.ok && response.status !== 409)
-                throw new Error("提交失败，请检查资料并重试");
-              setDone(true);
-            } catch (cause) {
-              setError(String(cause));
-            }
-          }}
-        >
-          <Field label="年龄">
-            <input required type="number" min="1" max="120" name="age" />
-          </Field>
-          <Field label="口语等级">
-            <Select size="form" name="level" value={level} onValueChange={setLevel}>
-              {["L0", "L1", "L2", "L3", "L4", "待评估"].map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="性格">
-            <Select size="form" name="personality" value={personality} onValueChange={setPersonality}>
-              <option>活泼外向</option>
-              <option>内向或慢热</option>
-            </Select>
-          </Field>
-          {Object.entries({
-            interests: "兴趣爱好",
-            experience: "外教课经验",
-            material: "起始教材",
-            times: "期望上课时间",
-            needs: "其他教学需求",
-          }).map(([k, label]) => (
-            <Field key={k} label={label}>
-              <input name={k} />
-            </Field>
-          ))}
+      <article className="survey-sheet">
+        <img className="survey-cover" src="/survey-cover.webp" alt="" width="2848" height="1600" />
+        <header className="survey-heading">
+          <h1>外教匹配信息收集问卷</h1>
+          <p>为了给学员匹配到合适的外教，请如实填写哦！</p>
+        </header>
+        <form className="matching-survey-form" onSubmit={async event => {
+          event.preventDefault();
+          if (sending) return;
+          const form = new FormData(event.currentTarget);
+          const result = matchingSurveyAnswers.safeParse({
+            ...Object.fromEntries(form.entries()), interests: form.getAll("interests"),
+          });
+          if (!result.success) {
+            setError(result.error.issues[0].message);
+            return;
+          }
+          setSending(true);
+          setError("");
+          try {
+            const response = await fetch("/api/intake/" + token, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({...result.data, initialName}),
+            });
+            if (!response.ok && response.status !== 409)
+              throw new Error(response.status === 404 ? "问卷链接已失效" : "提交失败，请检查资料并重试");
+            setDone(true);
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "提交失败，请重试");
+          } finally {
+            setSending(false);
+          }
+        }}>
+          {matchingSurveyQuestions.map(({ key, title, required, options, hint }, index) => {
+            const multiple = key === "interests";
+            const label = <>{index + 1}. {title}{required && <span aria-hidden="true" className="survey-required"> *</span>}</>;
+            if (!options) return <div className="survey-question" key={key}>
+              <label htmlFor={key}>{label}</label>
+              {hint && <small id={key + "-hint"}>{hint}</small>}
+              {key === "needs" ? <textarea id={key} name={key} rows={3} aria-describedby={key + "-hint"} />
+                : <input id={key} name={key} defaultValue={initialName} required={required} />}
+            </div>;
+            return <fieldset className="survey-question" key={key}>
+              <legend>{label}</legend>
+              {hint && <small>{hint}</small>}
+              {multiple && <small aria-live="polite">最多选择 3 项，已选择 {selected.length}/3 项</small>}
+              {options.map(option => <label className="survey-option" key={option}>
+                <input type={multiple ? "checkbox" : "radio"} name={key} value={option} required={required}
+                  disabled={multiple && selected.length >= 3 && !selected.includes(option)}
+                  onChange={multiple ? event => setSelected(event.target.checked
+                    ? [...selected, option] : selected.filter(item => item !== option)) : undefined} />
+                <span>{option}</span>
+              </label>)}
+            </fieldset>;
+          })}
           {error && <p role="alert">{error}</p>}
-          <Button type="submit" variant="primary">
-            提交学员资料
-          </Button>
+          <Button type="submit" variant="primary" disabled={sending}>{sending ? "提交中…" : "提交"}</Button>
         </form>
-      </Panel>
+      </article>
     </main>
   );
 }

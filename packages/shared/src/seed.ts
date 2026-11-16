@@ -1,3 +1,4 @@
+import { assignSampleTeams } from "./organization";
 import { initializePayroll } from "./payroll";
 import { migrateFeedbackCatalog } from "./feedbackCatalog";
 import { emptyStudentProfile } from "./model";
@@ -119,17 +120,16 @@ export function createSeed(): DemoState {
     "Ethan",
     "Ella",
   ];
+  const chineseNames = ["王子轩", "李沐晴", "陈米娅", "林可欣", "张乐乐", "周安娜"];
   const students: Student[] = names.map((name, i) => ({
     ...emptyStudentProfile(),
     balanceKnown: true,
     teacherChanges: [],
     serviceStopResults: [],
     id: `s${i + 1}`,
-    code: `${["X", "R", "CT", "EP"][i % 4]}${String(i + 7).padStart(4, "0")}`,
-    name,
-    chineseName: ["王子轩", "李沐晴", "陈米娅", "林可欣", "张乐乐", "周安娜"][
-      i % 6
-    ],
+    englishName: name,
+    name: chineseNames[i % chineseNames.length],
+    chineseName: chineseNames[i % chineseNames.length],
     age: i % 7 === 6 ? 18 : 7 + (i % 8),
     project: ["K12", "14", "乐说"][i % 3],
     channel: ["许老师", "ToC", "黄子妈妈", "艺动"][i % 4],
@@ -583,7 +583,6 @@ export function createSeed(): DemoState {
       {
         id: "u3",
         name: "Roma",
-        team:"B队", group:"一组",
         phone: "13900005678",
         roleId: "ops",
         scope: "14",
@@ -727,6 +726,7 @@ export function createSeed(): DemoState {
       payroll.opening.source = "演示期初课酬（预设汇总减可追溯课酬），非真实结算凭据";
     }
   }
+  assignSampleTeams(seed);
   return seed;
 }
 

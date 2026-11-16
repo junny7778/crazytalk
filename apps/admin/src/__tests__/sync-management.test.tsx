@@ -183,3 +183,15 @@ it("没有异常时通知不显示同步告警", async () => {
   expect(notification.queryByText("课程同步需要处理")).toBeNull();
   expect(notification.queryByRole("button", { name: /同步管理/ })).toBeNull();
 });
+
+it("老师未到自动生成站内信，通知打开对应的上课记录", async () => {
+  fixture();
+  const lesson = demoRepository.read().lessons.find(l => l.status === "待确认")!;
+  demoRepository.execute({type:"lesson.attendance", id:lesson.id, person:"老师", result:"未到堂", at:new Date().toISOString()});
+  mount("/lessons");
+  fireEvent.click(await screen.findByRole("button", {name:"通知"}));
+  const inbox = within(screen.getByRole("dialog", {name:"通知"}));
+  expect(inbox.getByText("提醒 TM 老师没来")).toBeTruthy();
+  fireEvent.click(inbox.getByRole("button", {name:"查看上课记录"}));
+  expect(await screen.findByText(/已通知 TM/)).toBeTruthy();
+});

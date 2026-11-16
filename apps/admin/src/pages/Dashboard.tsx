@@ -1,4 +1,6 @@
-import ProjectMetrics from "../components/ProjectMetrics";
+import { OrganizationFilters } from "../components/OrganizationFilters";
+import {organizationView} from "@crazytalk/shared";
+import { purchasedDelivery } from "@crazytalk/shared";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { syncManagementPath, hasSyncIssue } from "../lib/lessonSync";
 import DataTransferButton from "../components/DataTransferButton";
@@ -43,11 +45,20 @@ import {
 import { downloadTable } from "../lib/export";
 import { bookingSummary, attendanceSummary, courseAnomalies, occurred, periodRange } from "../lib/dashboard";
 export default function Dashboard() {
-  const { data, can, scope } = useDemo();
-  const navigate = useNavigate();
+  const { data: allData, can, scope } = useDemo();
+  const go = useNavigate();
   const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") || "overview";
-  const today = new Date();
+  const data = organizationView(allData, params);
+  function changeTab(tab:string) {const next=new URLSearchParams(params);next.set("tab",tab);setParams(next);}
+  function navigate(path:string) {
+    const url=new URL(path,window.location.origin);
+    if(["/students","/lessons","/feedback","/teachers","/settings"].includes(url.pathname)){
+      for(const key of ["team","group"]){const value=params.get(key);if(value)url.searchParams.set(key,value);}
+    }
+    go(url.pathname+url.search);
+  }
+  const tab = params.get("tab") === "utilization" ? "utilization" : "overview";
+  const today = new Date(DEMO_TODAY + "T12:00:00+08:00");
   const dateParts = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
@@ -60,7 +71,9 @@ export default function Dashboard() {
   const weekday = datePart("weekday");
   const todayISO = `${datePart("year")}-${datePart("month").padStart(2, "0")}-${datePart("day").padStart(2, "0")}`;
   const [period, setPeriod] = useState("本周");
-  const [project, setProject] = useState("全部项目");
+  const [selectedProject, setProject] = useState("全部项目");
+  const projects = [...new Set(data.students.map(s => s.project).filter(Boolean))];
+  const project = projects.includes(selectedProject) ? selectedProject : "全部项目";
   const [trendBy, setTrendBy] = useState("合计");
   const [group, setGroup] = useState("项目");
   const [expanded, setExpanded] = useState<string[]>(["K12"]);
@@ -68,6 +81,7 @@ export default function Dashboard() {
   const students = data.students.filter(
     (s) => project === "全部项目" || s.project === project,
   );
+  const delivery = purchasedDelivery(allData, students, DEMO_TODAY.slice(0, 7));
   const studentIds = new Set(students.map((s) => s.id));
   const lessons = data.lessons.filter((l) => studentIds.has(l.studentId));
   const { start: since, end: periodEnd } = periodRange(period);
@@ -280,7 +294,6 @@ export default function Dashboard() {
       permission: "student.view",
     },
   ].filter((reminder) => can(reminder.permission));
-  if(tab==="projectMetrics")return <div className="stack"><Button onClick={()=>setParams({tab:"overview"})}>返回运营总览</Button><ProjectMetrics/></div>;
   return (
     <div className="stack dashboard-page">
       <header className="dashboard-hero">
@@ -305,10 +318,9 @@ export default function Dashboard() {
       <div className="dashboard-view-toolbar">
         <Tabs
           value={tab}
-          onChange={(v) => setParams({ tab: v })}
+          onChange={(v) => changeTab(v)}
           items={[
             { value: "overview", label: "运营总览" },
-            {value:"projectMetrics",label:"项目月度指标"},
             ...(can("dashboard.utilization")
               ? [{ value: "utilization", label: "老师利用率" }]
               : []),
@@ -316,6 +328,7 @@ export default function Dashboard() {
         />
         <div className="dashboard-filters">
           <small>范围：{scope}</small>
+          <OrganizationFilters data={allData} />
           <Select
             className="compact-select"
             aria-label="看板时间范围"
@@ -330,12 +343,11 @@ export default function Dashboard() {
             className="compact-select"
             aria-label="看板项目"
             value={project}
+            disabled={!projects.length}
             onValueChange={setProject}
           >
             <option>全部项目</option>
-            <option>K12</option>
-            <option>14</option>
-            <option>乐说</option>
+            {projects.map(name => <option key={name}>{name}</option>)}
           </Select>
         </div>
       </div>
@@ -344,7 +356,7 @@ export default function Dashboard() {
           <section className="grid-4" aria-label="基础数据">
             <StatCard
               variant="dashboard-featured"
-              label="学员"
+              label="学员数"
               value={
                 <>
                   {students.filter((s) => s.status === "在读").length}
@@ -360,7 +372,7 @@ export default function Dashboard() {
             />
             <StatCard
               variant="dashboard"
-              label="老师"
+              label="老师数"
               value={
                 <>
                   {availableTeachers.length}
@@ -376,6 +388,14 @@ export default function Dashboard() {
             />
             <StatCard
               variant="dashboard"
+              label="累计销课率"
+              value={delivery.purchased ? (100 * delivery.delivered / delivery.purchased).toFixed(1) + "%" : "—"}
+              note={<><span className="delivery-progress" aria-hidden="true"><span style={{width: delivery.purchased ? Math.min(100, 100 * delivery.delivered / delivery.purchased) + "%" : "0%"}} /></span>
+                {delivery.purchased ? `已交付 ${delivery.delivered} / 已购 ${delivery.purchased} 课时` : "暂无购课订单"} · 截至 {datePart("month")}月{datePart("day")}日</>}
+              onClick={() => navigate("/lessons?" + new URLSearchParams({deliveryMonth:DEMO_TODAY.slice(0,7), ...(project === "全部项目" ? {} : {project})}))}
+            />
+            <StatCard
+              variant="dashboard"
               label={`${period}完成课程`}
               value={
                 <>
@@ -385,18 +405,6 @@ export default function Dashboard() {
               }
               note={`应完成 ${due.length} 节 · 完成率 ${due.length ? Math.round((closed / due.length) * 100) : 0}%`}
               onClick={() => navigate(lessonPath({ status: "已完成" }))}
-            />
-            <StatCard
-              variant="dashboard"
-              label={`${period}老师订课率`}
-              value={
-                <>
-                  {opened ? rate : "—"}
-                  <em>{opened ? "%" : ""}</em>
-                </>
-              }
-              note={`晚间 ${eveningOpen ? Math.round((eveningBooked / eveningOpen) * 100) + "%" : "—"} · 空置 ${Math.max(0, opened - booked)} 个时段`}
-              onClick={() => setParams({ tab: "utilization" })}
             />
           </section>
           <section
@@ -537,6 +545,7 @@ export default function Dashboard() {
                   />
                 }
               >
+                {!inPeriod.length ? <p className="dashboard-empty">{period}暂无已发生的课程记录</p> : <>
                 <div className="dashboard-chart">
                   <ResponsiveContainer>
                     <ComposedChart
@@ -681,6 +690,7 @@ export default function Dashboard() {
                     </span>
                   ))}
                 </div>
+                </>}
                 <div className="dashboard-card-footer">
                   <button
                     className="text-link dashboard-detail-link"
@@ -748,7 +758,7 @@ export default function Dashboard() {
                     />
                   </div>
                 ) : (
-                  <div className="dashboard-attendance-chart">
+                  attendance.expected === 0 ? <p className="dashboard-empty">本期暂无可计算出勤率的考勤记录</p> : <div className="dashboard-attendance-chart">
                     <ResponsiveContainer>
                       <ComposedChart
                         data={trend}
@@ -945,7 +955,7 @@ export default function Dashboard() {
                         </button>
                       ))
                     ) : (
-                      <p className="dashboard-empty">本期暂无差评反馈</p>
+                      <p className="dashboard-empty">{feedback.length ? "本期暂无差评反馈" : "本期暂无反馈记录"}</p>
                     )}
                   </div>
                   <div className="dashboard-data-note">

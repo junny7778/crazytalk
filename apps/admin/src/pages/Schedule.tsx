@@ -80,9 +80,7 @@ export default function Schedule() {
   const [query, setQuery] = useState("");
   const [so, setSo] = useState("");
   const [studentId, setStudent] = useState(
-    routeStudentId ||
-      data.students.find((s) => s.code === params.get("studentCode"))?.id ||
-      "",
+    routeStudentId || "",
   );
   const [fixedPlan, setFixedPlan] = useState<{
     plan: FixedPlan;

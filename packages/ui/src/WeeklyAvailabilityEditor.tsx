@@ -96,7 +96,7 @@ export function WeeklyAvailabilityEditor({
           ? "Set your usual teaching hours for each day."
           : "按星期填写常规授课时间，每天可添加多段。"}
       </p>
-      <details><summary>{english?"Weekly time grid":"按周历勾选时段"}</summary><div className="weekly-slot-grid"><table><thead><tr><th>{english?"Time":"时间"}</th>{week.map(d=><th key={d}>{days[d]}</th>)}</tr></thead>
+      <details className="weekly-calendar-picker"><summary>{english?"Weekly time grid":"按周历勾选时段"}</summary><div className="weekly-slot-grid"><table><thead><tr><th>{english?"Time":"时间"}</th>{week.map(d=><th key={d}>{days[d]}</th>)}</tr></thead>
       <tbody>{Array.from({length:30},(_,i)=>{
         const clock=(n:number)=>String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
         const start=clock(7*60+i*30),end=clock(7*60+(i+1)*30);

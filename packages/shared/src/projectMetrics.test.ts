@@ -1,6 +1,6 @@
 import { it, expect } from "vitest";
 import { createSeed } from "./seed";
-import { projectMetrics } from "./projectMetrics";
+import { projectMetrics, purchasedDelivery } from "./projectMetrics";
 it("缺席可消课，取消不计出勤；未配置目标与 0 分母分别保留", () => {
   const d = createSeed(),
     s = d.students[0];
@@ -31,4 +31,15 @@ it("缺席可消课，取消不计出勤；未配置目标与 0 分母分别保�
     note: "",
   });
   expect(projectMetrics(d, s, "2026-11").target).toBe(12);
+});
+
+it("共用套餐按订单累计交付，缺席扣课不增加交付", () => {
+  const d = createSeed();
+  const [a,b] = d.students;
+  d.orders = [{id:"family",studentIds:[a.id,b.id],units:72,balance:68,date:"2026-09-01",kind:"新购",channel:"",project:""}];
+  const held = {...d.lessons[0], orderId:"family", studentId:a.id, date:"2026-09-20", duration:50, status:"已完成" as const, teacherIn:"09:00",teacherOut:"09:50",studentIn:"09:00",studentOut:"09:50",attendance:"正常" as const};
+  d.lessons = [held,{...held,studentId:b.id,date:"2026-10-05",duration:25},{...held,deducted:true,attendance:"学员缺席"}];
+  expect(purchasedDelivery(d,[a,b],"2026-10")).toMatchObject({purchased:72,delivered:3});
+  expect(purchasedDelivery(d,[a],"2026-09")).toMatchObject({purchased:72,delivered:2});
+  expect(purchasedDelivery(d,[a],"2026-08")).toMatchObject({purchased:0,delivered:0});
 });

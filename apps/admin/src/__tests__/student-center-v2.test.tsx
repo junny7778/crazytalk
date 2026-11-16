@@ -59,21 +59,31 @@ afterEach(() => {
 });
 
 describe("学员中心确认方案", () => {
-  it("默认列表只呈现9个原表关键字段和操作，名字独立可点，不暴露系统编号或等级", async () => {
+  it("学员姓名与唯一 ID 独立成列，姓名可进入档案", async () => {
     const { container } = mount("/students");
     await screen.findByRole("heading", { name: "学员中心" });
     const headers = [...container.querySelectorAll(".students-table th")]
       .map((cell) => cell.textContent?.trim())
       .filter(Boolean);
+    const learner = demoRepository.read().students.find(s => s.name === "Jayden")!;
+    const row = screen.getByRole("link", {name: learner.name}).closest("tr")!;
+    expect(within(row).getByRole("cell", {name: learner.name}).textContent).toBe(learner.name);
+    expect(within(row).getByRole("cell", {name: learner.id}).textContent).toBe(learner.id);
     expect(headers).toEqual([
       "学生名字",
-      "渠道",
+      "学员 ID",
+      "所属队伍",
+      "所属组别",
+      "负责教务",
       "订单状态",
-      "买单日期",
-      "总课时",
       "上课老师",
-      "教材",
+      "拉群日期（充值）",
+      "起始教材",
       "上课时间",
+      "总课时",
+      "套餐共用",
+      "渠道",
+      "买单日期",
       "操作",
     ]);
     expect(
@@ -92,14 +102,7 @@ describe("学员中心确认方案", () => {
         .map((cell) => cell.textContent?.trim())
         .filter(Boolean),
     ).toEqual([
-      "学生名字",
-      "渠道",
-      "订单状态",
-      "买单日期",
-      "总课时",
-      "上课老师",
-      "教材",
-      "上课时间",
+      ...headers.slice(0, -1),
       "周上课频次",
       "是否续课",
       "操作",
@@ -163,5 +166,52 @@ describe("学员中心确认方案", () => {
     fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
     expect(await screen.findByText("录入初始剩余课时")).toBeTruthy();
     expect(screen.queryByText("暂无转介绍关系")).toBeNull();
+  });
+});
+
+describe("学员列表快捷操作", () => {
+  it("多节课先选择，单节课直接办理，无课时禁用入口", async () => {
+    const state = demoRepository.read();
+    const student = state.students.find(s => s.name === "Jayden")!;
+    const template = state.lessons[0];
+    state.lessons = ["11:00", "09:00"].map(time => ({
+      ...template, id: time, studentId: student.id, date: "2099-01-01", time,
+      status: "未开始", deducted: false,
+    }));
+    mount("/students?q=Jayden");
+    const row = (await screen.findByRole("link", {name: student.name})).closest("tr")!;
+    const cancel = () => within(row).getByRole("button", {name: "取消课"}) as HTMLButtonElement;
+    fireEvent.click(cancel());
+    const picker = screen.getByRole("dialog", {name: "选择要取消的课程"});
+    const options = within(picker).getAllByRole("button", {name: /2099-01-01/});
+    expect(options[0].textContent).toContain("09:00");
+    fireEvent.click(options[0]);
+    for (const time of ["09:00", "11:00"]) {
+      const form = within(screen.getByRole("dialog", {name: "取消课程"}));
+      expect(form.getByText("预计扣除 0 课时")).toBeTruthy();
+      fireEvent.change(form.getByLabelText(/取消原因$/), {target: {value: "家长提前请假"}});
+      fireEvent.click(form.getByRole("button", {name: "确认取消课程"}));
+      await waitFor(() => expect(demoRepository.read().lessons.find(l => l.time === time)?.status).toBe("已取消"));
+      if (time === "09:00") {
+        expect(demoRepository.read().lessons.find(l => l.time === "11:00")?.status).toBe("未开始");
+        fireEvent.click(cancel());
+      }
+    }
+    expect(cancel().disabled).toBe(true);
+  });
+
+  it("回访弹窗正文显示所选学员，并保存到该学员的记录", async () => {
+    mount("/students");
+    const row = (await screen.findByRole("link", {name: "Jayden"})).closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", {name: "添加回访"}));
+    const form = within(screen.getByRole("dialog", {name: "记录回访"}));
+    expect(form.getByText("学员姓名：Jayden")).toBeTruthy();
+    fireEvent.click(form.getByRole("combobox", {name: /星级评价/}));
+    fireEvent.click(screen.getByRole("option", {name: "4 星"}));
+    fireEvent.change(form.getByRole("textbox"), {target: {value: "家长反馈课程进度合适"}});
+    fireEvent.click(form.getByRole("button", {name: "确认保存"}));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const state = demoRepository.read();
+    expect(state.events[0]).toMatchObject({type: "回访", studentId: state.students.find(s => s.name === "Jayden")!.id, visit: {stars: 4, text: "家长反馈课程进度合适"}});
   });
 });

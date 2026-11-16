@@ -1,9 +1,7 @@
 import type { Command, DemoState, Student } from "./model";
 
 export function nextStudentId(students: readonly Pick<Student, "id">[]) {
-  const used = new Set(students.map((student) => student.id));
-  let candidate = 10000001;
-  while (used.has(String(candidate))) candidate++;
+  const candidate = students.reduce((max, student) => /^\d{8}$/.test(student.id) ? Math.max(max, Number(student.id)) : max, 10000000) + 1;
   if (candidate > 99999999) throw new Error("学员ID已用完，暂时无法新建档案");
   return String(candidate);
 }

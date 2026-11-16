@@ -38,14 +38,13 @@ describe("运营业务闭环", () => {
       type: "student.create",
       student: {
         ...student,
-        code: "TEST0001",
         name: "Demo pupil",
         phone: "13812345678",
         status: "待排课",
         teacherId: "",
       },
     }).data;
-    const created = data.students.find((s) => s.code === "TEST0001");
+    const created = data.students.find((s) => s.name === "Demo pupil");
     expect(created).toBeDefined();
     if (!created) throw new Error("Creation did not return a student");
     expect(created).toMatchObject({ balanceKnown: true, balance: 0 });

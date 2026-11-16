@@ -24,7 +24,7 @@
 .ops-side-tabs button.active {
   background: var(--ct-brand-50);
   color: var(--ct-brand-700);
-  font-weight: 700;
+  font-weight: 600;
 }
 .ops-permissions {
   display: grid;
@@ -119,7 +119,7 @@
 }
 .ops-number {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .ops-log-detail {
   padding: 14px 0;
@@ -422,7 +422,7 @@
 .settings-rule-conventions-label {
   margin: 0;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ct-gray-900);
 }
 .settings-rule-threshold .field > label {
@@ -572,7 +572,7 @@
 }
 .teacher-photo-upload-content strong {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .teacher-photo-upload-content small {
   color: var(--ct-gray-500);
@@ -707,7 +707,7 @@
   padding: 12px;
   background: var(--ct-gray-50);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   text-align: center;
 }
 .teacher-schedule-day {

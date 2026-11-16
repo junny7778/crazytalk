@@ -201,6 +201,7 @@ const zh: Record<keyof typeof en, string> = {
   unavailable: "不上课",
   startTime: "开始时间",
   endTime: "结束时间",
+  payUnitRate: "单价",
   student: "学员",
   level: "等级",
   noTeacher: "暂时无法查看老师资料",

@@ -1,7 +1,8 @@
+import {organizationView} from "@crazytalk/shared";
 import ListPagination, { useListPage } from "../../components/ListPagination";
 import TeacherAttendance from "../../components/TeacherAttendance";
 import TeacherFeedback from "../../components/TeacherFeedback";
-import { formatMaterialProgress } from "@crazytalk/shared";
+import { formatStudentProgress } from "@crazytalk/shared";
 import TeacherSchedule from "../../components/TeacherSchedule";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../../components/DataTransferButton";
@@ -81,11 +82,12 @@ function TeacherPhoto({
   );
 }
 export default function Teachers() {
-  const { data, can } = useDemo();
+  const { data: allData, can } = useDemo();
   const run = useBusinessAction();
   const navigate = useNavigate();
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
+  const data=organizationView(allData,params);
   const legacyView = params.get("view") || "";
   const status =
     params.get("status") ??
@@ -181,9 +183,13 @@ export default function Teachers() {
           <span style={{ whiteSpace: "pre-line" }}>
             {availabilitySummary(t)}
           </span>
-          <small>{t.needConfirm ? "排课前需确认" : "常规开放"}</small>
+
         </>
       ),
+    },
+    {
+      key: "needConfirm", label: "排课确认要求", defaultVisible: true,
+      render: (t: Teacher) => t.needConfirm ? "排课前需确认" : "常规开放",
     },
     {
       key: "status",
@@ -399,7 +405,7 @@ export default function Teachers() {
                 )}
               </div>
             </div>
-            <div className="row wrap">{teacher.photos?.map((photo,i)=><img key={i} width={120} src={photo} alt={teacher.name+" 展示照片 "+(i+1)}/>)}{teacher.introVideo && <video width={240} controls src={teacher.introVideo}/>}</div>
+            <div className="teacher-profile-media">{teacher.photos?.map((photo,i)=><img key={i} width={120} src={photo} alt={teacher.name+" 展示照片 "+(i+1)}/>)}{teacher.introVideo && <video width={240} controls src={teacher.introVideo}/>}</div>
             <dl className="teacher-profile-grid" aria-label="老师基本资料">
               <div>
                 <dt>负责 TM</dt><dd>{data.accounts.find(a => a.id === teacher.tmAccountId)?.name || "待分配"}</dd>
@@ -537,7 +543,7 @@ export default function Teachers() {
                         <th>学员</th>
                         <th>项目</th>
                         <th>负责教务</th>
-                        <th>教材进度</th>
+                        <th>教材</th><th>学习进度</th>
                         <th>状态</th>
                       </tr>
                     </thead>
@@ -549,7 +555,7 @@ export default function Teachers() {
                           </td>
                           <td>{s.project || "—"}</td>
                           <td>{s.owner || "—"}</td>
-                          <td>{formatMaterialProgress(s.material, s.unit)}</td>
+                          <td>{s.material || "—"}</td><td>{formatStudentProgress(s.unit) || "—"}</td>
                           <td>
                             <Badge tone="success">{s.status}</Badge>
                           </td>
@@ -613,9 +619,7 @@ export default function Teachers() {
                     .filter((l) => l.teacherId === teacher.id)
                     .map((l) => (
                       <div key={l.id} className="inset row between">
-                        <span>
-                          {l.start} 至 {l.end} · {l.reason}
-                        </span>
+                        <dl className="detail-pairs"><dt>开始时间</dt><dd>{l.start}</dd><dt>结束时间</dt><dd>{l.end}</dd><dt>请假原因</dt><dd>{l.reason}</dd></dl>
                         <Badge tone={tone(l.status)}>{l.status}</Badge>
                       </div>
                     ))
@@ -639,13 +643,14 @@ export default function Teachers() {
                     size="sm"
                     onClick={() =>
                       exportCsv("老师档案", [
-                        ["老师", "SO", "状态", "能教的类别", "可上课时间"],
+                        ["老师", "SO", "状态", "能教的类别", "可上课时间", "排课确认要求"],
                         ...filtered.map((t) => [
                           t.name,
                           t.so,
                           t.status,
                           t.categories.join("、"),
                           availabilitySummary(t),
+                          t.needConfirm ? "排课前需确认" : "常规开放",
                         ]),
                       ])
                     }
@@ -929,15 +934,15 @@ export default function Teachers() {
                         ))}
                     </Select>
                   </Field>
-                  <Field label="展示照片"><input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={async e=>{
+                  <Field label="展示照片"><input className="media-file-field" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={async e=>{
                     const files=Array.from(e.currentTarget.files || []);
                     try {const images=await Promise.all(files.map(file=>new Promise<string>((resolve,reject)=>{
                       if(!["image/png","image/jpeg","image/webp"].includes(file.type))return reject(new Error("请选择图片"));
                       const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(file);
                     })));setEdit(current=>current && ({...current,photos:[...(current.photos||[]),...images]}));}catch(error){setPhotoError(String(error));}
                   }}/></Field>
-                  <div className="row wrap">{edit.photos?.map((photo,i)=><button key={i} aria-label={`移除展示照片 ${i+1}`} onClick={()=>setEdit({...edit,photos:edit.photos?.filter((_,j)=>j!==i)})}><img src={photo} alt={`展示照片 ${i+1}`} width={64}/></button>)}</div>
-                  <Field label="上传介绍视频"><input type="file" accept="video/mp4,video/webm" onChange={e=>{
+                  <div className="teacher-profile-media">{edit.photos?.map((photo,i)=><button key={i} aria-label={`移除展示照片 ${i+1}`} onClick={()=>setEdit({...edit,photos:edit.photos?.filter((_,j)=>j!==i)})}><img src={photo} alt={`展示照片 ${i+1}`} width={64}/></button>)}</div>
+                  <Field label="上传介绍视频"><input className="media-file-field" type="file" accept="video/mp4,video/webm" onChange={e=>{
                     const file=e.target.files?.[0];if(!file)return;
                     if(!["video/mp4","video/webm"].includes(file.type)){setPhotoError("请选择 MP4 或 WebM 视频");return;}
                     const reader=new FileReader();reader.onload=()=>setEdit(current=>current && ({...current,introVideo:String(reader.result)}));reader.onerror=()=>setPhotoError("读取视频失败");reader.readAsDataURL(file);

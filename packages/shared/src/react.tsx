@@ -183,7 +183,7 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "student.history.update": "student.edit",
   "student.import": "student.import",
   "student.balance.open": "credit.add",
-  "lesson.incident":"lesson.correct", "lesson.notice":"lesson.confirm",
+  "lesson.attendance":"classin.manage", "lesson.incident":"lesson.correct", "lesson.notice":"lesson.confirm",
   "slot.lock":"schedule.create", "slot.release":"schedule.create",
   "pay.terms":"pay_rate.edit","pay.freeze":"payroll.confirm",
   "survey.issue":"student.edit",

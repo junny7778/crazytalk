@@ -1,3 +1,6 @@
+import {rosterValues,rosterHeaders} from "../lib/customerRoster";
+import { OrganizationFilters } from "../components/OrganizationFilters";
+import {studentOrganization, organizationView} from "@crazytalk/shared";
 import ListPagination from "../components/ListPagination";
 import { formatStudentProgress } from "@crazytalk/shared";
 import DataTransferButton from "../components/DataTransferButton";
@@ -14,6 +17,9 @@ import {
 import { useDemo } from "@crazytalk/shared/react";
 import {
   type Student,
+  type Lesson,
+  canChangeStudentLesson,
+  teacherName,
   DEMO_TODAY,
   getStudentSummary,
   addDays,
@@ -23,28 +29,27 @@ import {
   Badge,
   Button,
   Panel,
+  Modal,
   PageHeader,
   SearchInput,
   EmptyState,
   useToast,
 } from "@crazytalk/ui";
 import { Plus, ArrowUpDown, SlidersHorizontal } from "lucide-react";
+import { StudentLessonDrawer } from "../components/StudentLessonDrawer";
 import StudentImport from "../components/StudentImport";
 import {
   StudentQuickView,
   StudentActionModal,
   NewStudentModal,
 } from "../components/StudentActions";
-import {
-  studentWorkbookHeaders,
-  studentWorkbookRow,
-} from "../lib/studentWorkbook";
 import { studentFieldGroups, studentFieldValue } from "../lib/studentFields";
 import { attendanceSummary } from "../lib/dashboard";
 import { downloadTable } from "../lib/export";
 
 const defaultColumns = [
   "name",
+  "id",
   "channel",
   "orderStatus",
   "teacherName",
@@ -56,6 +61,8 @@ const defaultColumns = [
 const studentColumnOrder = [
   "sourceSequence",
   "name",
+  "englishName",
+  "id",
   "phone",
   "channel",
   "orderStatus",
@@ -103,6 +110,26 @@ export default function Students() {
   }, [view, setParams]);
   const requestedPage = Math.max(1, Number(params.get("page")) || 1);
   const [quick, setQuick] = useState<string | null>(null);
+  const [visitId, setVisitId] = useState<string | null>(null);
+  const [pickId, setPickId] = useState<string | null>(null);
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const canCancel = can("student.reschedule");
+  const canVisit = can("student.edit");
+  const cancellable = useMemo(() => {
+    const grouped = new Map<string, Lesson[]>();
+    const students = new Map(data.students.map(s => [s.id, s]));
+    for (const lesson of data.lessons) {
+      if (!canChangeStudentLesson(students.get(lesson.studentId), lesson)) continue;
+      const lessons = grouped.get(lesson.studentId) ?? [];
+      lessons.push(lesson);
+      grouped.set(lesson.studentId, lessons);
+    }
+    for (const lessons of grouped.values())
+      lessons.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+    return grouped;
+  }, [data.students, data.lessons]);
+  const visitStudent = data.students.find(s => s.id === visitId);
+  const pickStudent = data.students.find(s => s.id === pickId);
   const [newOpen, setNew] = useState(false);
   const [importOpen, setImport] = useState(false);
   const [sort, setSort] = useState<SortingState>([]);
@@ -119,7 +146,7 @@ export default function Students() {
         ]),
       ),
       ["balance", false],
-      ["owner", false],
+      ["owner", true],
       ["unit", false],
     ]),
   );
@@ -158,7 +185,7 @@ export default function Students() {
       case "totalUnits":
         return summary.totalUnits;
       case "renewalStatus":
-        return summary.renewalStatus;
+        return s.renewalStatus || summary.renewalStatus;
       case "purchaseDate":
         return summary.purchaseDate;
       case "firstLessonDate":
@@ -206,11 +233,11 @@ export default function Students() {
   };
   const filtered = useMemo(
     () =>
-      data.students.filter(
+      organizationView(data,params).students.filter(
         (s) =>
           matchesView(s) &&
           (!q ||
-            `${s.id} ${s.name} ${s.phone} ${s.code}`
+            `${s.id} ${s.name} ${s.englishName || ""} ${s.roster?.fields["学生"] || ""} ${s.phone} ${s.groupName}`
               .toLowerCase()
               .includes(q.toLowerCase())) &&
           (!params.get("project") || s.project === params.get("project")) &&
@@ -218,7 +245,7 @@ export default function Students() {
             (key) =>
               !params.get(key) ||
               (key === "renewalStatus"
-                ? summaries.get(s.id)?.renewalStatus
+                ? (s.renewalStatus || summaries.get(s.id)?.renewalStatus)
                 : s[key]) === params.get(key),
           ) &&
           (!params.get("teacher") || teacherFor(s) === params.get("teacher")),
@@ -233,7 +260,7 @@ export default function Students() {
     const key = params.get("openCredit");
     if (!key) return;
     const s = data.students.find(
-      (s) => s.id === (data.studentIdAliases?.[key] ?? key) || s.code === key,
+      (s) => s.id === (data.studentIdAliases?.[key] ?? key),
     );
     if (s) setCreditStudentId(s.id);
     setParams(
@@ -246,7 +273,7 @@ export default function Students() {
     );
   }, [params, data.students, setParams]);
   const columns = useMemo<ColumnDef<Student>[]>(() => {
-    const fields = studentFieldGroups.flatMap((group) => group.fields);
+    const fields = [...studentFieldGroups.flatMap((group) => group.fields), {key: "id" as const, label: "学员 ID"}];
     const orderedFields = studentColumnOrder.flatMap((key) =>
       fields.filter((field) => field.key === key),
     );
@@ -291,7 +318,8 @@ export default function Students() {
           />
         ),
       },
-      ...orderedFields.map(
+      ...["拉群日期（充值）","套餐共用","起始教材"].map(label=>({id:label,header:label,accessorFn:(s:Student)=>rosterValues(s,data)[label] || "未填写"})),
+      ...orderedFields.filter(f=>f.key!=="material").map(
         (field): ColumnDef<Student> => ({
           id: field.key,
           header: field.label,
@@ -311,7 +339,7 @@ export default function Students() {
                   className="student-name"
                   to={`/students/${row.original.id}`}
                 >
-                  <strong>{row.original.name}</strong><small>{row.original.id}</small>
+                  <strong>{row.original.name}</strong>
                 </Link>
               );
             if (field.key === "orderStatus" && value)
@@ -347,6 +375,8 @@ export default function Students() {
         cell: ({ row }) =>
           row.original.balanceKnown ? `${row.original.balance} 课时` : "未核实",
       },
+      { id:"team", header:"所属队伍", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster).team },
+      { id:"group", header:"所属组别", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster).group },
       { accessorKey: "owner", header: "负责教务" },
       {
         id: "unit",
@@ -358,8 +388,12 @@ export default function Students() {
         id: "actions",
         header: "操作",
         enableSorting: false,
-        cell: ({ row }) => (
-          <div className="row">
+        cell: ({ row }) => {
+          const student = row.original;
+          const lessons = cancellable.get(student.id) ?? [];
+          const unavailable = ["停课", "结课", "退费"].includes(student.status)
+            ? `学员已${student.status}` : "暂无可取消的课程";
+          return <div className="student-row-actions">
             <Link className="student-name" to={`/students/${row.original.id}`}>
               查看
             </Link>
@@ -370,17 +404,24 @@ export default function Students() {
             >
               速览
             </Button>
-          </div>
-        ),
+            {canCancel && <span title={lessons.length ? undefined : unavailable}>
+              <Button size="xs" variant="ghost" disabled={!lessons.length}
+                onClick={() => lessons.length === 1 ? setCancelId(lessons[0].id) : setPickId(student.id)}>
+                取消课
+              </Button>
+            </span>}
+            {canVisit && <Button size="xs" variant="ghost" onClick={() => setVisitId(student.id)}>添加回访</Button>}
+          </div>;
+        },
       },
     ];
-  }, [data, selected, page]);
+  }, [data, selected, page, canCancel, canVisit, cancellable]);
   const table = useReactTable({
     defaultColumn: { enableSorting: false },
     data: filtered,
     columns,
     manualPagination: true,
-    state: { sorting: sort, columnVisibility },
+    state: { sorting: sort, columnVisibility, columnOrder: ["select","sourceSequence","name","id","team","group","owner",...["orderStatus","teacherName","拉群日期（充值）","起始教材","scheduleText","totalUnits","套餐共用"]] },
     onSortingChange: setSort,
     onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
@@ -388,87 +429,15 @@ export default function Students() {
   });
   const rows = table.getRowModel().rows;
   const pageRows = rows.slice((page - 1) * 25, page * 25);
-  const selectedStudents = data.students.filter((s) => selected[s.id]);
+  const selectedStudents = filtered.filter((s) => selected[s.id]);
   const exportStudents = async (students: Student[]) => {
     if (exporting || !students.length) return;
     setExporting(true);
     try {
-      await downloadTable(
-        "学生课程信息表",
-        studentWorkbookHeaders,
-        students.map((s) => studentWorkbookRow(s, data)),
-        [
-          {
-            name: "月度上课明细",
-            headers: [
-              "学生名字",
-              "学员ID",
-              "月份",
-              "月应上课",
-              "实际上课",
-              "说明",
-            ],
-            rows: students.flatMap((s) =>
-              s.monthlyRecords.map((r) => [
-                s.name,
-                s.id,
-                r.month,
-                r.planned ?? "",
-                r.actual ?? "",
-                r.note,
-              ]),
-            ),
-          },
-          {
-            name: "当前课程与服务统计",
-            headers: [
-              "学员ID",
-              "学生名字",
-              "当前老师",
-              "教材",
-              "当前进度",
-              "固定安排",
-              "历史统计起算",
-              "历史总课时",
-              "已登记购课",
-              "合计购课",
-              "投诉累计",
-              "投诉已有明细",
-              "补偿累计",
-              "补偿已有明细",
-              "被缺席累计",
-              "被缺席已有明细",
-              "统计月份",
-              "月已排课",
-              "月实际上课",
-            ],
-            rows: students.map((student) => {
-              const item = getStudentSummary(data, student.id);
-              return [
-                student.id,
-                student.name,
-                item.teacher.name,
-                item.progress.material,
-                formatStudentProgress(item.progress.unit),
-                item.scheduleText,
-                student.historyStartDate || "未确认",
-                item.historicalTotalUnits ?? "未提供",
-                item.systemPurchaseUnits,
-                item.totalUnits ?? "待核实",
-                item.complaints.total ?? "待核实",
-                item.complaints.system,
-                item.compensations.total ?? "待核实",
-                item.compensations.system,
-                item.teacherAbsences.total ?? "待核实",
-                item.teacherAbsences.system,
-                item.monthly.month,
-                item.monthly.planned,
-                item.monthly.actual,
-              ];
-            }),
-          },
-        ],
-      );
+      await downloadTable("学生信息表", ["学员ID", "学生中文名", "学生英文名", ...rosterHeaders], students.map(s => {
+        const values = rosterValues(s, data);
+        return [s.id, s.chineseName, s.englishName || "", ...rosterHeaders.map(key => values[key] ?? "")];
+      }));
       toast(`已导出 ${students.length} 位学员的资料`);
     } catch {
       toast("导出未完成，请重试", { tone: "error" });
@@ -525,19 +494,19 @@ export default function Students() {
           ).map(([key, label]) => (
             <Select
               key={key}
-              aria-label={`${label}筛选`}
+              aria-label={`${key==="renewalStatus" ? "续费状态" : label}筛选`}
               value={params.get(key) || ""}
               onValueChange={(v) => update(key, v)}
             >
-              <option value="">全部{label}</option>
+              <option value="">全部{key==="renewalStatus" ? "续费状态" : label}</option>
               {[
                 ...new Set(
-                  data.students
+                  organizationView(data,params).students
                     .map((s) =>
                       key === "teacher"
                         ? teacherFor(s)
                         : key === "renewalStatus"
-                          ? summaries.get(s.id)?.renewalStatus || ""
+                          ? (s.renewalStatus || summaries.get(s.id)?.renewalStatus) || ""
                           : s[key],
                     )
                     .filter(Boolean),
@@ -547,6 +516,7 @@ export default function Students() {
               ))}
             </Select>
           ))}
+          <OrganizationFilters data={data}/>
           <div className="toolbar-spacer" />
           <span className="muted">共 {filtered.length} 位学员</span>
           <Button size="sm" onClick={() => setColumnsOpen(!columnsOpen)}>
@@ -656,6 +626,17 @@ export default function Students() {
           </div>
         )}
       </Panel>
+      {canVisit && visitStudent && <StudentActionModal key={visitStudent.id} student={visitStudent} action="visit" onClose={() => setVisitId(null)} />}
+      {canCancel && pickStudent && <Modal open title="选择要取消的课程" description={pickStudent.name} onClose={() => setPickId(null)}>
+        <div className="stack">
+          {(cancellable.get(pickStudent.id) ?? []).map(lesson =>
+            <Button key={lesson.id} onClick={() => { setPickId(null); setCancelId(lesson.id); }}>
+              {lesson.date} {lesson.time} · {teacherName(data, lesson.teacherId)}
+            </Button>)}
+          {!cancellable.has(pickStudent.id) && <p>暂无可取消的课程</p>}
+        </div>
+      </Modal>}
+      {canCancel && cancelId && <StudentLessonDrawer lessonId={cancelId} cancelDirectly onClose={() => setCancelId(null)} />}
       <StudentQuickView id={quick} onClose={() => setQuick(null)} />
       <NewStudentModal open={newOpen} onClose={() => setNew(false)} />
       {creditStudent && (

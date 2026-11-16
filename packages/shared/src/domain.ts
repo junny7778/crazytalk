@@ -46,6 +46,20 @@ const teacherIdentity = (name: string) =>
     .trim()
     .replace(/^T\.\s*/i, "")
     .toLowerCase();
+export function canChangeStudentLesson(student: Student | undefined, lesson: Lesson) {
+  return !!student && !["停课", "结课", "退费"].includes(student.status)
+    && lesson.status === "未开始" && lesson.date >= DEMO_TODAY;
+}
+
+export function cancellationCharge(lesson: Lesson, responsibility: string, kind: string, waived: boolean, at: string) {
+  const leadMinutes = (Date.parse(lesson.date + "T" + lesson.time + ":00+08:00") - Date.parse(at)) / 60000;
+  if (!Number.isFinite(leadMinutes)) throw new Error("取消时间无效");
+  if (responsibility === "学员" && kind === "学员请假")
+    return leadMinutes < 180 && !waived ? lesson.plannedUnits ?? scheduleUnits(lesson.duration) : 0;
+  if (responsibility === "老师" || ["教材错误或重复","老师缺席","已核实网络故障"].includes(kind)) return 0;
+  return undefined;
+}
+
 export function isAvailable(
   data: DemoState,
   teacherId: string,
@@ -109,24 +123,15 @@ export function studentName(data: DemoState, studentId: string) {
   const s = data.students.find((s) => s.id === studentId);
   return s ? s.name : "待关联学员";
 }
-/** Import matching uses an explicitly supplied legacy key or exact nonempty group and name. */
 export function studentImportMatches(
   students: Student[],
   profile: StudentProfileInputLike,
 ): Student[] {
   if (profile.importStudentId !== undefined) return students.filter(s => s.id === profile.importStudentId && !!profile.importStudentId);
-  if (profile.code.trim())
-    return students.filter(
-      (s) => s.code.toLowerCase() === profile.code.trim().toLowerCase(),
-    );
-  if (!profile.groupName.trim() || !profile.name.trim()) return [];
-  return students.filter(
-    (s) =>
-      s.groupName.trim() === profile.groupName.trim() &&
-      s.name.trim() === profile.name.trim(),
-  );
+  if (profile.roster) return students.filter(s=>s.roster?.key===profile.roster?.key);
+  return [];
 }
-type StudentProfileInputLike = Pick<Student, "code" | "groupName" | "name"> & {importStudentId?: string};
+type StudentProfileInputLike = {importStudentId?: string; roster?:Student["roster"]};
 export function payrollTotal(data: DemoState, payrollId: string) {
   if (!data.payroll.some((p) => p.id === payrollId))
     return { base: 0, deductions: 0, total: 0 };
@@ -463,19 +468,52 @@ export function transition(
     l.deducted = shouldDeduct;
     if (shouldDeduct) l.confirmedUnits = nextUnits;
   }
+  function notifyAbsence(l: Lesson, person: "学员" | "老师", at: string) {
+    l.attendanceMessages ??= {};
+    l.attendanceMessages[person] ??= at;
+    if (person === "学员") l.absenceNotice = "已送达";
+  }
+  function confirmAbsence(l: Lesson, person: "学员" | "老师") {
+    (l.attendanceFinal ??= {})[person] = true;
+    l.autoSettlementPaused = true;
+    l.attendance = person === "老师" || l.teacherAttendance?.includes("缺席") ? "老师缺席" : "学员缺席";
+    if (person === "老师") {
+      l.teacherAttendance = ["缺席"];
+      deduct(l, false);
+      l.status = "已完成";
+    } else {
+      l.studentAttendance = ["缺席"];
+      if (l.status === "未开始") l.status = "待确认";
+    }
+  }
   switch (command.type) {
+    case "lesson.attendance": {
+      const l = lesson(command.id);
+      const at = Date.parse(command.at);
+      if (!Number.isFinite(at)) throw new Error("考勤时间无效");
+      const previous = l.attendanceUpdates?.[command.person];
+      if (l.attendanceFinal?.[command.person] || l.status === "已取消" || (previous && Date.parse(previous) >= at)) break;
+      (l.attendanceUpdates ??= {})[command.person] = new Date(at).toISOString();
+      if (command.result === "到堂") {
+        const key = command.person === "老师" ? "teacherIn" : "studentIn";
+        if (l.attendanceMessages?.[command.person]) {
+          const tags = command.person === "老师" ? "teacherAttendance" : "studentAttendance";
+          if (l[tags]?.includes("缺席")) delete l[tags];
+          if (l.attendance === command.person + "缺席") l.attendance = "正常";
+        }
+        l[key] ||= new Date(at + 8 * 3600000).toISOString().slice(11, 16);
+      } else {
+        notifyAbsence(l, command.person, command.at);
+        if (command.result === "缺席") confirmAbsence(l, command.person);
+      }
+      break;
+    }
     case "student.create": {
-      const profile = studentProfileSchema.parse(command.student);
-      if (
-        profile.code &&
-        data.students.some(
-          (s) => s.code.toLowerCase() === profile.code.toLowerCase(),
-        )
-      )
-        throw new Error("这个学员编号已经使用，请换一个编号");
+      const chineseName = command.student.chineseName.trim();
+      if (!chineseName) throw new Error("请填写学生中文名");
+      const profile = studentProfileSchema.parse({ ...command.student, chineseName, name: chineseName });
       const s = studentSchema.parse({
         ...profile,
-        code: profile.code || `SYS-${id()}`,
         id: nextStudentId(data.students),
         createdAt: DEMO_TODAY,
         balance: 0,
@@ -513,7 +551,9 @@ export function transition(
         ("material" in patch || "unit" in patch)
       )
         throw new Error("已有课后进度，请更正对应课后记录");
+      if (patch.chineseName !== undefined && !patch.chineseName.trim()) throw new Error("请填写学生中文名");
       Object.assign(existing, patch);
+      existing.name = existing.chineseName || existing.englishName || existing.name;
       event("修改资料", "更新了学员资料", existing.id);
       break;
     }
@@ -584,15 +624,6 @@ export function transition(
     }
     case "student.profile": {
       const profile = studentProfileSchema.parse(command.profile);
-      if (
-        profile.code &&
-        data.students.some(
-          (item) =>
-            item.id !== command.id &&
-            item.code.toLowerCase() === profile.code.toLowerCase(),
-        )
-      )
-        throw new Error("这个学员编号已经使用，请换一个编号");
       const existing = student(command.id);
       if (
         existing.teacherId &&
@@ -622,6 +653,7 @@ export function transition(
         safe.unit = existing.unit;
       }
       Object.assign(existing, safe);
+      existing.name = existing.chineseName || existing.englishName || existing.name;
       event("修改资料", "更新了学员资料", command.id);
       break;
     }
@@ -649,14 +681,10 @@ export function transition(
       const keys = new Set<string>();
       for (const profile of profiles) {
         if (profile.importStudentId && !data.students.some(s => s.id === profile.importStudentId)) throw new Error("学员 ID 不存在，请核对");
-        const key = profile.importStudentId !== undefined ? profile.importStudentId : profile.code
-          ? `code:${profile.code.toLowerCase()}`
-          : profile.groupName.trim()
-            ? `group:${profile.groupName.trim()}\u0000${profile.name.trim()}`
-            : "";
+        const key = profile.importStudentId || profile.roster?.key;
         if (key && keys.has(key))
           throw new Error(
-            `导入文件中的学生「${profile.name}」与群名重复，请先核对，避免重复导入`,
+            `导入文件中的学生「${profile.name}」标识重复，请先核对，避免重复导入`,
           );
         if (key) keys.add(key);
         const matches = studentImportMatches(data.students, profile);
@@ -665,6 +693,8 @@ export function transition(
             `学生「${profile.name}」匹配到多份档案，请先人工核对，未导入或覆盖任何资料`,
           );
         const existing = matches[0];
+        if (!existing && profile.roster && !profile.chineseName.trim())
+          throw new Error(`学生「${profile.name}」缺少中文名，请核对后再导入`);
         if (existing && command.mode === "update") {
           const currentTeacherName = existing.teacherId
             ? data.teachers.find((teacher) => teacher.id === existing.teacherId)
@@ -690,7 +720,7 @@ export function transition(
           command.mode === "update" &&
           profile.orderStatus &&
           profile.orderStatus !== matches[0].orderStatus &&
-          serviceStatusForOrder(profile.orderStatus) !== matches[0].status
+          (profile.roster ? profile.status : serviceStatusForOrder(profile.orderStatus)) !== matches[0].status
         )
           throw new Error(
             `学生「${profile.name}」的订单状态发生变更，请先通过服务操作处理，不能用导入覆盖`,
@@ -734,6 +764,16 @@ export function transition(
             skipped++;
             continue;
           }
+          if(profile.roster){
+            existing.roster={...profile.roster, key: existing.roster?.key ?? profile.roster.key};
+            existing.chineseName = profile.chineseName || existing.chineseName;
+            existing.englishName = profile.englishName ?? existing.englishName;
+            existing.name = existing.chineseName || existing.englishName || profile.name;
+            for(const field of ["owner","teacherName","scheduleText","frequencyText","firstLessonDate","orderStatus","renewalStatus","phone","gender","age","ageText","level","personality","interests","foreignTeacherExperience","preferences","totalUnits"] as const)
+              Object.assign(existing,{[field]:profile[field]});
+            if(!data.reports.some(report=>report.studentId===existing.id))existing.material=profile.material;
+            updated++;continue;
+          }
           const workbook = Object.fromEntries(
             workbookFields.map((key) => [key, profile[key]]),
           );
@@ -754,8 +794,7 @@ export function transition(
           data.students.push(
             studentSchema.parse({
               ...profile,
-              code: profile.code || `SYS-${id()}`,
-              status: profile.orderStatus
+              status: profile.roster ? profile.status : profile.orderStatus
                 ? serviceStatusForOrder(profile.orderStatus)
                 : profile.status,
               id: nextStudentId(data.students),
@@ -825,7 +864,9 @@ export function transition(
         ("material" in command.patch || "unit" in command.patch)
       )
         throw new Error("已有课后进度，请更正对应课后记录");
-      Object.assign(student(command.id), command.patch);
+      const existing = student(command.id);
+      Object.assign(existing, command.patch);
+      existing.name = existing.chineseName || existing.englishName || existing.name;
       event("修改资料", "更新了学员资料", command.id);
       break;
     }
@@ -863,6 +904,7 @@ export function transition(
       const s = student(command.id);
       s.surveyToken = command.token || crypto.randomUUID();
       s.surveySecret = command.secret;
+      if (s.surveySubmittedAt) s.surveyPreviousSubmittedAt = s.surveySubmittedAt;
       delete s.surveySubmittedAt;
       break;
     }
@@ -870,10 +912,25 @@ export function transition(
       const s = required(data.students.find(s=>s.surveyToken===command.token && !!command.token),"问卷链接已失效");
       if(s.surveySubmittedAt) throw new Error("问卷已提交");
       const answers=studentSurveyAnswers.parse(command.answers);
-      Object.assign(s,{surveyOriginal:answers,surveySubmittedAt:recordedAt,age:answers.age,level:answers.level,
-        ageText:String(answers.age),personality:answers.personality,interests:answers.interests,
-        foreignTeacherExperience:answers.experience,preferences:answers.needs});
-      if(answers.material && !data.reports.some(r=>r.studentId===s.id))s.material=answers.material;
+      s.surveyOriginal = answers;
+      s.surveySubmittedAt = command.submittedAt || recordedAt;
+      delete s.surveyPreviousSubmittedAt;
+      s.personality = answers.personality;
+      if ("chineseName" in answers) {
+        if (command.nameEdited !== false || !s.chineseName) {
+          s.chineseName = answers.chineseName;
+          s.name = answers.chineseName;
+        }
+        s.gender = answers.gender;
+        s.level = answers.level.slice(0, 2);
+        if (answers.ageGroup && s.age == null) s.ageText = answers.ageGroup;
+        if (answers.interests.length) s.interests = answers.interests.join("、");
+        if (answers.experience) s.foreignTeacherExperience = answers.experience === "没有" ? "无" : "有";
+      } else {
+        Object.assign(s, {age: answers.age, ageText: String(answers.age), level: answers.level,
+          interests: answers.interests, foreignTeacherExperience: answers.experience, preferences: answers.needs});
+        if (answers.material && !data.reports.some(r => r.studentId === s.id)) s.material = answers.material;
+      }
       event("学员问卷","收到学员资料",s.id);
       break;
     }
@@ -1415,8 +1472,11 @@ export function transition(
       if(command.minutes!==undefined && (!Number.isInteger(command.minutes)||command.minutes<0))throw new Error("请填写非负整数分钟");
       l.incident={minutes:command.minutes,reason:command.reason,note:command.note.trim(),at:recordedAt,operator:command.operator||"教务"};
       event("考勤核实",command.reason+" · "+command.note,l.studentId,l.teacherId);
-      if(command.reason==="学员缺席"){l.studentAttendance=["缺席"];l.absenceNotice ??= "待发送";}
-      if(command.reason==="老师缺席")l.teacherAttendance=["缺席"];
+      if (command.reason === "学员缺席" || command.reason === "老师缺席") {
+        const person = command.reason === "老师缺席" ? "老师" : "学员";
+        confirmAbsence(l, person);
+        notifyAbsence(l, person, recordedAt);
+      }
       l.autoSettlementPaused=true;
       break;
     }
@@ -1430,15 +1490,9 @@ export function transition(
       if (!command.reason.trim()) throw new Error("请选择取消原因");
       if(command.kind){
         const at=command.cancelledAt || recordedAt;
-        const lead=(Date.parse(l.date+"T"+l.time+":00+08:00")-Date.parse(at))/60000;
-        if(!Number.isFinite(lead))throw new Error("取消时间无效");
+        const charge = cancellationCharge(l, command.responsibility, command.kind, !!command.waived, at);
         l.cancellation={kind:command.kind,at,responsibility:command.responsibility,waived:!!command.waived};
-        if(command.responsibility==="学员" && command.kind==="学员请假"){
-          const charge=lead<180 && !command.waived;
-          deduct(l,charge,l.plannedUnits ?? scheduleUnits(l.duration));
-        } else if(["教材错误或重复","老师缺席","已核实网络故障"].includes(command.kind) || command.responsibility==="老师"){
-          if(l.deducted)deduct(l,false);
-        }
+        if (charge !== undefined && (charge > 0 || l.deducted)) deduct(l, charge > 0, charge || undefined);
       }
       l.status = "已取消";
       l.note = `${command.responsibility}原因：${command.reason}`;
@@ -1547,7 +1601,7 @@ export function transition(
         if (command.decision === "缺席") {
           l.attendance = "学员缺席";
           l.studentAttendance = ["缺席"];
-          l.absenceNotice ??= "待发送";
+          notifyAbsence(l, "学员", recordedAt);
         }
         l.note = command.reason;
         const s = student(l.studentId);
@@ -1584,6 +1638,8 @@ export function transition(
       ) {
         l.attendance = command.attendance;
         delete l.teacherAttendance;
+        delete l.studentAttendance;
+        if (l.incident?.reason.endsWith("缺席")) delete l.incident;
       }
       if (command.result !== undefined) l.status = command.result;
       const changes = [
@@ -2258,7 +2314,8 @@ export function transition(
       const r = data.reports.find((r) => r.lessonId === l.id);
       if (r) Object.assign(r, command.report, { recordedAt });
       else data.reports.push({ ...command.report, id: id(), recordedAt });
-      if(command.report.screenshot && !l.incident && ["待确认","未开始"].includes(l.status) && l.attendance==="正常") {
+      if(command.report.screenshot && !l.incident &&
+        !(l.attendanceMessages?.学员 && !l.studentIn) && !(l.attendanceMessages?.老师 && !l.teacherIn) && ["待确认","未开始"].includes(l.status) && l.attendance==="正常") {
         deduct(l,true,l.confirmedUnits ?? l.plannedUnits ?? scheduleUnits(l.duration));
         l.status="已完成";student(l.studentId).lastLesson=l.date;
       }

@@ -429,12 +429,12 @@
 .student-processing > h3 {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .student-feedback-section > h3 {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
   margin: 0 0 20px;
 }
 .student-feedback-section + .student-feedback-section {
@@ -446,3 +446,22 @@
   padding-inline: 0;
   color: var(--ct-brand-700);
 }
+
+.profile-service-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; align-items: start; }
+.profile-service-grid > .panel { min-width: 0; }
+.profile-service-grid .panel-heading { gap: 12px; flex-wrap: wrap; }
+.profile-summary-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(100px,1fr)); gap: 16px; margin: 0; }
+.profile-summary-fields dt, .profile-related > span:first-child { color: var(--ct-gray-500); font-size: 12px; }
+.profile-summary-fields dd { margin: 6px 0 0; overflow-wrap: anywhere; }
+.row.survey-link-actions { column-gap: 20px; }
+.profile-related, .profile-survey-details { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--ct-gray-200); }
+.profile-related { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.profile-related a { color: var(--ct-brand-700); }
+.profile-survey-details h3 { margin: 0 0 16px; font-size: 14px; }
+.profile-phone-lookup { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; }
+
+.profile-survey-details .profile-summary-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) {
+  .profile-survey-details .profile-summary-fields { grid-template-columns: 1fr; }
+}
+.profile-survey-details dd { white-space: pre-wrap; }

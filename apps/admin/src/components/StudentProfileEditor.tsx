@@ -1,3 +1,4 @@
+import {studentOrganization} from "@crazytalk/shared";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDemo } from "@crazytalk/shared/react";
@@ -81,7 +82,11 @@ export default function StudentProfileEditor({
     if (saveLock.current) return;
     setError("");
     setFieldErrors({});
-    const parsed = studentProfileSchema.safeParse(draft);
+    if (!draft.chineseName.trim()) {
+      setFieldErrors({ chineseName: "请填写学生中文名" });
+      return;
+    }
+    const parsed = studentProfileSchema.safeParse({...draft, name: draft.chineseName.trim(), chineseName: draft.chineseName.trim(), englishName: draft.englishName?.trim() || ""});
     if (!parsed.success) {
       setFieldErrors(
         Object.fromEntries(
@@ -109,7 +114,8 @@ export default function StudentProfileEditor({
     setSaving(true);
     try {
       const keys: (keyof StudentEditableInput)[] = [
-        "name",
+        "englishName",
+        "chineseName",
         "groupName",
         "phone",
         "age",
@@ -198,18 +204,11 @@ export default function StudentProfileEditor({
         <section>
           <h3>基本资料</h3>
           <div className="student-profile-fields">
-            <Field error={fieldErrors.name} label="学生名字" required>
-              <input
-                value={draft.name}
-                onChange={(event) => patch({ name: event.target.value })}
-                placeholder="例如 Lucy"
-              />
+            <Field error={fieldErrors.chineseName} label="学生中文名" required>
+              <input required value={draft.chineseName} onChange={event => patch({ chineseName: event.target.value })} />
             </Field>
-            <Field label="学生群名">
-              <input
-                value={draft.groupName}
-                onChange={(event) => patch({ groupName: event.target.value })}
-              />
+            <Field label="学生英文名">
+              <input value={draft.englishName || ""} onChange={event => patch({ englishName: event.target.value })} />
             </Field>
             <Field error={fieldErrors.phone} label="手机号码">
               <input
@@ -306,6 +305,8 @@ export default function StudentProfileEditor({
                 ]}
               />
             </Field>
+            <Field label="所属队伍"><input readOnly value={studentOrganization(data.accounts,draft.owner,draft.roster).team}/></Field>
+            <Field label="所属组别"><input readOnly value={studentOrganization(data.accounts,draft.owner,draft.roster).group}/></Field>
           </div>
         </section>
         {(!student || !hasReports) && (

@@ -70,7 +70,7 @@ describe("独立反馈验收：关键边界", () => {
     });
     mount();
     fireEvent.change(
-      screen.getByRole("textbox", { name: "搜索学员、老师、反馈或跟进内容" }),
+      screen.getByRole("textbox", { name: "搜索学员姓名或 ID、老师、反馈或跟进内容" }),
       { target: { value: "ZebraQ72" } },
     );
     expect(screen.getByText("共 1 条反馈")).toBeTruthy();

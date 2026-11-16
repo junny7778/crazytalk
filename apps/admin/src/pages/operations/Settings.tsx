@@ -438,7 +438,7 @@ export default function Settings() {
                     <tr>
                       <th>姓名</th>
                       <th>登录手机号</th>
-                      <th>角色与范围</th>
+                      <th>角色</th><th>数据范围</th><th>队伍</th><th>组别</th>
                       <th>负责学员</th>
                       <th>状态</th>
                       <th />
@@ -450,19 +450,18 @@ export default function Settings() {
                       .map((a) => (
                         <tr key={a.id}>
                           <td>
-                            <strong>{a.name}</strong><small>{[a.team,a.group].filter(Boolean).join(" / ") || (a.roleId==="ops" ? "归属待补录" : "")}</small>
+                            <strong>{a.name}</strong>
                           </td>
                           <td>
                             {a.phone.slice(0, 3)}****{a.phone.slice(-4)}
                           </td>
                           <td>
                             {data.roles.find((r) => r.id === a.roleId)?.name}
-                            <small>
+                          </td><td>
                               {a.scope === "全部"
                                 ? "全部数据"
                                 : scopeLabel(data.catalog, a.scope)}
-                            </small>
-                          </td>
+                          </td><td>{a.team || "—"}</td><td>{a.group || "—"}</td>
                           <td>
                             {
                               data.students.filter((s) => s.owner === a.name)
@@ -864,6 +863,7 @@ export default function Settings() {
                         <tr>
                           <th>名称</th>
                           <th>类型</th>
+                          {tab === "org" && <><th>所属渠道</th><th>月应上课数</th></>}
                           <th>说明</th>
                           <th>状态</th>
                           <th>操作</th>
@@ -875,7 +875,8 @@ export default function Settings() {
                             <td>
                               <strong>{c.name}</strong>
                             </td>
-                            <td>{c.type}{c.type === "项目" && <small className="muted"> · {data.catalog.find(channel => channel.id === c.parentId)?.name || "渠道待补录"} · {c.monthlyLessons ? `每月 ${c.monthlyLessons} 节` : "月目标待补录"}</small>}</td>
+                            <td>{c.type}</td>
+                            {tab === "org" && <><td>{c.type === "项目" ? data.catalog.find(channel=>channel.id===c.parentId)?.name || "待补录" : "—"}</td><td>{c.type==="项目" ? c.monthlyLessons ?? "待补录" : "—"}</td></>}
                             <td>{c.detail || "—"}</td>
                             <td>
                               <Badge tone={c.enabled ? "success" : "neutral"}>

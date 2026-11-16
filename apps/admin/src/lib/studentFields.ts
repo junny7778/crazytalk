@@ -1,5 +1,5 @@
 import type { Student } from "@crazytalk/shared";
-import { originalStudentMonth } from "./studentWorkbook";
+const originalStudentMonth = "7月（原表，年份未注明）";
 
 export type StudentField = {
   key: keyof Student | "originalPlanned" | "originalActual";
@@ -13,7 +13,7 @@ export const studentFieldGroups: { title: string; fields: StudentField[] }[] = [
     fields: [
       { key: "sourceSequence", label: "序号" },
       { key: "name", label: "学生名字" },
-      { key: "groupName", label: "学生群名" },
+      { key: "englishName", label: "学生英文名" },
       { key: "phone", label: "手机号码" },
       { key: "age", label: "年龄" },
       { key: "gender", label: "性别" },

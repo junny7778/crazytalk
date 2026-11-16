@@ -1,3 +1,5 @@
+import {rosterValues} from "../lib/customerRoster";
+import { studentOrganization } from "@crazytalk/shared";
 import {SurveyLink} from "../components/StudentSurvey";
 import StudentClassIn from "../components/StudentClassIn";
 import { formatStudentProgress } from "@crazytalk/shared";
@@ -262,7 +264,7 @@ export default function StudentDetail() {
           </div>
           <p>
             渠道：{student.channel || "未填写"} · 负责教务：
-            {student.owner || "未填写"}
+            {student.owner || "未填写"} · 所属队伍：{studentOrganization(data.accounts,student.owner,student.roster).team} · 所属组别：{studentOrganization(data.accounts,student.owner,student.roster).group}
           </p>
         </div>
         <div className="student-header-actions">
@@ -426,8 +428,7 @@ export default function StudentDetail() {
       </div>
       {tab === "profile" && (
         <>
-          <SurveyLink student={student}/>
-          <StudentClassIn key={student.id} student={student}/>
+          <div className="profile-service-grid"><SurveyLink key={"survey-"+student.id} student={student}/><StudentClassIn key={student.id} student={student}/></div>
           {studentFieldGroups
             .filter(
               (group) =>
@@ -486,23 +487,6 @@ export default function StudentDetail() {
                                 </Button>
                               </>
                             )}
-                          </span>,
-                        ];
-                      if (field.key === "groupName" && student.groupName)
-                        return [
-                          field.label,
-                          <span className="student-copy-value">
-                            <span>{student.groupName}</span>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              aria-label="复制学生群名"
-                              onClick={() =>
-                                void copy(student.groupName, "学生群名")
-                              }
-                            >
-                              <Copy size={13} />
-                            </Button>
                           </span>,
                         ];
                       return [fieldLabels[field.key] || field.label, value];
@@ -573,6 +557,14 @@ export default function StudentDetail() {
           onAction={openAction}
           onOpen={setRecord}
         />
+      )}
+      {student.roster && (
+        (tab === "profile" ? [
+          ["学习背景", ["基础","孩子兴趣爱好","是否有坚持拍周一视频","对体系了解程度","加入体系时间","备注"]]
+        ] : tab === "courses" ? [["教学记录", ["换老师原因","6月","7月","8月","9月","10月","11月上课状态","11月"]]]
+          : tab === "service" ? [["回访记录", ["首三节课回访","二次回访","首月回访"]]]
+          : tab === "credits" ? [["续费记录", ["停课日期","拉群日期（充值）","套餐共用","续费次数","应跟进月份","续费套餐","续费跟进日期","续费状态","实际续费日期","不续费原因"]]] : []
+        ).map(([title, keys]) => <Panel key={String(title)} title={String(title)}><Details entries={(keys as string[]).map(k=>[k,rosterValues(student,data)[k] || "未填写"])}/></Panel>)
       )}
       {tab === "tasks" && (
         <>

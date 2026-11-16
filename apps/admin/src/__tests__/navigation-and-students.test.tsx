@@ -99,11 +99,11 @@ afterEach(() => {
 describe("后台导航和学员建档", () => {
   it.each([
     ["数据看板", /^周.好，Rita$/],
-    ["学员中心", "学员"],
+    ["学员中心", "学员中心"],
     ["排课管理", "排课管理"],
     ["上课记录 9", "上课记录"],
     ["反馈 3", "反馈"],
-    ["老师中心", "老师"],
+    ["老师中心", "老师中心"],
     ["薪资", "薪资"],
   ])("菜单 %s 打开对应后台模块", async (menu, heading) => {
     mount();
@@ -125,7 +125,7 @@ describe("后台导航和学员建档", () => {
     mount("/feedback");
     fireEvent.click(screen.getByRole("link", { name: "老师中心" }));
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "老师" })).toBeTruthy(),
+      expect(screen.getByRole("heading", { name: "老师中心" })).toBeTruthy(),
     );
     expect(screen.queryByRole("heading", { name: "Hi Carol" })).toBeNull();
     fireEvent.click(screen.getByRole("cell", { name: "T. Carol" }));
@@ -273,7 +273,7 @@ describe("后台导航和学员建档", () => {
     for (const label of [
       "课后待确认",
       "待处理反馈",
-      "未同步课程",
+      "同步异常",
       "课时即将用完",
     ]) {
       const card = pending.getByRole("article", { name: label });
@@ -284,10 +284,10 @@ describe("后台导航和学员建档", () => {
     }
     expect(pending.queryByRole("button", { name: /查看明细/ })).toBeNull();
     fireEvent.click(
-      pending.getByRole("button", { name: "去检查同步：未同步课程" }),
+      pending.getByRole("button", { name: "去同步管理：同步异常" }),
     );
     expect(
-      await screen.findByRole("heading", { name: "上课记录", level: 1 }),
+      await screen.findByRole("heading", { name: "ClassIn 同步管理" }),
     ).toBeTruthy();
   });
   it("看板待处理事项只在运营总览中显示，切换页签后能恢复", () => {
@@ -399,7 +399,7 @@ describe("头像下拉菜单", () => {
     fireEvent.pointerDown(screen.getByText("演示身份"));
     expect(screen.getByText("演示身份")).toBeTruthy();
     fireEvent.pointerDown(
-      screen.getByRole("heading", { name: "学员", level: 1 }),
+      screen.getByRole("heading", { name: "学员中心", level: 1 }),
     );
     expect(screen.queryByText("演示身份")).toBeNull();
     fireEvent.click(trigger);
@@ -412,8 +412,8 @@ describe("头像下拉菜单", () => {
 describe("侧栏菜单顺序", () => {
   it("老师中心紧随学员中心", async () => {
     mount("/students");
-    await screen.findByRole("heading", { name: "学员", level: 1 });
-    const links = within(screen.getByRole("navigation")).getAllByRole("link");
+    await screen.findByRole("heading", { name: "学员中心", level: 1 });
+    const links = within(screen.getByRole("navigation", {name:""})).getAllByRole("link");
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "数据看板",
       "学员中心",

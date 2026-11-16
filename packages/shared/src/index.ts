@@ -5,7 +5,7 @@ export { resolveStudentId } from "./studentIds";
 export { createSeed } from "./seed";
 export { transition } from "./domain";
 
-export { demoNextCode } from "./repository";
+export { demoRepository } from "./repository";
 
 export * from "./studentSummary";
 
@@ -27,3 +27,6 @@ export * from "./organization";
 export * from "./teacherMatch";
 export * from "./officePay";
 export * from "./projectMetrics";
+
+export * from "./studentSurvey";
+export * from "./studentNames";

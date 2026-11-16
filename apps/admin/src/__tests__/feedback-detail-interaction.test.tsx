@@ -145,6 +145,9 @@ describe("反馈详情交互专项", () => {
   it("默认阅读、信息去重且分类用路径展示", () => {
     const record = demoRepository.read().feedback[0];
     mount(`/feedback/${record.id}`);
+    const studentLink = screen.getByRole("link", { name: record.studentId });
+    expect(studentLink.getAttribute("href")).toBe(`/students/${record.studentId}`);
+    expect(screen.getByText("学员 ID")).toBeTruthy();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getAllByText(record.content)).toHaveLength(1);
@@ -225,4 +228,57 @@ describe("反馈详情交互专项", () => {
         .feedback[0].followUps.some((entry) => entry.content === "取消的记录"),
     ).toBe(false);
   });
+});
+
+it("列表的三项操作在原行办理并写入同一条反馈", async () => {
+  mount();
+  const row = screen.getAllByRole("row")[1];
+  const link = within(row).getByRole("link");
+  const id = link.getAttribute("href")!.split("/").pop();
+  for (const [button, field, save] of [
+    ["客服处理", "客服备注", "保存客服处理"],
+    ["TM 判定", "TM判定说明", "保存 TM 判定"],
+    ["添加跟进", "追加跟进内容", "保存跟进"],
+  ]) {
+    fireEvent.click(within(row).getByRole("button", {name: button}));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByRole("textbox", {name: field}), {target: {value: field}});
+    fireEvent.click(dialog.getByRole("button", {name: save}));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  }
+  const record = demoRepository.read().feedback.find(item => item.id === id)!;
+  expect(record.processNote).toBe("客服备注");
+  expect(record.tmNote).toBe("TM判定说明");
+  expect(record.followUps.some(entry => entry.content === "追加跟进内容")).toBe(true);
+  expect(screen.getByRole("columnheader", {name: "操作"})).toBeTruthy();
+});
+
+it("先按待办优先级排序再分页，状态筛选保留搜索条件，办结后移出未完成", async () => {
+  const state = demoRepository.read();
+  const template = state.feedback[0];
+  state.feedback = Array.from({length: 28}, (_, index) => ({
+    ...template, id: 'filter-' + index, content: '筛选样例' + index,
+    status: index === 27 ? "待处理" : index === 26 ? "处理中" : index === 25 ? "等待判定" : "已完成",
+    date: index === 25 ? "2026-10-02" : index >= 26 ? "2026-10-01" : "2026-10-31",
+    customerProgress: "",
+  }));
+  state.feedback.push({...template, id: "excluded", content: "其他记录", status: "待处理"});
+  mount("/feedback?q=筛选样例");
+  const records = () => screen.getAllByRole("row").slice(1);
+  expect(screen.getByRole("combobox", {name: "反馈状态"}).textContent).toContain("全部反馈状态");
+  expect(records().slice(0, 3).map(row => row.querySelector(".feedback-content-preview")?.textContent)).toEqual(["筛选样例27","筛选样例25","筛选样例26"]);
+  fireEvent.click(screen.getByRole("button", {name: "下一页"}));
+  choose("反馈状态", "未完成");
+  expect(records()).toHaveLength(3);
+  fireEvent.click(within(records()[0]).getByRole("button", {name: "客服处理"}));
+  choose("客服处理进度", "已完成");
+  fireEvent.click(screen.getByRole("button", {name: "保存客服处理"}));
+  await waitFor(() => expect(records()).toHaveLength(2));
+  choose("反馈状态", "已完成");
+  expect(screen.getByText("共 26 条反馈")).toBeTruthy();
+});
+
+it("看板待处理入口显示实际状态", () => {
+  mount("/feedback?view=等我处理");
+  expect(screen.getByRole("combobox", {name: "反馈状态"}).textContent).toContain("待处理");
 });

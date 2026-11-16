@@ -130,8 +130,11 @@ describe("学员课程入口与人工确认", () => {
     mount(`/lessons?tab=all&student=${student.id}`);
     expect(await screen.findByText(`共 ${expected.length} 节课`)).toBeTruthy();
     expect(screen.getAllByRole("row")).toHaveLength(expected.length + 1);
-    for (const other of data.students.slice(1))
-      expect(screen.queryByRole("link", { name: other.name })).toBeNull();
+    const studentLinks = within(screen.getByRole("table")).getAllByRole("link")
+      .filter(link => link.getAttribute("href")?.startsWith("/students/"));
+    expect(studentLinks.map(link => link.getAttribute("href"))).toEqual(
+      expected.map(() => "/students/" + student.id),
+    );
   });
 
   it("55分钟课程不自行折算，填写确认数量后扣课并准确撤销", async () => {

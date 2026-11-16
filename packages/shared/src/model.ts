@@ -1,3 +1,4 @@
+import { matchingSurveyAnswers } from "./studentSurvey";
 import { z } from "zod";
 export const scheduleIntentSchema = z
   .object({
@@ -24,14 +25,15 @@ export const scheduleIntentSchema = z
     path: ["windows"],
   });
 export type ScheduleIntent = z.infer<typeof scheduleIntentSchema>;
-const surveyAnswers = z.object({age:z.number().int().min(1).max(120),level:z.enum(["L0","L1","L2","L3","L4","待评估"]),personality:z.string(),interests:z.string(),experience:z.string(),material:z.string(),times:z.string(),needs:z.string()});
-export const studentSurveyAnswers = surveyAnswers;
+const legacySurveyAnswers = z.object({age:z.number().int().min(1).max(120),level:z.enum(["L0","L1","L2","L3","L4","待评估"]),personality:z.string(),interests:z.string(),experience:z.string(),material:z.string(),times:z.string(),needs:z.string()});
+export const studentSurveyAnswers = z.union([matchingSurveyAnswers, legacySurveyAnswers]);
 export const studentSchema = z.object({
+  roster:z.object({key:z.string(),row:z.number().int().positive(),fields:z.record(z.string())}).optional(),
   id: z.string(),
-  surveySecret:z.string().optional(), surveyToken:z.string().optional(),surveySubmittedAt:z.string().optional(), surveyOriginal:surveyAnswers.optional(), interests:z.string().optional(),
-  code: z.string(),
+  surveySecret:z.string().optional(), surveyToken:z.string().optional(),surveySubmittedAt:z.string().optional(), surveyPreviousSubmittedAt:z.string().optional(), surveyOriginal:studentSurveyAnswers.optional(), interests:z.string().optional(),
   name: z.string(),
   chineseName: z.string(),
+  englishName: z.string().optional(),
   age: z.number().int().min(0).max(120).nullable().default(null),
   project: z.string(),
   channel: z.string(),
@@ -104,7 +106,7 @@ export const studentSchema = z.object({
 });
 export const studentProfileSchema = studentSchema
   .omit({
-    id: true, surveySecret:true,surveyToken:true,surveySubmittedAt:true,surveyOriginal:true,
+    id: true, surveySecret:true,surveyToken:true,surveySubmittedAt:true,surveyPreviousSubmittedAt:true,surveyOriginal:true,
     scheduleIntent: true,
     balance: true,
     createdAt: true,
@@ -115,7 +117,6 @@ export const studentProfileSchema = studentSchema
   })
   .extend({
     importStudentId: z.string().optional(),
-    code: z.string().trim().default(""),
     name: z.string().trim().min(1, "请填写学员姓名"),
     phone: z
       .string()
@@ -125,7 +126,7 @@ export const studentProfileSchema = studentSchema
       ),
   });
 export const studentEditableSchema = studentProfileSchema.pick({
-  name: true,
+  name: true, chineseName: true, englishName: true,
   groupName: true,
   phone: true,
   age: true,
@@ -163,9 +164,9 @@ export type StudentHistoryInput = z.infer<typeof studentHistorySchema>;
 export type StudentProfileInput = z.infer<typeof studentProfileSchema>;
 export function emptyStudentProfile(): StudentProfileInput {
   return {
-    code: "",
     name: "",
     chineseName: "",
+    englishName: "",
     age: null,
     project: "",
     channel: "",
@@ -271,6 +272,9 @@ export const lessonSchema = z.object({
   cancellation:z.object({kind:z.string(),at:z.string(),responsibility:z.string(),waived:z.boolean()}).optional(),
   requiresScreenshot:z.boolean().optional(),
   incident:z.object({minutes:z.number().nonnegative().optional(),reason:z.string(),note:z.string(),at:z.string(),operator:z.string()}).optional(),
+  attendanceMessages: z.object({ 学员: z.string().optional(), 老师: z.string().optional() }).optional(),
+  attendanceFinal: z.object({ 学员: z.boolean().optional(), 老师: z.boolean().optional() }).optional(),
+  attendanceUpdates: z.object({ 学员: z.string().optional(), 老师: z.string().optional() }).optional(),
   absenceNotice:z.enum(["待发送","已送达","发送失败"]).optional(),noticeError:z.string().optional(),
   orderId: z.string().optional(),
   id: z.string(),
@@ -712,12 +716,13 @@ export type Command = { operator?: string } & (
     }
   | {type:"slot.lock";studentId:string;slots:{teacherId:string;date:string;time:string}[];duration:number;expiresAt:string}
   | {type:"lesson.incident";minutes?:number;id:string;reason:string;note:string}
+  | {type:"lesson.attendance";id:string;person:"学员"|"老师";result:"未到堂"|"到堂"|"缺席";at:string;operator?:string}
   | {type:"lesson.notice";id:string;sent:boolean;error:string}
   | {type:"pay.terms";terms:PayTerms}
   | {type:"pay.freeze";teacherId:string;month:string}
   | {type:"slot.release";studentId:string}
   | {type:"survey.issue";id:string;token?:string;secret?:string}
-  | {type:"survey.submit";token:string;answers:Omit<z.infer<typeof surveyAnswers>,"level"> & {level:string}}
+  | {type:"survey.submit";token:string;submittedAt?:string;nameEdited?:boolean;answers:z.input<typeof studentSurveyAnswers>}
   | { type: "order.buy"; id:string; studentId:string; studentIds:string[]; units:72|144; date:string; kind:string; note:string }
   | { type: "student.bindClassIn"; id: string; phone: string; uid: string }
   | { type: "student.profile"; id: string; profile: StudentProfileInput }

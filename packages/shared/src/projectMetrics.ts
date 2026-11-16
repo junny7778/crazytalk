@@ -46,3 +46,21 @@ export function projectMetrics(
     lessons,
   };
 }
+
+export function purchasedDelivery(data: DemoState, students: Student[], month: string) {
+  const ids = new Set(students.map(s => s.id));
+  const orders = (data.orders ?? []).filter(o =>
+    o.date.slice(0, 7) <= month && !["补偿", "赠送"].includes(o.kind) && o.studentIds.some(id => ids.has(id)));
+  const ordersById = new Map(orders.map(o => [o.id, o]));
+  const purchased = orders.reduce((sum, o) => sum + o.units, 0);
+  const lessons = [];
+  for (const lesson of data.lessons) {
+    const order = lesson.orderId && ordersById.get(lesson.orderId);
+    if (!order || !order.studentIds.includes(lesson.studentId) || lesson.date < order.date ||
+      lesson.date.slice(0, 7) > month || lesson.status !== "已完成") continue;
+    const attended = (["老师", "学员"] as const).every(person =>
+      personAttendance(lesson, person).some(tag => ["正常", "迟到", "早退"].includes(tag)));
+    if (attended && [25, 50].includes(lesson.duration)) lessons.push(lesson);
+  }
+  return { purchased, lessons, delivered: lessons.reduce((sum, lesson) => sum + lesson.duration / 25, 0) };
+}

@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
@@ -16,10 +17,10 @@ function List({ count }: { count: number }) {
     </>
   );
 }
-it("每页25条，页码跳转、末页和筛选后重置", () => {
+it("每页25条，页码跳转、末页和筛选后重置", async () => {
   const view = render(<List count={51} />);
   expect(screen.getAllByRole("listitem")).toHaveLength(25);
-  fireEvent.click(screen.getByRole("button", { name: "第 3 页" }));
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "第 3 页" })); });
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
   expect(
     screen.getByRole("button", { name: "下一页" }).hasAttribute("disabled"),

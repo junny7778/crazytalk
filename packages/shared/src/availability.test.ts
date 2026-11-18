@@ -10,6 +10,12 @@ import {
 
 function fixture() {
   const data = createSeed();
+  data.classInAccounts = data.students.map((student, index) => ({
+    id: "account-" + student.id,
+    phone: student.phone,
+    uid: String(10000 + index),
+    studentIds: [student.id],
+  }));
   data.lessons = [];
   data.leaves = [];
   const teacher = data.teachers[0];

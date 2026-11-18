@@ -211,10 +211,10 @@ export function FixedPlanCalendar({
     setMessage("");
   }
   const credits = useScheduleCredits(studentId, intent.duration, ready.length);
-  function submit() {
+  async function submit() {
     try {
       if (!ready.length) return;
-      const result = act({
+      const result = await act({
         type: "lesson.schedule",
         plannedUnits: credits.units,
         studentId,

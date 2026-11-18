@@ -1,6 +1,6 @@
-# 运行 Crazy Talk 前端 Demo
+# 运行 Crazy Talk Demo 与业务版
 
-在本地体验教务运营后台与中英文老师端。数据保存于当前浏览器，演示日期固定为 2026-10-31。
+同一套界面提供独立 Demo 与业务入口。Demo 保存浏览器样本，演示日期固定为 2026-10-31；业务版使用真实 API、PostgreSQL 和当前业务日期。
 
 ## 启动
 
@@ -15,10 +15,18 @@ pnpm dev
 
 独立运行老师端时执行 `pnpm dev:teacher`，打开 http://127.0.0.1:5174/。独立端口的数据与后台隔离。
 
+## 本地业务入口
+
+API 和数据库初始化见 [apps/api/README.md](apps/api/README.md)。运行 `pnpm db:up`、`pnpm dev:api`，再运行 `pnpm dev:business` 打开 `http://127.0.0.1:5175/`。业务老师端运行 `pnpm --filter @crazytalk/teacher dev:business`，地址 `http://127.0.0.1:5176/`。API 默认 3011，两个业务入口代理同一后端。
+
+首次登录账号通过服务端 bootstrap 初始化，老师登录账号明确绑定 teacherId。业务模式不加载 Demo 样本，也不提供演示身份切换和数据重置。公开问卷链接允许未登录家长填写。
+
+本地自动验收入口为 `pnpm test:business:api`、`pnpm test:business:ui`。完整领域和组件回归可运行 `pnpm test --maxWorkers=4`。已执行结果、外部阻塞和限制见 [实施进度](docs/业务版本实施进度.md)、[验收覆盖](docs/业务版本验收覆盖.md)及 [ClassIn联调记录](docs/ClassIn联调记录.md)。当前未部署公网服务。
+
 ## 体验关键任务
 
-1. 在学员列表打开 Jayden，增加 24 课时，查看余额和流水。
-2. 在排班管理选择待排课 Lucy，找老师，安排未来 8 周课程。
+1. 在学员中心建档并购买 72 课时，查看档案余额和流水，刷新后复核。
+2. 在排课管理选择已核实 ClassIn 账号及余额的待排课学员，找老师并按计划安排课程。
 3. 在上课记录确认正常课程，10 秒内撤销并检查恢复。
 4. 在反馈页处理和判定反馈，查看老师扣款及月度薪资。
 5. 在设置查看角色，预览权限差异。用户菜单也可切换演示身份。
@@ -35,21 +43,25 @@ pnpm check
 pnpm doctor
 ```
 
-`check` 包含工作区类型检查、14 项业务测试、后台导航与建档交互回归，以及 UI token 和双语键检查。浏览器专项路径见 [.agents/skills/verify-crazytalk/SKILL.md](.agents/skills/verify-crazytalk/SKILL.md)，实际结果见 [验证记录](docs/verification.md)。
+`check` 包含工作区类型检查、领域与页面测试，以及 UI token 和双语键检查。浏览器专项路径见 [.agents/skills/verify-crazytalk/SKILL.md](.agents/skills/verify-crazytalk/SKILL.md)，实际结果见 [验证记录](docs/verification.md)。
 
 ## 当前边界
 
-- 所有机构连接、课程更新和工资数据均为模拟，不会调用真实 ClassIn 或执行付款。
-- 薪资使用示例个人单价与 PHP。正式规则待确认。
-- 老师可用时间支持按星期填写多个区间、分钟精度及开始使用日期；非常规时间经确认后可安排临时课。旧时间设置会保留并提示核对。
-- 基础资料支持名称、说明和启停。三级分类可按完整路径维护，暂不提供完整拖动树编辑。
-- 业务规则修改供后续演示操作使用，暂不支持按日期预约生效和完整版本历史。
-- 学员导入支持英文名与手机号的 CSV、文本和 XLSX。老师与历史反馈完整导入流程尚未实现。
-- 反馈附件当前仅预览文件名，未上传存储。
-- 当前课时用余额与流水模拟，未实现正式课包到期优先扣减与多课包冻结核算。
-- 权限用于界面演示，不提供服务端安全保证。后台主体为中文，老师端双语。
-- 浏览器本地存储不提供多窗口并发写入事务保证。
+- Demo 使用浏览器数据，演示同步状态不能证明真实 ClassIn 完成。
+- 业务版通过真实数据库事务及会话权限处理数据；附件暂用本地磁盘，生产对象存储和部署尚未配置。
+- 业务版基于按范围投影的状态 DTO 复用页面，尚未改为资源分页查询接口。没有执行容量压测，不能据此声明生产容量。
+- ClassIn SID/密钥只读校验通过。成员查询、未知结果恢复契约、真实课程写入和公网回调仍按联调清单处理。未自动替换成会创建账号的接口。
+- 工资发放状态由人工登记，不对接银行付款；退款外部候课名单及权限停用范围待确认。
+- Demo 与业务版保留相同表单、排课、反馈、课时和薪资规则；不因外部卡点删减交互。
 
 ## 字体资源
 
 字体自托管于 apps/admin/public/fonts，老师端开发服务复用此目录。HarmonyOS Sans SC 为 Regular、Medium、Bold 的业务文本子集。整理来源为 https://github.com/IKKI2000/harmonyos-fonts 。Inter 来自 https://github.com/rsms/inter 。正式上线前按项目要求核对授权和补充完整字体许可文件。
+
+业务版最新验收与联调材料：
+
+- [模块验收覆盖](docs/业务版本验收覆盖.md)
+- [ClassIn真实联调待测清单](docs/ClassIn真实联调待测清单.md)（用户已要求暂不执行真实账号操作）
+- [ClassIn契约与阻塞](docs/ClassIn接口契约核对与阻塞清单.md)
+- [正式运行准备](docs/正式运行准备与上线验收.md)
+- 隔离浏览器验收：`node tests/e2e/run-isolated.mjs`，自动清理测试schema，不操作真实ClassIn账号。

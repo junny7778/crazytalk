@@ -1,3 +1,4 @@
+import { getStudentSummary } from "./studentSummary";
 import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
@@ -13,6 +14,7 @@ describe("学生表单数字化业务", () => {
       type: "student.create",
       student: {
         ...emptyStudentProfile(),
+        chineseName: "测试学生",
         name: "测试学生",
         groupName: "X0028测试学习群",
         orderStatus: "正常",
@@ -32,6 +34,7 @@ describe("学生表单数字化业务", () => {
     expect(
       studentProfileSchema.safeParse({
         ...emptyStudentProfile(),
+        chineseName: "无需编号",
         name: "无需编号",
       }).success,
     ).toBe(true);
@@ -41,6 +44,7 @@ describe("学生表单数字化业务", () => {
     const before = createSeed();
     const profile = {
       ...emptyStudentProfile(),
+      chineseName: "同名学生",
       name: "同名学生",
       groupName: "某学习群",
       totalUnits: 20,
@@ -69,7 +73,10 @@ describe("学生表单数字化业务", () => {
     expect(() =>
       transition(before, {
         type: "student.import",
-        students: [0, 1].map(() => ({...profile, importStudentId: before.students[0].id})),
+        students: [0, 1].map(() => ({
+          ...profile,
+          importStudentId: before.students[0].id,
+        })),
         mode: "skip",
       }),
     ).toThrow(/重复/);
@@ -155,7 +162,11 @@ describe("学生表单数字化业务", () => {
     const ordinary = transition(before, {
       type: "student.import",
       students: [
-        { ...studentProfileSchema.parse(student), importStudentId: student.id, phone: "13812345678" },
+        {
+          ...studentProfileSchema.parse(student),
+          importStudentId: student.id,
+          phone: "13812345678",
+        },
       ],
       mode: "update",
     }).data;
@@ -164,7 +175,7 @@ describe("学生表单数字化业务", () => {
     expect(ordinary.lessons).toEqual(before.lessons);
   });
 
-  it("续费记录业务日期金额，更新是否续课", () => {
+  it("续费记录业务日期金额，汇总是否续课", () => {
     const before = createSeed();
     const student = before.students[0];
     const after = transition(before, {
@@ -178,8 +189,9 @@ describe("学生表单数字化业务", () => {
     }).data;
     expect(after.students[0]).toMatchObject({
       balance: student.balance + 8,
-      renewalStatus: "是",
+      renewalStatus: student.renewalStatus,
     });
+    expect(getStudentSummary(after, student.id).renewalStatus).toBe("是");
     expect(after.credits[0]).toMatchObject({
       studentId: student.id,
       type: "续费",
@@ -228,9 +240,10 @@ describe("学生表单数字化业务", () => {
     expect(renewed.students[0]).toMatchObject({
       status: "结课",
       orderStatus: "结课",
-      renewalStatus: "是",
+      renewalStatus: student.renewalStatus,
       balance: 2,
     });
+    expect(getStudentSummary(renewed, student.id).renewalStatus).toBe("是");
     const resumed = transition(renewed, {
       type: "student.lifecycle",
       studentId: student.id,

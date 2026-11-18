@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -94,18 +95,18 @@ describe("学员课程入口与人工确认", () => {
         onSave={save}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /提交结课/ }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /提交结课/ })); });
     expect(screen.getByRole("alert").textContent).toMatch(/截图/);
     expect(save).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText(/教材结束页截图/),{target:{files:[new File(["data"],"page.png",{type:"image/png"})]}});
+    await testAct(async () => { fireEvent.change(screen.getByLabelText(/教材结束页截图/),{target:{files:[new File(["data"],"page.png",{type:"image/png"})]}}); });
     await screen.findByRole("img",{name:"结束页"});
-    fireEvent.change(screen.getByRole("textbox", { name: /教材/ }), {
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: /教材/ }), {
       target: { value: "新版教材" },
-    });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "页码" }), {
+    }); });
+    await testAct(async () => { fireEvent.change(screen.getByRole("spinbutton", { name: "页码" }), {
       target: { value: "12" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /提交结课/ }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /提交结课/ })); });
     expect(save).toHaveBeenCalledOnce();
     const after = demoRepository.read();
     expect(
@@ -137,6 +138,30 @@ describe("学员课程入口与人工确认", () => {
     );
   });
 
+  it("从详情核实老师缺席，只提交一次，保留余额和核实依据", async () => {
+    const data = demoRepository.read();
+    const row = data.lessons.find(l => l.status === "待确认" && l.attendance === "正常")!;
+    row.teacherIn = "";
+    row.teacherOut = "";
+    row.attendanceMessages = {老师: new Date(Date.parse(row.date+"T"+row.time+":00+08:00")+600000).toISOString()};
+    const balance = data.students.find(s=>s.id===row.studentId)!.balance;
+    mount(`/lessons?lesson=${row.id}`);
+    const detail = await screen.findByRole("dialog", {name:"课程详情"});
+    expect(within(detail).queryByRole("button",{name:"更正结果"})).toBeNull();
+    await testAct(async () => { fireEvent.click(within(detail).getByRole("button",{name:"核实"})); });
+    const form = screen.getByRole("dialog",{name:"核实上课记录"});
+    expect(within(form).getByText(/开课满 10 分钟，老师仍未到堂/)).toBeTruthy();
+    expect((within(form).getByRole("button",{name:"确认核实"}) as HTMLButtonElement).disabled).toBe(true);
+    await testAct(async () => { fireEvent.click(within(form).getByRole("combobox",{name:/核实结论/})); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("option",{name:"老师缺席"})); });
+    expect(within(form).queryByRole("spinbutton")).toBeNull();
+    await testAct(async () => { fireEvent.change(within(form).getByRole("textbox",{name:/核实依据/}),{target:{value:"已与老师核实"}}); });
+    await testAct(async () => { fireEvent.click(within(form).getByRole("button",{name:"确认核实"})); });
+    await screen.findByRole("button",{name:"更正结果"});
+    expect(demoRepository.read().lessons.find(l=>l.id===row.id)).toMatchObject({status:"已完成",deducted:false,attendance:"老师缺席",incident:{reason:"老师缺席",note:"已与老师核实"}});
+    expect(demoRepository.read().students.find(s=>s.id===row.studentId)!.balance).toBe(balance);
+  });
+
   it("55分钟课程不自行折算，填写确认数量后扣课并准确撤销", async () => {
     const data = demoRepository.read();
     const lesson = data.lessons.find(
@@ -150,10 +175,13 @@ describe("学员课程入口与人工确认", () => {
     const checkbox = await screen.findByRole("row", {
       name: `课程 ${lesson.id}`,
     });
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       within(checkbox.closest("tr")!).getByRole("button", { name: "核实" }),
-    );
-    const dialog = screen.getByRole("dialog", { name: "确认扣课数量" });
+    ); });
+    const dialog = screen.getByRole("dialog", { name: "核实上课记录" });
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("combobox", { name: /核实结论/ })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: "正常上课" })); });
+    await testAct(async () => { fireEvent.change(within(dialog).getByRole("textbox", {name:/核实依据/}), {target:{value:"已核对上课记录"}}); });
     expect(
       within(dialog)
         .getByRole("spinbutton", { name: /本节扣课数量/ })
@@ -162,17 +190,17 @@ describe("学员课程入口与人工确认", () => {
     expect(
       (
         within(dialog).getByRole("button", {
-          name: "确认扣课",
+          name: "确认核实",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
-    fireEvent.change(
+    await testAct(async () => { fireEvent.change(
       within(dialog).getByRole("spinbutton", { name: /本节扣课数量/ }),
       { target: { value: "1.5" } },
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认扣课" }));
+    ); });
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "确认核实" })); });
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "确认扣课数量" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: "核实上课记录" })).toBeNull(),
     );
     expect(
       demoRepository.read().students.find((item) => item.id === student.id)
@@ -182,7 +210,7 @@ describe("学员课程入口与人工确认", () => {
       units: -1.5,
       studentId: student.id,
     });
-    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "撤销" })); });
     await waitFor(() =>
       expect(
         demoRepository.read().students.find((item) => item.id === student.id)
@@ -208,8 +236,8 @@ describe("统一上课记录列表", () => {
       ) + 1,
     );
     const search = screen.getByPlaceholderText("搜索学员或老师姓名");
-    fireEvent.change(search, { target: { value: student.name } });
-    fireEvent.click(screen.getByRole("tab", { name: /待确认/ }));
+    await testAct(async () => { fireEvent.change(search, { target: { value: student.name } }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: /待确认/ })); });
     expect(screen.queryByRole("button", { name: "批量确认" })).toBeNull();
     expect(search.getAttribute("value")).toBe(student.name);
     const expected = data.lessons.filter(
@@ -226,7 +254,7 @@ describe("统一上课记录列表", () => {
       Math.min(25, data.lessons.length) + 1,
     );
     if (data.lessons.length > 25) {
-      fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+      await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "下一页" })); });
       expect(screen.getByRole("button", { name: "第 2 页" })).toBeTruthy();
     }
     cleanup();
@@ -259,9 +287,9 @@ it("导出包含全部筛选结果而非其他状态或仅当前页", async () =
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   try {
     mount("/lessons?tab=confirm");
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       await screen.findByRole("button", { name: "导出筛选结果" }),
-    );
+    ); });
     const blob = create.mock.calls[0][0];
     const csv = await new Promise<string>((resolve) => {
       const reader = new FileReader();
@@ -302,15 +330,15 @@ it("上课记录仅匹配学员和老师姓名，不匹配群名", async () => {
   teacher.name = "SearchOnlyTeacher";
   mount("/lessons");
   const search = await screen.findByPlaceholderText("搜索学员或老师姓名");
-  fireEvent.change(search, { target: { value: "仅群名关键词" } });
+  await testAct(async () => { fireEvent.change(search, { target: { value: "仅群名关键词" } }); });
   expect(screen.getByText("共 0 节课")).toBeTruthy();
-  fireEvent.change(search, { target: { value: "验证学员" } });
+  await testAct(async () => { fireEvent.change(search, { target: { value: "验证学员" } }); });
   expect(
     screen.getByText(
       `共 ${data.lessons.filter((item) => item.studentId === student.id).length} 节课`,
     ),
   ).toBeTruthy();
-  fireEvent.change(search, { target: { value: "searchonlyteacher" } });
+  await testAct(async () => { fireEvent.change(search, { target: { value: "searchonlyteacher" } }); });
   expect(
     screen.getByText(
       `共 ${data.lessons.filter((item) => item.teacherId === teacher.id).length} 节课`,
@@ -332,9 +360,9 @@ it.each(["未开始", "已完成"] as const)(
     const checkbox = await screen.findByRole("row", {
       name: `课程 ${lesson.id}`,
     });
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       within(checkbox.closest("tr")!).getByRole("button", { name: "详情" }),
-    );
+    ); });
     const dialog = within(screen.getByRole("dialog", { name: "课程详情" }));
     for (const label of [
       "学员",
@@ -369,7 +397,7 @@ it("过时未开始课程在列表和详情提示待核实，不自动改变业�
   expect(row.getByText("已过计划结束时间，待核实")).toBeTruthy();
   expect(row.getByText("待核实")).toBeTruthy();
   expect(row.getByText("未开始")).toBeTruthy();
-  fireEvent.click(row.getByRole("button", { name: "详情" }));
+  await testAct(async () => { fireEvent.click(row.getByRole("button", { name: "详情" })); });
   const dialog = within(screen.getByRole("dialog", { name: "课程详情" }));
   expect(dialog.getByText("已过计划结束时间，待核实")).toBeTruthy();
   expect(dialog.queryByText("尚未开始")).toBeNull();
@@ -390,7 +418,7 @@ it("课程已结束包含历史缺席，状态筛选不再提供缺席", async (
   const row = within(checkbox.closest("tr")!);
   expect(row.getByText("已结束")).toBeTruthy();
   expect(row.getByText("学员缺席")).toBeTruthy();
-  fireEvent.click(row.getByRole("button", { name: "详情" }));
+  await testAct(async () => { fireEvent.click(row.getByRole("button", { name: "详情" })); });
   expect(
     within(screen.getByRole("dialog", { name: "课程详情" })).getByText(
       "已结束",
@@ -420,12 +448,12 @@ it("考勤筛选仅保留8项，缺失数据归入待核实且原因独立展示
   lesson.status = "待确认";
   lesson.attendance = "无数据";
   mount(`/lessons?student=${lesson.studentId}`);
-  fireEvent.click(await screen.findByRole("combobox", { name: "考勤情况" }));
+  { const target = await screen.findByRole("combobox", { name: "考勤情况" }); await testAct(async () => { fireEvent.click(target); }); }
   const options = screen.getAllByRole("option");
   expect(options).toHaveLength(9);
   for (const name of ["尚未开始", "不适用", "无数据", "账号待关联"])
     expect(screen.queryByRole("option", { name })).toBeNull();
-  fireEvent.click(screen.getByRole("option", { name: "待核实" }));
+  await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: "待核实" })); });
   const checkbox = screen.getByRole("row", {
     name: `课程 ${lesson.id}`,
   });

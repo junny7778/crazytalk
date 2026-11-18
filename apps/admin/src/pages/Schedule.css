@@ -148,7 +148,6 @@
 }
 .roster-person.selected {
   background: var(--ct-brand-50);
-  border-color: var(--ct-brand-200);
 }
 .roster-person > span:nth-child(2) {
   flex: 1;
@@ -734,10 +733,10 @@
 .intent-weekdays button[aria-pressed="true"] {
   background: var(--ct-brand-600);
   color: var(--ct-white);
-  border-color: var(--ct-brand-600);
+  border-color: transparent;
 }
 .intent-weekdays button:focus-visible {
-  outline: 2px solid var(--ct-brand-600);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: 2px;
 }
 .intent-fields-label {
@@ -899,7 +898,7 @@
   padding-inline: 10px;
 }
 .schedule-match-text-action:focus-visible {
-  outline: 2px solid var(--ct-brand-600);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: 3px;
 }
 @media (max-width: 400px) {
@@ -914,7 +913,6 @@
   }
 }
 .schedule-match-card.selected {
-  border-color: var(--ct-brand-500);
   background: var(--ct-brand-50);
 }
 .schedule-preview-list {
@@ -1111,7 +1109,7 @@
   background: white;
 }
 .fixed-course.active {
-  outline: 2px solid var(--ct-brand-500);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: -2px;
 }
 .fixed-course.confirmed {
@@ -1379,6 +1377,7 @@
   border-color: var(--ct-brand-200);
 }
 .flex-booked {
+  pointer-events: none;
   background: var(--ct-info-bg);
   border-color: var(--ct-info-bg);
   color: var(--ct-info);
@@ -1438,7 +1437,6 @@
   cursor: pointer;
 }
 .flex-teacher-choice:hover {
-  border-color: var(--ct-brand-500);
   background: var(--ct-brand-50);
 }
 
@@ -1489,11 +1487,10 @@
 }
 .flex-picker .flex-teacher-choice:hover,
 .flex-picker .flex-teacher-choice[aria-pressed="true"] {
-  border-color: var(--ct-brand-500);
   background: var(--ct-brand-50);
 }
 .flex-teacher-choice:focus-visible {
-  outline: 2px solid var(--ct-brand-500);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: 0;
 }
 .flex-teacher-heading {

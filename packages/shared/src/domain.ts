@@ -1,3 +1,4 @@
+import { sharedClassIn, schedulingAccountIssue, mergeBalanceSources, sharedBalanceGroup, createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
 import { officePay } from "./officePay";
 import {payTermsSchema} from "./model";
 import {studentSurveyAnswers} from "./model";
@@ -33,6 +34,7 @@ import {
   studentOrderStatus,
   serviceStatusForOrder,
   canSubmitLessonReport,
+  isSystemRole,
 } from "./model";
 import {
   isRegularTime,
@@ -398,6 +400,13 @@ export function transition(
       `${recorded.length ? recorded.join("、") : "同一事件已有扣款，本次不重复扣款"}：${command.note.trim()}`,
     );
   }
+  function packageFor(s: Student, orderId?: string) {
+    migratePackageBalances(data);
+    const packages = (data.orders ?? []).filter(item => item.studentIds.includes(s.id));
+    if (orderId) return required(packages.find(item => item.id === orderId), "学员不属于该套餐");
+    if (packages.length > 1) throw new Error("请选择本次操作的套餐");
+    return packages[0];
+  }
   function credit(
     s: Student,
     units: number,
@@ -412,16 +421,17 @@ export function transition(
       lessonId?: string;
     } = {},
   ) {
-    const orderId = metadata.lessonId ? lesson(metadata.lessonId).orderId : metadata.orderId;
-    const order = orderId ? required(data.orders?.find(o => o.id === orderId), "找不到课程所属订单") : undefined;
-    if (order) {
-      if(!order.studentIds.includes(s.id))throw new Error("学员不属于该订单");
-      if (order.balance + units < 0) throw new Error("共享订单余额不足");
-      order.balance += units;
-    } else {
+    migratePackageBalances(data);
+    const linkedLesson = metadata.lessonId ? lesson(metadata.lessonId) : undefined;
+    let order = packageFor(s, linkedLesson?.orderId ?? metadata.orderId);
+    if (!order) {
       if (!s.balanceKnown) throw new Error("请先补录期初余额，再进行课时操作");
-      s.balance += units;
+      order = createOpeningPackage(data, s, s.balance);
     }
+    if (units < 0 && order.balance + units < -1e-8 && type !== "期初余额")
+      throw new Error("套餐余额不足");
+    order.balance = Math.round((order.balance + units) * 1e8) / 1e8;
+    if (linkedLesson) linkedLesson.orderId = order.id;
     const creditId = id();
     data.credits.unshift({
       id: creditId,
@@ -429,8 +439,8 @@ export function transition(
       date: metadata.date || DEMO_TODAY,
       type,
       units,
-      balance: order?.balance ?? s.balance,
-      orderId,
+      balance: order.balance,
+      orderId: order.id,
       note,
       operator: command.operator || "教务",
       recordedAt,
@@ -660,17 +670,24 @@ export function transition(
     case "student.bindClassIn": {
       student(command.id);
       const phone = command.phone.trim(), uid = command.uid.trim();
-      if (!/^1\d{10}$/.test(phone)) throw new Error("请填写注册用的 11 位手机号");
+      if (!(/^1\d{10}$/.test(phone) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(phone))) throw new Error("请填写有效的 ClassIn 注册手机号或邮箱");
+      if (!/^[1-9]\d*$/.test(uid)) throw new Error("请先查询并核实 ClassIn UID，再绑定账号");
       const accounts = data.classInAccounts ??= [];
       let account = accounts.find(item => item.phone === phone);
       if (uid && accounts.some(item => item.uid === uid && item.phone !== phone))
-        throw new Error("该 UID 已关联其他手机号，请先核实换号情况");
-      if (account?.uid && uid && account.uid !== uid) throw new Error("手机号对应的 UID 不一致，请先核实");
+        throw new Error("该 UID 已关联其他账号，请先核实换号情况");
+      if (account?.uid && uid && account.uid !== uid) throw new Error("账号对应的 UID 不一致，请先核实");
+      const { members } = sharedBalanceGroup(data, command.id);
+      if (members.length > 1) {
+        if (!(uid || account?.uid)) throw new Error("请先核实 UID，再绑定共用学员");
+        if (accounts.some(item => item.phone !== phone && item.studentIds.some(id => members.includes(id))))
+          throw new Error("学员已有共享余额，不能单独改绑到其他 ClassIn 账号");
+      }
       if (!account) {account = {id:id(),phone,uid,studentIds:[]}; accounts.push(account);}
       if (uid) account.uid = uid;
-      for (const item of accounts) item.studentIds = item.studentIds.filter(s => s !== command.id);
-      account.studentIds.push(command.id);
-      event("ClassIn 账号", "更新学员账号绑定", command.id);
+      for (const item of accounts) item.studentIds = item.studentIds.filter(id => !members.includes(id));
+      account.studentIds.push(...members);
+      for (const id of members) event("ClassIn 账号", "更新学员账号绑定", id);
       break;
     }
     case "student.import": {
@@ -728,7 +745,6 @@ export function transition(
       }
       const workbookFields = [
         "name",
-        "channel",
         "phone",
         "material",
         "age",
@@ -816,18 +832,22 @@ export function transition(
       break;
     }
     case "student.balance.open": {
+      migratePackageBalances(data);
       const learner = student(command.id);
-      if (learner.balanceKnown)
+      if (learner.balanceKnown || data.orders?.some(o => o.studentIds.includes(learner.id)))
         throw new Error("已录入期初余额，请通过课时操作调整");
       if (!Number.isFinite(command.balance))
         throw new Error("请填写有效的期初剩余课时，可填写负数表示欠课");
       if (!command.reason.trim()) throw new Error("请填写期初余额的核对依据");
       learner.balanceKnown = true;
+      const opening = createOpeningPackage(data, learner, 0);
+      opening.units = command.balance;
       const creditId = credit(
         learner,
         command.balance,
         "期初余额",
         command.reason,
+        { orderId: opening.id },
       );
       event(
         "补录期初余额",
@@ -872,24 +892,24 @@ export function transition(
     }
     case "credit.deduct": {
       const s = student(command.studentId);
-      if (!s.balanceKnown) throw new Error("请先核实并录入剩余课时");
+      const order = packageFor(s, command.orderId);
+      if (!order && !s.balanceKnown) throw new Error("请先核实并录入剩余课时");
+      const before = order?.balance ?? s.balance;
       if (s.status === "退费")
         throw new Error("退费学员的课包已冻结，请先办理复课");
       if (!Number.isFinite(command.units) || command.units <= 0)
         throw new Error("扣减课时必须为大于 0 的有效数值");
       if (!command.reason.trim()) throw new Error("请填写扣减原因");
-      if (command.units > s.balance)
+      if (command.units > before)
         throw new Error("扣减课时不能超过当前剩余课时");
-      const before = s.balance;
       const after = Math.round((before - command.units) * 1e8) / 1e8;
       const creditId = credit(
         s,
         -command.units,
         "手动扣减",
         command.reason.trim(),
+        { orderId: order?.id },
       );
-      s.balance = after;
-      data.credits[0].balance = after;
       event(
         "手动扣减",
         `扣减 ${command.units} 课时，余额 ${before} → ${after}；${command.reason.trim()}`,
@@ -949,26 +969,59 @@ export function transition(
       event("锁定档期",`保留 ${command.slots.length} 个时段至 ${command.expiresAt}`,command.studentId);
       break;
     }
+    case "order.join": {
+      migratePackageBalances(data);
+      const member = student(command.studentId);
+      const order = required(data.orders?.find(item => item.id === command.orderId), "找不到套餐订单");
+      if (member.status === "退费") throw new Error("退费学员不能共享课时");
+      const group = sharedBalanceGroup(data, member.id, order.id);
+      const { account, issue, unbound } = sharedClassIn(data, group.members);
+      if (issue) throw new Error(issue);
+      if (account && unbound.length) {
+        if (command.bindAccountId !== account.id) throw new Error("请确认将未绑定的学员关联到共用的 ClassIn 账号");
+        account.studentIds.push(...unbound);
+        for (const id of unbound) event("ClassIn 账号", "共享课时时关联 ClassIn 账号", id);
+      }
+      if (group.sources.length === 1 && order.studentIds.includes(member.id)) {
+        message = "已共享这份课时余额";
+        break;
+      }
+      mergeBalanceSources(data, order, group.sources, group.members);
+      event("共享课时", `共享余额 ${group.balance} 课时，共 ${group.members.length} 位学员`, member.id);
+      message = "已共享课时余额";
+      break;
+    }
     case "order.buy": {
+      migratePackageBalances(data);
       const buyer = student(command.studentId);
       const members = [...new Set(command.studentIds)];
       if (!command.id.trim() || !members.includes(buyer.id) || ![72,144].includes(command.units)) throw new Error("请选择学员和套餐");
       const date = businessDate(command.date);
+      if (members.length > 1) {
+        const { account, unbound, issue } = sharedClassIn(data, members);
+        if (account && unbound.length) throw new Error("请通过共享已有课时确认账号关联");
+        if (issue) throw new Error(issue);
+      }
       for (const member of members) {
         const s = student(member);
         if (s.status === "退费") throw new Error("退费学员不能加入新订单");
       }
       const orders = data.orders ??= [];
-      if (orders.some(o => o.id === command.id)) { message = "订单已登记"; break; }
+      if (orders.some(o => o.id === command.id) || data.credits.some(row => row.purchaseId === command.id)) { message = "订单已登记"; break; }
       orders.push({id:command.id,studentIds:members,units:command.units,balance:command.units,date,kind:command.kind,channel:buyer.channel,project:buyer.project});
-      data.credits.unshift({id:id(),studentId:buyer.id,orderId:command.id,date,type:command.kind,units:command.units,balance:command.units,note:command.note,operator:command.operator || "教务",recordedAt});
-      if (command.kind === "续费") buyer.renewalStatus = "是";
+      data.credits.unshift({id:id(),studentId:buyer.id,orderId:command.id,purchaseId:command.id,purchaseStudentIds:[...members],date,type:command.kind,units:command.units,balance:command.units,note:command.note,operator:command.operator || "教务",recordedAt});
       event("套餐订单", `登记 ${command.units} 课时，${members.length} 位学员共用`, buyer.id);
       break;
     }
     case "credit.add": {
       const s = student(command.studentId);
-      if (!command.orderId && !s.balanceKnown) throw new Error("请先补录期初余额，再进行课时操作");
+      const purchase = ["购课", "新购", "充值", "续费"].includes(command.kind);
+      if (purchase && command.purchaseId && data.credits.some(row => row.purchaseId === command.purchaseId)) {
+        message = "订单已登记";
+        break;
+      }
+      const source = packageFor(s, command.orderId);
+      if (!source && !s.balanceKnown) throw new Error("请先补录期初余额，再进行课时操作");
       if (!Number.isFinite(command.units) || command.units <= 0)
         throw new Error("课时数需为大于 0 的有效数值");
       if (["补偿", "赠送"].includes(command.kind) && !command.note.trim())
@@ -1008,19 +1061,23 @@ export function transition(
         throw new Error("关联转介绍关系不属于这位学生");
       const creditId = credit(s, command.units, command.kind, command.note, {
         date,
-        orderId:command.orderId, amount: command.amount,
+        orderId:source?.id, amount: command.amount,
         feedbackId: command.feedbackId,
         referralId: command.referralId,
       });
-      if (command.kind === "续费") s.renewalStatus = "是";
+      const entry = data.credits[0];
+      if (purchase) {
+        entry.purchaseId = command.purchaseId || entry.id;
+        entry.purchaseStudentIds = [...(source?.studentIds ?? [s.id])];
+      }
       event(
         command.kind,
-        `增加 ${command.units} 课时，剩余 ${s.balance} 课时`,
+        `增加 ${command.units} 课时，剩余 ${entry.balance} 课时`,
         s.id,
         "",
         { relatedType: "credit", relatedId: creditId },
       );
-      message = `已加 ${command.units} 课时，剩余 ${s.balance} 课时`;
+      message = `已加 ${command.units} 课时，剩余 ${entry.balance} 课时`;
       break;
     }
     case "student.lifecycle": {
@@ -1072,12 +1129,12 @@ export function transition(
           {
             step: "候课名单",
             status: "待确认范围",
-            detail: "当前Demo没有外部候课名单，需确认实际停用范围。",
+            detail: "外部候课名单待核实，需确认停用范围。",
           },
           {
             step: "服务权限",
             status: "待确认范围",
-            detail: "仅模拟停止本地排课；不冻结真实ClassIn或其他账号。",
+            detail: "已停止本地排课，外部账号权限待核实。",
           },
         ];
         for (const step of s.serviceStopResults.filter(
@@ -1223,7 +1280,7 @@ export function transition(
     case "student.reminder.preview": {
       const learner = student(command.studentId);
       if (!Number.isFinite(command.threshold) || command.threshold < 0)
-        throw new Error("请填写本次演示条件");
+        throw new Error("请填写提醒条件");
       if (["停课", "结课", "退费"].includes(learner.status)) {
         message = "当前服务已暂停，不生成跟进提醒";
         break;
@@ -1239,7 +1296,7 @@ export function transition(
           message = "当前课时未达到本次提醒条件";
           break;
         }
-        basis = `剩余 ${learner.balance} 课时，本次演示提醒线为 ${command.threshold} 课时。`;
+        basis = `剩余 ${learner.balance} 课时，提醒阈值为 ${command.threshold} 课时。`;
       } else {
         if (
           !Number.isInteger(command.lookbackDays) ||
@@ -1263,7 +1320,7 @@ export function transition(
           break;
         }
         courseIds = missed.map((item) => item.id);
-        basis = `最近 ${command.lookbackDays} 天已确认缺席 ${missed.length} 节，本次演示条件为 ${command.threshold} 节。请核实原因。`;
+        basis = `最近 ${command.lookbackDays} 天已确认缺席 ${missed.length} 节，提醒阈值为 ${command.threshold} 节。请核实原因。`;
       }
       const task = addTask({
         studentId: learner.id,
@@ -1316,6 +1373,9 @@ export function transition(
       break;
     }
     case "lesson.schedule": {
+      const accountIssue = schedulingAccountIssue(data, command.studentId);
+      if (accountIssue) throw new Error(accountIssue);
+      migratePackageBalances(data);
       const s = student(command.studentId);
       const flexible = command.schedulingMode === "flex";
       if (flexible && command.kind !== "临时课")
@@ -1596,6 +1656,23 @@ export function transition(
         if (l.attendance === "账号待关联") throw new Error("请先关联学员账号");
         if (command.decision === "不扣" && !command.reason.trim())
           throw new Error("请填写不扣课时的原因");
+        if (command.conclusion) {
+          if (!command.reason.trim()) throw new Error("请填写核实依据");
+          if (command.conclusion === "老师缺席" && command.decision !== "不扣") throw new Error("老师缺席不能扣课");
+          l.incident = {reason:command.conclusion, minutes:command.minutes, note:command.reason.trim(), operator:command.operator || "教务", at:recordedAt};
+          if (command.conclusion === "老师缺席" || command.conclusion === "学员缺席") {
+            const person = command.conclusion === "老师缺席" ? "老师" : "学员";
+            confirmAbsence(l, person);
+            notifyAbsence(l, person, recordedAt);
+          } else if (command.conclusion === "正常上课") {
+            l.attendance = "正常";
+            l.teacherAttendance = ["正常"];
+            l.studentAttendance = ["正常"];
+          } else if (command.conclusion === "老师迟到" || command.conclusion === "老师早退") {
+            l.attendance = command.conclusion;
+            l.teacherAttendance = [command.conclusion === "老师迟到" ? "迟到" : "早退"];
+          }
+        }
         deduct(l, command.decision !== "不扣", command.units);
         l.status = "已完成";
         if (command.decision === "缺席") {
@@ -2006,6 +2083,8 @@ export function transition(
             found.availabilitySource,
           ])
         : "";
+      if (found && found.phone !== parsedTeacher.data.phone && !parsedTeacher.data.classInUid)
+        delete found.classInUid;
       if (found) Object.assign(found, parsedTeacher.data);
       else data.teachers.push(parsedTeacher.data);
       for (const l of data.lessons.filter(
@@ -2161,19 +2240,24 @@ export function transition(
       break;
     }
     case "role.delete": {
-      if (
-        command.id === "admin" ||
-        data.accounts.some((a) => a.roleId === command.id)
-      )
+      if (isSystemRole(command.id)) throw new Error("系统角色不能删除");
+      if (data.accounts.some((a) => a.roleId === command.id))
         throw new Error("这个角色仍有账号使用，不能删除");
       data.roles = data.roles.filter((r) => r.id !== command.id);
       message = "角色已删除";
       break;
     }
     case "account.save": {
+      if (command.account.roleId === "admin" ? command.account.scope !== "全部" : !["全部", "本队", "本组"].includes(command.account.scope)) throw new Error("数据范围只能选择全部、本队或本组，管理员使用全部");
       if (!!command.account.team !== !!command.account.group?.trim()) throw new Error("队伍与队内组别需一起填写");
       if (["本队", "本组"].includes(command.account.scope) && !command.account.team) throw new Error("请先分配队伍与组别");
       const a = data.accounts.find((a) => a.id === command.account.id);
+      if (command.account.team && (!a || a.team !== command.account.team || a.group !== command.account.group)) {
+        const team = data.catalog.find(c => c.type === "队伍" && c.name === command.account.team && c.enabled);
+        if (!team || !data.catalog.some(c => c.type === "组别" && c.parentId === team.id && c.name === command.account.group && c.enabled))
+          throw new Error("请选择基础资料中启用的队伍与组别");
+      }
+
       if (
         command.account.id === "u1" &&
         (!command.account.enabled || command.account.roleId !== "admin")
@@ -2216,29 +2300,66 @@ export function transition(
       const incoming = {...command.entry};
       const previous = data.catalog.find(item => item.id === incoming.id);
       if (previous && incoming.type !== previous.type) throw new Error("已创建的资料不能更换类型");
-      if (incoming.type === "项目" && incoming.enabled) {
-        const channel = data.catalog.find(item => item.type === "渠道" && item.id === incoming.parentId && item.enabled);
-        if (!channel) throw new Error("请选择启用的所属渠道");
-        if (!Number.isInteger(incoming.monthlyLessons) || (incoming.monthlyLessons ?? 0) <= 0)
+      if (incoming.type === "队伍" || incoming.type === "组别") {
+        incoming.name = incoming.name.trim();
+        const team = data.catalog.find(c => c.type === "队伍" && c.id === incoming.parentId);
+        if (incoming.type === "组别" && (!team || (incoming.enabled && !team.enabled))) throw new Error("请选择启用的所属队伍");
+        if (data.catalog.some(c => c.id !== incoming.id && c.type === incoming.type && c.parentId === incoming.parentId && c.name === incoming.name)) throw new Error("该归属下已有同名记录");
+        if (previous && incoming.parentId !== previous.parentId) throw new Error("组别不能更换所属队伍");
+        if (previous && incoming.name !== previous.name) {
+          for (const account of data.accounts) {
+            if (incoming.type === "队伍" && account.team === previous.name) account.team = incoming.name;
+            if (incoming.type === "组别" && account.team === team?.name && account.group === previous.name) account.group = incoming.name;
+          }
+        }
+      }
+      if (incoming.type === "项目") {
+        incoming.historicalChannelIds = [...new Set([...(previous?.historicalChannelIds || []), ...(previous?.channelIds || [])])];
+        incoming.scopeChannelId = previous?.scopeChannelId;
+
+        if (incoming.parentId) {
+          incoming.channelIds = [incoming.parentId];
+          incoming.scopeChannelId = incoming.parentId;
+          delete incoming.parentId;
+        }
+        for (const channelId of incoming.channelIds || []) {
+          if (!data.catalog.some(c => c.id === channelId && c.type === "渠道" && (c.enabled || previous?.channelIds?.includes(channelId))))
+            throw new Error("合作渠道不存在");
+        }
+        if (incoming.enabled && (!Number.isInteger(incoming.monthlyLessons) || (incoming.monthlyLessons ?? 0) <= 0))
           throw new Error("请填写正整数月应上课数");
+        if (previous && previous.name !== incoming.name)
+          for (const student of data.students)
+            if (student.project === previous.name && data.catalog.some(c => c.name === student.channel && [...(previous.channelIds || []), ...(previous.historicalChannelIds || [])].includes(c.id))) student.project = incoming.name;
       }
-      if(previous && incoming.type==="渠道" && incoming.name!==previous.name)
-        for(const s of data.students)if(s.channel===previous.name)s.channel=incoming.name;
-      if(previous?.type==="项目" && previous.parentId && (previous.name!==incoming.name || previous.parentId!==incoming.parentId)){
-        const oldChannel=data.catalog.find(c=>c.id===previous.parentId)?.name;
-        const newChannel=data.catalog.find(c=>c.id===incoming.parentId)?.name;
-        for(const s of data.students)if(s.channel===oldChannel && s.project===previous.name){s.project=incoming.name;s.channel=newChannel||s.channel;}
-      }
+      if(previous && incoming.type === "渠道" && incoming.name !== previous.name)
+        for(const student of data.students) if(student.channel === previous.name) student.channel = incoming.name;
       if (incoming.type === "项目" && incoming.monthlyLessons && incoming.monthlyLessons !== previous?.monthlyLessons) {
         incoming.targetHistory = [...(previous?.targetHistory || []),
           { at: recordedAt, lessons: incoming.monthlyLessons, operator: command.operator || "教务" }];
       }
       if (incoming.type === "项目" || incoming.type === "渠道") {
         if (data.catalog.some(item => item.id !== incoming.id && item.type === incoming.type &&
-          item.name.trim() === incoming.name.trim() && (incoming.type === "渠道" || item.parentId === incoming.parentId)))
-          throw new Error("该归属下已有同名记录");
-        if (!incoming.enabled && incoming.type === "渠道" && data.catalog.some(item => item.type === "项目" && item.enabled && item.parentId === incoming.id))
-          throw new Error("请先调整该渠道下的启用项目");
+          item.name.trim() === incoming.name.trim() && (incoming.type === "渠道" || [...(item.channelIds || []), ...(item.historicalChannelIds || [])].some(id => [...(incoming.channelIds || []), ...(incoming.historicalChannelIds || [])].includes(id)))))
+          throw new Error("同一合作渠道不能关联同名的不同项目");
+      }
+      if (incoming.type === "渠道" && command.projectIds) {
+        for (const id of command.projectIds) {
+          const project = data.catalog.find(p => p.id === id && p.type === "项目");
+          if (!project || (!project.enabled && !project.channelIds?.includes(incoming.id)))
+            throw new Error("请选择启用的合作项目");
+        }
+        for (const project of data.catalog.filter(p => p.type === "项目")) {
+          const linked = project.channelIds?.includes(incoming.id) || false;
+          const selected = command.projectIds.includes(project.id);
+          if (linked === selected) continue;
+          if (selected && data.catalog.some(p => p.type === "项目" && p.id !== project.id && p.name.trim() === project.name.trim() && [...(p.channelIds || []), ...(p.historicalChannelIds || [])].includes(incoming.id)))
+            throw new Error("同一合作渠道不能关联同名的不同项目");
+          project.historicalChannelIds = [...new Set([...(project.historicalChannelIds || []), ...(project.channelIds || [])])];
+          project.channelIds = selected
+            ? [...(project.channelIds || []), incoming.id]
+            : (project.channelIds || []).filter(id => id !== incoming.id);
+        }
       }
       if (command.entry.type === "反馈分类") {
         data.catalog = saveFeedbackCategory(data.catalog, command.entry);
@@ -2254,14 +2375,6 @@ export function transition(
       if (command.rules.lowBalance < 0) throw new Error("请填写有效阈值");
       data.rules = command.rules;
       event("业务规则", "更新业务规则与提醒阈值");
-      break;
-    }
-    case "connection.save": {
-      if (!command.sid.trim() || command.secret.length < 6)
-        throw new Error("请填写机构 SID 和至少 6 位密钥");
-      data.connection = "正常";
-      event("课程连接", "更新机构连接，密钥不保存到演示数据");
-      message = "连接设置已保存";
       break;
     }
     case "report.correct": {
@@ -2308,7 +2421,7 @@ export function transition(
       if (command.report.studentId !== l.studentId)
         throw new Error("教学进度与课程学生不一致");
       if (l.requiresScreenshot && !command.report.screenshot) throw new Error("请上传本节课结束页截图");
-      if(command.report.screenshot && !/^data:image\/(png|jpeg|webp);base64,/.test(command.report.screenshot))throw new Error("截图格式无效");
+      if(command.report.screenshot && !/^data:image\/(png|jpeg|webp);base64,/.test(command.report.screenshot) && !/^\/api\/files\/[0-9a-f-]{36}$/.test(command.report.screenshot))throw new Error("截图格式无效");
       if (!command.report.material.trim() || !command.report.to.trim())
         throw new Error("请填写教材及结束页码或章节");
       const r = data.reports.find((r) => r.lessonId === l.id);
@@ -2385,7 +2498,18 @@ export function transition(
     }
   }
   data.catalog = trackFeedbackCategoryUsage(data);
+  refreshPackageBalances(data);
   data.revision++;
+  if (["student.create", "student.profile", "student.details.update", "student.edit", "student.import"].includes(command.type)) {
+    for (const next of data.students) {
+      const before = current.students.find(s => s.id === next.id);
+      if (before && before.channel === next.channel && before.project === next.project) continue;
+      if (!next.channel && !next.project) continue;
+      const channel = data.catalog.find(c => c.type === "渠道" && c.name === next.channel && c.enabled);
+      if (!channel || (next.project && !data.catalog.some(p => p.type === "项目" && p.enabled && p.name === next.project && p.channelIds?.includes(channel.id))))
+        throw new Error("请选择启用且存在合作关系的渠道与项目");
+    }
+  }
   return { data, message };
 }
 

@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -43,10 +44,10 @@ function mount(path: string) {
     </QueryClientProvider>,
   );
 }
-function change(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+async function change(label: string, value: string) {
+  await testAct(async () => { fireEvent.change(screen.getByLabelText(label, { exact: true }), {
     target: { value },
-  });
+  }); });
 }
 beforeEach(() => {
   localStorage.clear();
@@ -66,26 +67,26 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("学员档案内操作联动", () => {
-  it("课时登记在统一记录只出现一次，打开明细不离开档案", async () => {
+  it("补偿登记在统一记录只出现一次，打开明细不离开档案", async () => {
     const student = demoRepository.read().students[0];
     demoRepository.execute({
       type: "credit.add",
       studentId: student.id,
       units: 1.5,
-      kind: "充值",
+      kind: "补偿",
       note: "本次补充记录",
       date: DEMO_TODAY,
     });
     mount(`/students/${student.id}?tab=service`);
-    const title = await screen.findByText("充值", { exact: true });
-    expect(screen.getAllByText("充值", { exact: true })).toHaveLength(1);
+    const title = await screen.findByText("课时补偿", { exact: true });
+    expect(screen.getAllByText("课时补偿", { exact: true })).toHaveLength(1);
     const article = title.closest("article");
     if (!article) throw new Error("没有服务记录");
-    fireEvent.click(within(article).getByRole("button", { name: "查看详情" }));
-    const drawer = await screen.findByRole("dialog", { name: "充值记录" });
+    await testAct(async () => { fireEvent.click(within(article).getByRole("button", { name: "查看详情" })); });
+    const drawer = await screen.findByRole("dialog", { name: "补偿记录" });
     expect(within(drawer).getByText("+1.5 课时")).toBeTruthy();
-    expect(within(drawer).getByText("19.5 课时")).toBeTruthy();
-    fireEvent.click(within(drawer).getByRole("button", { name: "关闭" }));
+    expect(within(drawer).getByText(`${student.balance + 1.5} 课时`)).toBeTruthy();
+    await testAct(async () => { fireEvent.click(within(drawer).getByRole("button", { name: "关闭" })); });
     expect(screen.getByTestId("path").textContent).toBe(
       `/students/${student.id}?tab=service`,
     );
@@ -93,9 +94,9 @@ describe("学员档案内操作联动", () => {
   it("在档案内登记反馈、查看并发起关联补偿，保持原页签", async () => {
     const student = demoRepository.read().students[0];
     mount(`/students/${student.id}?tab=service`);
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       (await screen.findAllByRole("button", { name: "登记反馈" }))[0],
-    );
+    ); });
     const editor = await screen.findByRole("dialog", { name: "登记反馈" });
     expect(
       (
@@ -104,11 +105,11 @@ describe("学员档案内操作联动", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
-    fireEvent.change(
+    await testAct(async () => { fireEvent.change(
       within(editor).getByRole("textbox", { name: "学员反馈（原话）" }),
       { target: { value: "档案内反馈测试" } },
-    );
-    fireEvent.click(within(editor).getByRole("button", { name: "保存反馈" }));
+    ); });
+    await testAct(async () => { fireEvent.click(within(editor).getByRole("button", { name: "保存反馈" })); });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "登记反馈" })).toBeNull(),
     );
@@ -119,9 +120,15 @@ describe("学员档案内操作联动", () => {
     const text = await screen.findByText("档案内反馈测试", { exact: true });
     const article = text.closest("article");
     if (!article) throw new Error("没有反馈记录");
-    fireEvent.click(within(article).getByRole("button", { name: "查看详情" }));
+    await testAct(async () => { fireEvent.click(within(article).getByRole("button", { name: "查看详情" })); });
     const detail = await screen.findByRole("dialog", { name: "反馈详情" });
-    fireEvent.click(within(detail).getByRole("button", { name: "登记补偿" }));
+    expect(within(detail).queryByRole("button", { name: "登记补偿" })).toBeNull();
+    await testAct(async () => { fireEvent.click(within(detail).getByRole("button", { name: "关闭" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "登记补偿" })); });
+    const trigger = screen.getByRole("combobox", { name: "关联反馈" });
+    await testAct(async () => { trigger.focus(); fireEvent.click(trigger); });
+    const option = await screen.findByRole("option", { name: `${DEMO_TODAY} · 档案内反馈测试` });
+    await testAct(async () => { fireEvent.click(option); });
     const compensation = await screen.findByRole("dialog", {
       name: "登记补偿课时",
     });
@@ -129,11 +136,11 @@ describe("学员档案内操作联动", () => {
       within(compensation).getByRole("combobox", { name: "关联反馈" })
         .textContent,
     ).toContain("档案内反馈测试");
-    change("课时数", "2");
-    change("备注 / 原因", "沟通后补偿");
-    fireEvent.click(
+    await change("课时数", "2");
+    await change("备注 / 原因", "沟通后补偿");
+    await testAct(async () => { fireEvent.click(
       within(compensation).getByRole("button", { name: "确认加 2 课时" }),
-    );
+    ); });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "登记补偿课时" })).toBeNull(),
     );
@@ -160,7 +167,7 @@ describe("学员档案内操作联动", () => {
       type: "credit.add",
       studentId: referrer.id,
       units: 3,
-      kind: "充值",
+      kind: "补偿",
       note: "关系关联充值",
       referralId: referral.id,
       date: DEMO_TODAY,
@@ -211,12 +218,12 @@ describe("学员档案内操作联动", () => {
   });
   it("详情内切日历并打开课程，关闭后仍保留日历", async () => {
     mount("/students/s1?tab=courses");
-    fireEvent.click(await screen.findByRole("button", { name: "日历" }));
+    { const target = await screen.findByRole("button", { name: "日历" }); await testAct(async () => { fireEvent.click(target); }); }
     const courses = screen.getAllByRole("button", { name: /^查看课程/ });
-    fireEvent.click(courses[0]);
+    await testAct(async () => { fireEvent.click(courses[0]); });
     const detail = await screen.findByRole("dialog", { name: "课程详情" });
     expect(within(detail).getByText("上课时间")).toBeTruthy();
-    fireEvent.click(within(detail).getAllByRole("button", { name: "关闭" })[0]);
+    await testAct(async () => { fireEvent.click(within(detail).getAllByRole("button", { name: "关闭" })[0]); });
     expect(
       screen.getByRole("button", { name: "日历" }).getAttribute("aria-pressed"),
     ).toBe("true");

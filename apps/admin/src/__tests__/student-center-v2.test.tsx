@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -15,7 +16,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
 import { emptyStudentProfile } from "@crazytalk/shared";
-import { demoRepository } from "../../../../packages/shared/src/repository";
+import { demoRepository, DEMO_STORAGE_KEY } from "../../../../packages/shared/src/repository";
 import App from "../App";
 
 function mount(path: string) {
@@ -35,14 +36,19 @@ function mount(path: string) {
     </QueryClientProvider>,
   );
 }
-function change(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+async function change(label: string, value: string) {
+  await testAct(async () => { fireEvent.change(screen.getByLabelText(label, { exact: true }), {
     target: { value },
-  });
+  }); });
 }
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
+  const fixture = demoRepository.read();
+  fixture.students[0].name = "Jayden";
+  fixture.students[0].chineseName = "Jayden";
+  localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(fixture));
+  demoRepository.refresh();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -94,9 +100,9 @@ describe("学员中心确认方案", () => {
     expect(container.querySelector(".students-table")?.textContent).not.toMatch(
       /X0007|CEFR|Pre-A1/,
     );
-    fireEvent.click(screen.getByRole("button", { name: "显示列" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "是否续课" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "周上课频次" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "显示列" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "是否续课" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "周上课频次" })); });
     expect(
       [...container.querySelectorAll(".students-table th")]
         .map((cell) => cell.textContent?.trim())
@@ -115,7 +121,7 @@ describe("学员中心确认方案", () => {
       ...container.querySelectorAll(".student-detail-fields dt"),
     ].map((label) => label.textContent?.trim());
     expect(labels).toEqual(
-      expect.arrayContaining(["学生名字", "手机号码", "年龄", "上课老师"]),
+      expect.arrayContaining(["学生中文名", "学生英文名", "手机号码", "年龄", "上课老师"]),
     );
     expect(labels).not.toContain("当月已排课程");
     expect(labels).not.toContain("月应上课");
@@ -163,7 +169,7 @@ describe("学员中心确认方案", () => {
     await screen.findByRole("tab", { name: "概述信息" });
     expect(screen.getByText("0")).toBeTruthy();
     expect(screen.getAllByText("未填写").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "课时与续费" })); });
     expect(await screen.findByText("录入初始剩余课时")).toBeTruthy();
     expect(screen.queryByText("暂无转介绍关系")).toBeNull();
   });
@@ -181,20 +187,20 @@ describe("学员列表快捷操作", () => {
     mount("/students?q=Jayden");
     const row = (await screen.findByRole("link", {name: student.name})).closest("tr")!;
     const cancel = () => within(row).getByRole("button", {name: "取消课"}) as HTMLButtonElement;
-    fireEvent.click(cancel());
+    await testAct(async () => { fireEvent.click(cancel()); });
     const picker = screen.getByRole("dialog", {name: "选择要取消的课程"});
     const options = within(picker).getAllByRole("button", {name: /2099-01-01/});
     expect(options[0].textContent).toContain("09:00");
-    fireEvent.click(options[0]);
+    await testAct(async () => { fireEvent.click(options[0]); });
     for (const time of ["09:00", "11:00"]) {
       const form = within(screen.getByRole("dialog", {name: "取消课程"}));
       expect(form.getByText("预计扣除 0 课时")).toBeTruthy();
-      fireEvent.change(form.getByLabelText(/取消原因$/), {target: {value: "家长提前请假"}});
-      fireEvent.click(form.getByRole("button", {name: "确认取消课程"}));
+      await testAct(async () => { fireEvent.change(form.getByLabelText(/取消原因$/), {target: {value: "家长提前请假"}}); });
+      await testAct(async () => { fireEvent.click(form.getByRole("button", {name: "确认取消课程"})); });
       await waitFor(() => expect(demoRepository.read().lessons.find(l => l.time === time)?.status).toBe("已取消"));
       if (time === "09:00") {
         expect(demoRepository.read().lessons.find(l => l.time === "11:00")?.status).toBe("未开始");
-        fireEvent.click(cancel());
+        await testAct(async () => { fireEvent.click(cancel()); });
       }
     }
     expect(cancel().disabled).toBe(true);
@@ -203,13 +209,13 @@ describe("学员列表快捷操作", () => {
   it("回访弹窗正文显示所选学员，并保存到该学员的记录", async () => {
     mount("/students");
     const row = (await screen.findByRole("link", {name: "Jayden"})).closest("tr")!;
-    fireEvent.click(within(row).getByRole("button", {name: "添加回访"}));
+    await testAct(async () => { fireEvent.click(within(row).getByRole("button", {name: "添加回访"})); });
     const form = within(screen.getByRole("dialog", {name: "记录回访"}));
     expect(form.getByText("学员姓名：Jayden")).toBeTruthy();
-    fireEvent.click(form.getByRole("combobox", {name: /星级评价/}));
-    fireEvent.click(screen.getByRole("option", {name: "4 星"}));
-    fireEvent.change(form.getByRole("textbox"), {target: {value: "家长反馈课程进度合适"}});
-    fireEvent.click(form.getByRole("button", {name: "确认保存"}));
+    await testAct(async () => { fireEvent.click(form.getByRole("combobox", {name: /星级评价/})); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("option", {name: "4 星"})); });
+    await testAct(async () => { fireEvent.change(form.getByRole("textbox"), {target: {value: "家长反馈课程进度合适"}}); });
+    await testAct(async () => { fireEvent.click(form.getByRole("button", {name: "确认保存"})); });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     const state = demoRepository.read();
     expect(state.events[0]).toMatchObject({type: "回访", studentId: state.students.find(s => s.name === "Jayden")!.id, visit: {stars: 4, text: "家长反馈课程进度合适"}});

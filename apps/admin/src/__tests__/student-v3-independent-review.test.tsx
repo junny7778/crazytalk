@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -38,21 +39,31 @@ function mount(path: string) {
     </QueryClientProvider>,
   );
 }
-function choose(label: string, option: string) {
-  fireEvent.click(screen.getByRole("combobox", { name: label }));
-  fireEvent.click(screen.getByRole("option", { name: option }));
-}
-function change(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label, { exact: true }), {
-    target: { value },
+async function choose(label: string, option: string) {
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("combobox", { name: label }));
+  });
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("option", { name: option }));
   });
 }
+async function change(label: string, value: string) {
+  await testAct(async () => {
+    fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+      target: { value },
+    });
+  });
+}
+let studentId: string;
+let studentName: string;
 function fixture(): DemoState {
   return structuredClone(demoRepository.read());
 }
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
+  studentId = demoRepository.read().students[0].id;
+  studentName = demoRepository.read().students[0].name;
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -69,36 +80,38 @@ afterEach(() => {
 });
 
 describe("学员中心 V3 独立验收", () => {
-  it("列表保留9个业务列、仅用下拉筛选订单状态；档案保留5个入口", () => {
+  it("列表保留当前业务列及订单状态筛选；档案保留4个入口", async () => {
     mount("/students?view=正常&orderStatus=停课");
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
     expect(
       screen.getByRole("combobox", { name: "订单状态筛选" }).textContent,
     ).toContain("停课");
-    expect(screen.queryByRole("link", { name: "Jayden" })).toBeNull();
-    choose("订单状态筛选", "全部订单状态");
-    expect(screen.getByRole("link", { name: "Jayden" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: studentName })).toBeNull();
+    await choose("订单状态筛选", "全部订单状态");
+    expect(screen.getAllByRole("link", { name: studentName })[0]).toBeTruthy();
     for (const name of [
       "学生名字",
-      "学生群名",
+      "学员 ID",
       "渠道",
       "订单状态",
       "上课老师",
-      "教材",
+      "起始教材",
       "上课时间",
       "总课时",
-      "是否续课",
+      "买单日期",
     ])
       expect(screen.getByRole("columnheader", { name })).toBeTruthy();
-    for (const name of ["订单状态", "上课老师", "总课时", "是否续课"])
+    for (const name of ["订单状态", "上课老师", "总课时"])
       expect(screen.getByRole("button", { name })).toBeTruthy();
-    for (const name of ["学生名字", "学生群名", "渠道", "教材", "上课时间"])
+    for (const name of ["学生名字", "学员 ID", "渠道", "教材", "上课时间"])
       expect(screen.queryByRole("button", { name })).toBeNull();
-    fireEvent.click(screen.getByRole("link", { name: "Jayden" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getAllByRole("link", { name: studentName })[0]);
+    });
     expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(screen.getByText("****1234")).toBeTruthy();
   });
-  it("列表/周历同源，筛选与切周保留实际课程，课程在档案内打开", () => {
+  it("列表/周历同源，筛选与切周保留实际课程，课程在档案内打开", async () => {
     const s = demoRepository.read().students[0];
     const lessons = demoRepository
       .read()
@@ -107,14 +120,20 @@ describe("学员中心 V3 独立验收", () => {
     expect(screen.getAllByRole("button", { name: /^查看课程 / })).toHaveLength(
       lessons.length,
     );
-    choose("课程状态", "未开始");
+    await choose("课程状态", "未开始");
     expect(screen.getAllByRole("button", { name: /^查看课程 / })).toHaveLength(
       lessons.filter((l) => l.status === "未开始").length,
     );
-    fireEvent.click(screen.getByRole("button", { name: "日历" }));
-    fireEvent.click(screen.getByRole("button", { name: "下一周" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "日历" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "下一周" }));
+    });
     const selected = screen.getAllByRole("button", { name: /^查看课程 / })[0];
-    fireEvent.click(selected);
+    await testAct(async () => {
+      fireEvent.click(selected);
+    });
     expect(screen.getByRole("dialog", { name: "课程详情" })).toBeTruthy();
     expect(
       document.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
@@ -252,17 +271,17 @@ describe("学员中心 V3 独立验收", () => {
         reason: "本次调整",
       },
     ];
-    data.events = data.events.filter((event) => event.studentId !== "s1");
+    data.events = data.events.filter((event) => event.studentId !== studentId);
     data.events.push({
       id: "review-change-event",
-      studentId: "s1",
+      studentId: studentId,
       teacherId: "t1",
       date: DEMO_TODAY,
       type: "换老师",
       content: "由 新老师C 接手 3 节课，本次调整",
       operator: "验收",
     });
-    const changes = studentActivities(data, "s1").filter(
+    const changes = studentActivities(data, studentId).filter(
       (item) => item.type === "换老师",
     );
     expect(changes).toHaveLength(2);
@@ -315,7 +334,7 @@ describe("学员中心 V3 独立验收", () => {
       let data = fixture();
       data = transition(data, {
         type: "task.add",
-        studentId: "s1",
+        studentId: studentId,
         title: "凌晨独立验收",
         owner: "",
       }).data;
@@ -326,7 +345,7 @@ describe("学员中心 V3 独立验收", () => {
         result: "",
       }).data;
       expect(
-        studentActivities(data, "s1").find(
+        studentActivities(data, studentId).find(
           (item) => item.target.kind === "task" && item.target.id === task.id,
         )?.date,
       ).toBe("2026-11-01");
@@ -402,45 +421,55 @@ describe("学员中心 V3 独立验收", () => {
           .sort(),
       );
   });
-  it("指定课程调课带入原安排，改动后关窗继续填写保留内容", () => {
+  it("指定课程调课带入原安排，改动后关窗继续填写保留内容", async () => {
     const l = demoRepository
       .read()
-      .lessons.find((l) => l.studentId === "s1" && l.status === "未开始")!;
-    mount("/students/s1?tab=courses");
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: new RegExp(`^查看课程 ${l.date} ${l.time}`),
-      }),
-    );
-    fireEvent.click(
-      within(screen.getByRole("dialog", { name: "课程详情" })).getByRole(
-        "button",
-        { name: "调课" },
-      ),
-    );
-    const dlg = screen.getByRole("dialog", { name: "给 Jayden 调课" });
+      .lessons.find((l) => l.studentId === studentId && l.status === "未开始")!;
+    mount(`/students/${studentId}?tab=courses`);
+    await testAct(async () => {
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: new RegExp(`^查看课程 ${l.date} ${l.time}`),
+        }),
+      );
+    });
+    await testAct(async () => {
+      fireEvent.click(
+        within(screen.getByRole("dialog", { name: "课程详情" })).getByRole(
+          "button",
+          { name: "调课" },
+        ),
+      );
+    });
+    const dlg = screen.getByRole("dialog", { name: `给 ${studentName} 调课` });
     expect(
       (within(dlg).getByLabelText("新的上课时间") as HTMLInputElement).value,
     ).toBe(l.time);
-    change("备注 / 原因", "独立验收调整");
-    fireEvent.click(within(dlg).getByRole("button", { name: "取消" }));
-    fireEvent.click(screen.getByRole("button", { name: "继续填写" }));
+    await change("备注 / 原因", "独立验收调整");
+    await testAct(async () => {
+      fireEvent.click(within(dlg).getByRole("button", { name: "取消" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "继续填写" }));
+    });
     expect(
       (screen.getByLabelText("备注 / 原因") as HTMLTextAreaElement).value,
     ).toBe("独立验收调整");
   });
-  it("反馈在档案内登记查看编辑并补偿，不跳离服务页", () => {
-    mount("/students/s1?tab=service");
-    fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
+  it("反馈在档案内登记查看编辑并补偿，不跳离服务页", async () => {
+    mount(`/students/${studentId}?tab=service`);
+    await testAct(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
+    });
     expect(screen.getByRole("dialog", { name: /反馈/ })).toBeTruthy();
     expect(
       document.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
     ).toBe("服务跟进");
   });
-  it("55/120分钟与取消课程在周历按实际起止时间展示", () => {
+  it("55/120分钟与取消课程在周历按实际起止时间展示", async () => {
     const data = fixture();
-    const source = data.lessons.find((l) => l.studentId === "s1")!;
-    data.lessons = data.lessons.filter((l) => l.studentId !== "s1");
+    const source = data.lessons.find((l) => l.studentId === studentId)!;
+    data.lessons = data.lessons.filter((l) => l.studentId !== studentId);
     data.lessons.push(
       {
         ...source,
@@ -463,8 +492,10 @@ describe("学员中心 V3 独立验收", () => {
     );
     localStorage.setItem("crazytalk-demo-v1", JSON.stringify(data));
     demoRepository.refresh();
-    mount("/students/s1?tab=courses");
-    fireEvent.click(screen.getByRole("button", { name: "日历" }));
+    mount(`/students/${studentId}?tab=courses`);
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "日历" }));
+    });
     const short = screen.getByRole("button", {
       name: /^查看课程 .*55分钟 已取消$/,
     });
@@ -478,25 +509,42 @@ describe("学员中心 V3 独立验收", () => {
       Number.parseFloat(long.style.height),
     );
   });
-  it("反馈登记、编辑、处理与关联补偿在原档案完成", () => {
-    mount("/students/s1?tab=service");
-    fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
-    change("学员反馈（原话）", "独立验收反馈闭环");
-    fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+  it("从档案登记反馈，到反馈页编辑处理，再回档案关联补偿", async () => {
+    mount(`/students/${studentId}?tab=service`);
+    await testAct(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
+    });
+    await change("学员反馈（原话）", "独立验收反馈闭环");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    });
     const activity = screen.getByText("独立验收反馈闭环").closest("article")!;
-    fireEvent.click(within(activity).getByRole("button", { name: "查看详情" }));
-    fireEvent.click(screen.getByRole("button", { name: "编辑反馈" }));
-    change("学员反馈（原话）", "独立验收反馈已编辑");
-    fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
-    fireEvent.click(
-      within(
-        screen.getByText("独立验收反馈已编辑").closest("article")!,
-      ).getByRole("button", { name: "查看详情" }),
-    );
-    fireEvent.click(screen.getByText("处理与跟进"));
-    choose("客服处理进度", "处理中");
-    change("客服备注", "已与家长核实");
-    fireEvent.click(screen.getByRole("button", { name: "保存客服处理" }));
+    await testAct(async () => {
+      fireEvent.click(
+        within(activity).getByRole("button", { name: "查看详情" }),
+      );
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "前往反馈处理" }));
+    });
+    const editFeedback = await screen.findByRole("button", {
+      name: "编辑反馈资料",
+    });
+    await testAct(async () => {
+      fireEvent.click(editFeedback);
+    });
+    await change("学员反馈（原话）", "独立验收反馈已编辑");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "更新客服处理" }));
+    });
+    await choose("客服处理进度", "处理中");
+    await change("客服备注", "已与家长核实");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存客服处理" }));
+    });
     const feedback = demoRepository
       .read()
       .feedback.find((f) => f.content === "独立验收反馈已编辑")!;
@@ -504,13 +552,24 @@ describe("学员中心 V3 独立验收", () => {
       customerProgress: "处理中",
       processNote: "已与家长核实",
     });
-    fireEvent.click(screen.getByRole("button", { name: "登记补偿" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("link", { name: studentId }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "登记补偿" }));
+    });
+    await choose("关联反馈", `${DEMO_TODAY} · 独立验收反馈已编辑`);
     expect(
       screen.getByRole("combobox", { name: "关联反馈" }).textContent,
     ).toContain("独立验收反馈已编辑");
-    change("课时数", "0.5");
-    change("备注 / 原因", "独立核实补偿");
-    fireEvent.click(screen.getByRole("button", { name: "确认加 0.5 课时" }));
+    await change("课时数", "0.5");
+    await change("备注 / 原因", "独立核实补偿");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "确认加 0.5 课时" }));
+    });
     expect(demoRepository.read().credits[0]).toMatchObject({
       feedbackId: feedback.id,
       type: "补偿",
@@ -520,75 +579,107 @@ describe("学员中心 V3 独立验收", () => {
       document.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
     ).toBe("服务跟进");
   });
-  it("仅修改充值业务日期后关闭，仍须保护填写内容", () => {
-    mount("/students/s1?tab=credits");
-    fireEvent.click(screen.getAllByRole("button", { name: "加课时" })[0]);
-    change("业务日期", addDays(DEMO_TODAY, -3));
-    fireEvent.click(
-      within(
-        screen.getByRole("dialog", { name: "给 Jayden 加课时" }),
-      ).getByRole("button", { name: "取消" }),
-    );
+  it("取消充值关闭表单且不保存业务日期和流水", async () => {
+    mount(`/students/${studentId}?tab=credits`);
+    await testAct(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "加课时" })[0]);
+    });
+    await change("业务日期", addDays(DEMO_TODAY, -3));
+    await testAct(async () => {
+      fireEvent.click(
+        within(
+          screen.getByRole("dialog", { name: `给 ${studentName} 加课时` }),
+        ).getByRole("button", { name: "取消" }),
+      );
+    });
     expect(
-      screen.queryByRole("dialog", { name: "放弃未保存的内容？" }),
-    ).not.toBeNull();
+      screen.queryByRole("dialog", { name: `给 ${studentName} 加课时` }),
+    ).toBeNull();
+    expect(
+      demoRepository
+        .read()
+        .credits.some(
+          (c) =>
+            c.date === addDays(DEMO_TODAY, -3) &&
+            c.studentId === studentId &&
+            c.units === 72,
+        ),
+    ).toBe(false);
   });
-  it("档案内反馈原话填写后关闭，保护未保存的反馈内容", () => {
-    mount("/students/s1?tab=service");
-    fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
-    change("学员反馈（原话）", "独立验收尚未保存的家长原话");
-    fireEvent.click(
-      within(screen.getByRole("dialog", { name: "登记反馈" })).getByRole(
-        "button",
-        { name: "取消" },
-      ),
-    );
+  it("档案内反馈原话填写后关闭，保护未保存的反馈内容", async () => {
+    mount(`/students/${studentId}?tab=service`);
+    await testAct(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
+    });
+    await change("学员反馈（原话）", "独立验收尚未保存的家长原话");
+    await testAct(async () => {
+      fireEvent.click(
+        within(screen.getByRole("dialog", { name: "登记反馈" })).getByRole(
+          "button",
+          { name: "取消" },
+        ),
+      );
+    });
     const protection = screen.queryByRole("dialog", {
       name: "放弃未保存的内容？",
     });
     if (protection) {
-      fireEvent.click(
-        within(protection).getByRole("button", { name: "继续编辑" }),
-      );
+      await testAct(async () => {
+        fireEvent.click(
+          within(protection).getByRole("button", { name: "继续编辑" }),
+        );
+      });
       expect(
         (screen.getByLabelText("学员反馈（原话）") as HTMLTextAreaElement)
           .value,
       ).toBe("独立验收尚未保存的家长原话");
     } else if (!screen.queryByRole("dialog", { name: "登记反馈" })) {
-      fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
+      await testAct(async () => {
+        fireEvent.click(screen.getAllByRole("button", { name: "登记反馈" })[0]);
+      });
       expect(
         (screen.getByLabelText("学员反馈（原话）") as HTMLTextAreaElement)
           .value,
       ).toBe("独立验收尚未保存的家长原话");
     }
   });
-  it.each(["关闭", "编辑反馈", "登记补偿"])(
-    "反馈处理备注未保存时，%s先保护填写内容",
-    (action) => {
-      mount("/students/s1?tab=service");
-      const activity = screen
-        .getByText("今天老师讲得比较多，Jayden 开口的机会不够。")
-        .closest("article")!;
-      fireEvent.click(
-        within(activity).getByRole("button", { name: "查看详情" }),
-      );
-      fireEvent.click(screen.getByText("处理与跟进"));
-      change("客服备注", "独立验收处理中未保存备注");
-      fireEvent.click(
-        within(screen.getByRole("dialog", { name: "反馈详情" })).getByRole(
-          "button",
-          { name: action },
-        ),
-      );
-      const protection = screen.getByRole("dialog", {
-        name: "放弃未保存的内容？",
+  it.each([
+    ["更新客服处理", "客服备注", "processNote"],
+    ["更新 TM 判定", "TM判定说明", "tmNote"],
+    ["添加跟进", "追加跟进内容", "followUps"],
+  ] as const)(
+    "从档案进入反馈页后，%s关闭不写入草稿",
+    async (action, label, field) => {
+      const record = demoRepository
+        .read()
+        .feedback.find((f) => f.studentId === studentId)!;
+      const before = structuredClone(record[field]);
+      mount(`/students/${studentId}?tab=service`);
+      const article = screen.getByText(record.content).closest("article")!;
+      await testAct(async () => {
+        fireEvent.click(
+          within(article).getByRole("button", { name: "查看详情" }),
+        );
       });
-      fireEvent.click(
-        within(protection).getByRole("button", { name: "继续编辑" }),
-      );
+      await testAct(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "前往反馈处理" }));
+      });
+      await testAct(async () => {
+        fireEvent.click(screen.getByRole("button", { name: action }));
+      });
+      await change(label, "未保存草稿");
+      await testAct(async () => {
+        fireEvent.click(
+          within(screen.getByRole("dialog", { name: action })).getByRole(
+            "button",
+            { name: "关闭" },
+          ),
+        );
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
       expect(
-        (screen.getByLabelText("客服备注") as HTMLTextAreaElement).value,
-      ).toBe("独立验收处理中未保存备注");
+        demoRepository.read().feedback.find((f) => f.id === record.id)![field],
+      ).toEqual(before);
     },
   );
 });

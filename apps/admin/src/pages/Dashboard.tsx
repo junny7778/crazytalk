@@ -1,3 +1,4 @@
+import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { OrganizationFilters } from "../components/OrganizationFilters";
 import {organizationView} from "@crazytalk/shared";
 import { purchasedDelivery } from "@crazytalk/shared";
@@ -45,7 +46,7 @@ import {
 import { downloadTable } from "../lib/export";
 import { bookingSummary, attendanceSummary, courseAnomalies, occurred, periodRange } from "../lib/dashboard";
 export default function Dashboard() {
-  const { data: allData, can, scope } = useDemo();
+  const { data: allData, can, scope, accountId } = useDemo();
   const go = useNavigate();
   const [params, setParams] = useSearchParams();
   const data = organizationView(allData, params);
@@ -298,9 +299,9 @@ export default function Dashboard() {
     <div className="stack dashboard-page">
       <header className="dashboard-hero">
         <div className="dashboard-welcome">
-          <Avatar name="Rita" size={64} />
+          <Avatar name={businessMode() ? data.accounts.find(a => a.id === accountId)?.name || "" : "Rita"} size={64} />
           <div className="dashboard-greeting">
-            <h1>{weekday.replace("星期", "周")}好，Rita</h1>
+            <h1>{weekday.replace("星期", "周")}好，{businessMode() ? data.accounts.find(a => a.id === accountId)?.name : "Rita"}</h1>
             <p>今天也一起照顾好学员的学习旅程吧</p>
           </div>
         </div>
@@ -1130,7 +1131,7 @@ export default function Dashboard() {
                   data={data}
                   onClick={(day, time) =>
                     navigate(
-                      `/schedule?view=day&date=${addDays("2026-10-26", day)}&time=${time}`,
+                      `/schedule?view=day&date=${addDays(businessMode() ? addDays(DEMO_TODAY, -((new Date(DEMO_TODAY + "T12:00:00Z").getUTCDay() + 6) % 7)) : "2026-10-26", day)}&time=${time}`,
                     )
                   }
                 />
@@ -1270,7 +1271,7 @@ function HeatRow({
     <>
       <small>{hour}:00</small>
       {Array.from({ length: 7 }, (_, d) => {
-        const date = addDays("2026-10-26", d);
+        const date = addDays(businessMode() ? addDays(DEMO_TODAY, -((new Date(DEMO_TODAY + "T12:00:00Z").getUTCDay() + 6) % 7)) : "2026-10-26", d);
         const open = data.teachers.filter(
           (t) =>
             t.status !== "已离职" &&

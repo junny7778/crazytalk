@@ -1,11 +1,13 @@
 import { expect, it } from "vitest";
 import { createSeed } from "./seed";
+import { migratePackageBalances } from "./packageBalances";
 import { transition } from "./domain";
 
 it("手动扣减更新余额、流水与审计记录，不修改课程和购课记录", () => {
   const data = createSeed();
   const student = data.students[0];
   student.balanceKnown = true; student.balance = 3.5; student.status = "在读";
+  migratePackageBalances(data);
   const result = transition(data, { type: "credit.deduct", studentId: student.id, units: 1.25, reason: "纠正重复录入", operator: "测试教务" }).data;
   expect(result.students[0].balance).toBe(2.25);
   expect(result.credits[0]).toMatchObject({ type: "手动扣减", units: -1.25, balance: 2.25, note: "纠正重复录入", operator: "测试教务" });

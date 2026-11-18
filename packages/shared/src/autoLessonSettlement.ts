@@ -25,13 +25,24 @@ export function autoSettleLessons(
   input: DemoState,
   now = Date.now(),
 ): DemoState {
-  const ids = input.lessons
-    .filter(
-      (l) =>
-        canAutoSettleLesson(l, now) &&
-        (l.orderId ? input.orders?.some(o => o.id === l.orderId) : input.students.some((s) => s.id === l.studentId && s.balanceKnown)),
-    )
-    .map((l) => l.id);
+  const balances = new Map(input.orders?.map(order => [order.id, order.balance]));
+  const ids: string[] = [];
+  for (const lesson of input.lessons) {
+    if (!canAutoSettleLesson(lesson, now)) continue;
+    const memberOrders = input.orders?.filter(order => order.studentIds.includes(lesson.studentId)) ?? [];
+    const order = lesson.orderId ? memberOrders.find(item => item.id === lesson.orderId)
+      : memberOrders.length === 1 ? memberOrders[0] : undefined;
+    if (order) {
+      const available = balances.get(order.id) ?? 0;
+      const units = lesson.confirmedUnits!;
+      if (available < units) continue;
+      balances.set(order.id, available - units);
+    } else if (lesson.orderId || input.packageBalanceVersion || memberOrders.length ||
+      !input.students.some(student => student.id === lesson.studentId && student.balanceKnown)) {
+      continue;
+    }
+    ids.push(lesson.id);
+  }
   if (!ids.length) return input;
   return transition(input, {
     type: "lesson.resolve",

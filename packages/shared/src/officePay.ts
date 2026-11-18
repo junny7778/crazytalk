@@ -1,3 +1,4 @@
+import { packagePurchases } from "./packagePurchases";
 import type { DemoState, PayTerms } from "./model";
 import { feedbackPayItems } from "./feedbackPay";
 import { personAttendance } from "./lessonAttendance";
@@ -125,7 +126,7 @@ export function officePay(data: DemoState, t: PayTerms): Line[] {
     !feedback.some((f) => f.rating === "差评")
   )
     add(t.month, "全勤奖", t.fullAttendance);
-  for (const order of data.orders || []) {
+  for (const order of packagePurchases(data)) {
     if (order.kind !== "续费" || !order.date.startsWith(t.month)) continue;
     const prior = data.lessons
       .filter(

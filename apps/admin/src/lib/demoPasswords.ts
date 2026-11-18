@@ -1,8 +1,10 @@
+import { accountPasswordSchema } from "@crazytalk/shared";
+
 const passwords = new Map<string, string>();
 export const demoInitialPassword = "Demo12345";
 export function passwordError(password: string, confirmation: string) {
-  if (password.length < 8 || password.length > 64) return "密码需为 8–64 个字符";
-  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) return "密码需包含字母和数字";
+  const result = accountPasswordSchema.safeParse(password);
+  if (!result.success) return result.error.issues[0].message;
   if (password !== confirmation) return "两次输入的密码不一致";
   return "";
 }

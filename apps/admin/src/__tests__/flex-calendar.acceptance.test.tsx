@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import {
@@ -54,17 +55,18 @@ function mount() {
   );
   return f;
 }
-function select(time: string, name: string) {
-  fireEvent.click(
+async function select(time: string, name: string) {
+  await testAct(async () => { fireEvent.click(
     screen.getByRole("button", { name: `2026-11-23 ${time} 可排课` }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: new RegExp(name) }));
+  ); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: new RegExp(name) })); });
   expect(screen.getByRole("dialog")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "加入课表" }));
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "加入课表" })); });
 }
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
+  demoRepository.read().classInAccounts = [{ id: "verified-test-account", phone: "13800000000", uid: "123456", studentIds: demoRepository.read().students.map(student => student.id) }];
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -78,16 +80,16 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-it("空意向可排，未培训成人老师可为少儿安排且无需确认，提交后不能重复", () => {
+it("空意向可排，未培训成人老师可为少儿安排且无需确认，提交后不能重复", async () => {
   const { d } = mount();
-  select("19:00", d.teachers[0].name);
+  await select("19:00", d.teachers[0].name);
   expect(demoRepository.read().lessons).toHaveLength(0);
   const submit = screen.getByRole("button", { name: /确认排课/ });
-  fireEvent.click(submit);
+  await testAct(async () => { fireEvent.click(submit); });
   expect(demoRepository.read().lessons).toHaveLength(1);
   expect(submit.hasAttribute("disabled")).toBe(true);
 });
-it("意向外可排，取消选择不新增，移除待确认课程不写入", () => {
+it("意向外可排，取消选择不新增，移除待确认课程不写入", async () => {
   const f = fixture();
   f.intent.windows = [{ day: 2, start: "18:00", end: "19:00" }];
   render(
@@ -99,58 +101,58 @@ it("意向外可排，取消选择不新增，移除待确认课程不写入", (
       </DemoProvider>
     </QueryClientProvider>,
   );
-  fireEvent.click(
+  await testAct(async () => { fireEvent.click(
     screen.getByRole("button", { name: "2026-11-23 19:00 可排课" }),
-  );
+  ); });
   expect(
     screen.getByRole("button", { name: "加入课表" }).hasAttribute("disabled"),
   ).toBe(true);
-  fireEvent.change(screen.getByRole("textbox", { name: "搜索可选老师" }), {
+  await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "搜索可选老师" }), {
     target: { value: "不存在的老师" },
-  });
+  }); });
   expect(screen.getByText("没有找到该老师，请修改搜索关键词。")).toBeTruthy();
-  fireEvent.change(screen.getByRole("textbox", { name: "搜索可选老师" }), {
+  await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "搜索可选老师" }), {
     target: { value: "" },
-  });
-  fireEvent.click(
+  }); });
+  await testAct(async () => { fireEvent.click(
     screen.getByRole("button", { name: new RegExp(f.d.teachers[0].name) }),
-  );
+  ); });
   expect(
     screen.getByRole("button", { name: "加入课表" }).hasAttribute("disabled"),
   ).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
   expect(screen.queryByRole("button", { name: /待确认 T\./ })).toBeNull();
-  select("19:00", f.d.teachers[0].name);
-  fireEvent.click(
+  await select("19:00", f.d.teachers[0].name);
+  await testAct(async () => { fireEvent.click(
     screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "移除本节" }));
+  ); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "移除本节" })); });
   expect(demoRepository.read().lessons).toHaveLength(0);
 });
-it("拖动至原老师不可用时间，取消保留原课，选新老师后移动", () => {
+it("拖动至原老师不可用时间，取消保留原课，选新老师后移动", async () => {
   const { d } = mount();
-  select("19:00", d.teachers[0].name);
+  await select("19:00", d.teachers[0].name);
   const transfer = { setData: vi.fn(), effectAllowed: "" };
   let source = screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ });
-  fireEvent.dragStart(source, { dataTransfer: transfer });
-  fireEvent.drop(
+  await testAct(async () => { fireEvent.dragStart(source, { dataTransfer: transfer }); });
+  await testAct(async () => { fireEvent.drop(
     screen.getByRole("button", { name: "2026-11-23 20:00 可排课" }),
     { dataTransfer: transfer },
-  );
-  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  ); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
   expect(
     screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ }),
   ).toBeTruthy();
   source = screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ });
-  fireEvent.dragStart(source, { dataTransfer: transfer });
-  fireEvent.drop(
+  await testAct(async () => { fireEvent.dragStart(source, { dataTransfer: transfer }); });
+  await testAct(async () => { fireEvent.drop(
     screen.getByRole("button", { name: "2026-11-23 20:00 可排课" }),
     { dataTransfer: transfer },
-  );
-  fireEvent.click(
+  ); });
+  await testAct(async () => { fireEvent.click(
     screen.getByRole("button", { name: new RegExp(d.teachers[1].name) }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  ); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存修改" })); });
   expect(
     screen.getByRole("button", {
       name: new RegExp(`2026-11-23 20:00 待确认 ${d.teachers[1].name}`),

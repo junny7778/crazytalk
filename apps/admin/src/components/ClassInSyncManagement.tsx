@@ -10,7 +10,7 @@ import {
 } from "../lib/lessonSync";
 import { useBusinessAction } from "../pages/operations/common";
 import ListPagination, { useListPage } from "./ListPagination";
-export default function ClassInSyncManagement() {
+export default function ClassInSyncManagement({ connected }: { connected: boolean }) {
   const { data: allData, can } = useDemo();
   const [params, setParams] = useSearchParams();
   const data=organizationView(allData,params);
@@ -25,7 +25,7 @@ export default function ClassInSyncManagement() {
   );
   const page = useListPage(queue);
   async function retry(ids: string[]) {
-    if (busy.length || !can("sync.retry") || data.connection !== "正常") return;
+    if (busy.length || !can("sync.retry") || !connected) return;
     setBusy(ids);
     try {
       // Yield for pending feedback before running the local demo action.
@@ -33,7 +33,7 @@ export default function ClassInSyncManagement() {
       for (const id of ids) {
         const lesson = data.lessons.find((l) => l.id === id);
         if (!lesson || lesson.sync !== "未同步") continue;
-        run({ type: "lesson.retry", id });
+        await run({ type: "lesson.retry", id });
       }
     } finally {
       setBusy([]);
@@ -48,7 +48,7 @@ export default function ClassInSyncManagement() {
   const retryable = queue.filter((l) => l.sync === "未同步");
   return (
     <Panel title="同步异常处理">
-      {data.connection !== "正常" && (
+      {!connected && (
         <p role="status">请先恢复 ClassIn 连接，再重试同步。</p>
       )}
       {(target || (can("sync.retry") && retryable.length > 1)) && (
@@ -68,7 +68,7 @@ export default function ClassInSyncManagement() {
           {can("sync.retry") && retryable.length > 1 && (
             <Button
               size="sm"
-              disabled={!!busy.length || data.connection !== "正常"}
+              disabled={!!busy.length || !connected}
               onClick={() => void retry(retryable.map((l) => l.id))}
             >
               批量重试课程推送（{retryable.length}）
@@ -117,7 +117,7 @@ export default function ClassInSyncManagement() {
                   {lesson.sync === "未同步" && can("sync.retry") && (
                     <Button
                       size="sm"
-                      disabled={!!busy.length || data.connection !== "正常"}
+                      disabled={!!busy.length || !connected}
                       onClick={() => void retry([lesson.id])}
                     >
                       {busy.includes(lesson.id) ? "处理中…" : "重新同步"}

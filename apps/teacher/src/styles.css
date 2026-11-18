@@ -193,7 +193,7 @@
   align-items: center;
   justify-content: center;
   background: var(--ct-white);
-  border: 1px solid var(--ct-brand-200);
+  border: 1px solid var(--ct-gray-200);
   color: var(--ct-brand-700);
   font-weight: 500;
   font-size: 11px;
@@ -496,7 +496,6 @@
 }
 .teacher-week-strip .current {
   background: var(--ct-brand-50);
-  border-color: var(--ct-brand-200);
   color: var(--ct-brand-700);
 }
 .teacher-app .search-input {
@@ -852,7 +851,6 @@
 }
 .teacher-quiz-option.selected {
   background: var(--ct-brand-50);
-  border-color: var(--ct-brand-500);
 }
 .teacher-training-success {
   display: flex;
@@ -1061,7 +1059,6 @@
   font-size: 14px;
 }
 .teacher-language > button.active {
-  border-color: var(--ct-brand-500);
   background: var(--ct-brand-50);
   color: var(--ct-brand-700);
 }
@@ -1101,7 +1098,7 @@
 .teacher-day-picker > button.active {
   background: var(--ct-brand-700);
   color: var(--ct-white);
-  border-color: var(--ct-brand-700);
+  border-color: transparent;
 }
 .teacher-availability-grid {
   display: flex;

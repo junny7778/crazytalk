@@ -8,7 +8,11 @@ beforeEach(() => {
 });
 it("仅恢复指定记录的提示，刷新不会反复恢复", () => {
   const data = structuredClone(demoRepository.read());
-  const student = data.students.find((s) => s.name === "Nancy")!;
+  const target = data.lessons.find(
+    (l) => l.date === "2026-10-27" && l.time === "19:30",
+  )!;
+  const student = data.students.find((s) => s.id === target.studentId)!;
+  student.name = "Nancy";
   const teacher = data.teachers.find((t) => t.name === "T. Carol")!;
   const lesson = data.lessons.find(
     (l) =>

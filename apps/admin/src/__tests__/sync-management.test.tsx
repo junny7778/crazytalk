@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { transferableAbortController } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -66,8 +67,15 @@ function mount(path = "/settings?tab=classin") {
   return router;
 }
 async function becomeReader() {
-  fireEvent.click(await screen.findByRole("button", { name: "Rita 教务运营" }));
-  fireEvent.click(screen.getByRole("button", { name: "同步查看员" }));
+  {
+    const target = await screen.findByRole("button", { name: "Rita 超级管理员" });
+    await testAct(async () => {
+      fireEvent.click(target);
+    });
+  }
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "同步查看员" }));
+  });
 }
 beforeEach(() => {
   localStorage.clear();
@@ -156,9 +164,12 @@ it("批量重试只处理课程推送，保留缺失考勤任务", async () => {
   localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data));
   demoRepository.refresh();
   mount();
-  fireEvent.click(
-    await screen.findByRole("button", { name: "批量重试课程推送（2）" }),
-  );
+  const retry = await screen.findByRole("button", {
+    name: "批量重试课程推送（2）",
+  });
+  await testAct(async () => {
+    fireEvent.click(retry);
+  });
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull(),
   );
@@ -178,7 +189,12 @@ it("没有异常时通知不显示同步告警", async () => {
   localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data));
   demoRepository.refresh();
   mount("/lessons");
-  fireEvent.click(await screen.findByRole("button", { name: "通知" }));
+  {
+    const target = await screen.findByRole("button", { name: "通知" });
+    await testAct(async () => {
+      fireEvent.click(target);
+    });
+  }
   const notification = within(screen.getByRole("dialog", { name: "通知" }));
   expect(notification.queryByText("课程同步需要处理")).toBeNull();
   expect(notification.queryByRole("button", { name: /同步管理/ })).toBeNull();
@@ -186,12 +202,27 @@ it("没有异常时通知不显示同步告警", async () => {
 
 it("老师未到自动生成站内信，通知打开对应的上课记录", async () => {
   fixture();
-  const lesson = demoRepository.read().lessons.find(l => l.status === "待确认")!;
-  demoRepository.execute({type:"lesson.attendance", id:lesson.id, person:"老师", result:"未到堂", at:new Date().toISOString()});
+  const lesson = demoRepository
+    .read()
+    .lessons.find((l) => l.status === "待确认")!;
+  demoRepository.execute({
+    type: "lesson.attendance",
+    id: lesson.id,
+    person: "老师",
+    result: "未到堂",
+    at: new Date().toISOString(),
+  });
   mount("/lessons");
-  fireEvent.click(await screen.findByRole("button", {name:"通知"}));
-  const inbox = within(screen.getByRole("dialog", {name:"通知"}));
+  {
+    const target = await screen.findByRole("button", { name: "通知" });
+    await testAct(async () => {
+      fireEvent.click(target);
+    });
+  }
+  const inbox = within(screen.getByRole("dialog", { name: "通知" }));
   expect(inbox.getByText("提醒 TM 老师没来")).toBeTruthy();
-  fireEvent.click(inbox.getByRole("button", {name:"查看上课记录"}));
-  expect(await screen.findByText(/已通知 TM/)).toBeTruthy();
+  await testAct(async () => {
+    fireEvent.click(inbox.getByRole("button", { name: "查看上课记录" }));
+  });
+  expect(await screen.findByText(/老师未到堂提醒/)).toBeTruthy();
 });

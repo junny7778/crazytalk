@@ -105,6 +105,7 @@ it("独立验收：Richard真实种子意向生成8节，记录计算耗时", ()
 it('独立验收：单次加课不改变固定计划完成状态', async () => {
  const {transition}=await import('./domain');const {getStudentScheduleProgress}=await import('./scheduling');
  const {data,student,intent}=fixture();intent.weeks=1;const teacher=data.teachers[0];teacher.availability=[{day:1,start:'19:00',end:'21:00'}];
+ data.classInAccounts = [{id:"login",phone:"13900001234",uid:"101",studentIds:[student.id]}];
  const result=transition(data,{type:'lesson.schedule',studentId:student.id,teacherId:teacher.id,slots:[{date:intent.startDate,time:'19:00',teacherId:teacher.id},{date:intent.startDate,time:'20:00',teacherId:teacher.id,extra:true}],duration:25,kind:'固定课',material:student.material});
  expect(result.data.lessons[1]).toMatchObject({kind:'临时课',scheduleExtra:true});
  expect(result.data.lessons[1].fixedOrigin).toBeUndefined();

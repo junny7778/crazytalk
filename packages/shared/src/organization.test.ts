@@ -3,7 +3,7 @@ import { createSeed } from "./seed";
 import { transition } from "./domain";
 import { assignSampleTeams, organizationView, studentInScope } from "./organization";
 
-it("同名项目分渠道授权，月目标可修改，停用父渠道前先处理项目", () => {
+it("同名项目分渠道授权，月目标可修改，停用渠道不影响项目", () => {
   const seed = createSeed();
   const entry = {
     id: "p-a",
@@ -22,7 +22,7 @@ it("同名项目分渠道授权，月目标可修改，停用父渠道前先处�
     parentId: "ch1",
   });
   const student = { ...data.students[0], project: "新项目", channel: "许老师" };
-  expect(studentInScope(data, student, "project:p-a")).toBe(true);
+  expect(studentInScope(data, student, "project:p-a")).toBe(false);
   expect(studentInScope(data, student, "project:p-b")).toBe(false);
   expect(
     save(data, { ...entry, monthlyLessons: 8 }).catalog.find(
@@ -31,14 +31,14 @@ it("同名项目分渠道授权，月目标可修改，停用父渠道前先处�
   ).toBe(8);
   expect(() => save(data, { ...entry, monthlyLessons: 0 })).toThrow("正整数");
   expect(() => save(data, { ...entry, parentId: "missing" })).toThrow(
-    "所属渠道",
+    "合作渠道",
   );
   expect(() =>
     transition(data, {
       type: "catalog.save",
       entry: { ...data.catalog.find((c) => c.id === "ch0")!, enabled: false },
     }),
-  ).toThrow("启用项目");
+  ).not.toThrow();
 });
 
 it("组队按实际账号归属限制，未分配组队的人员不能看到其他未分配成员", () => {
@@ -55,7 +55,7 @@ it("组队按实际账号归属限制，未分配组队的人员不能看到其�
   a.group = "二组";
   expect(studentInScope(data, student, "本队", a)).toBe(true);
   expect(studentInScope(data, student, "本组", a)).toBe(false);
-  expect(studentInScope(data, student, "本人负责", b)).toBe(true);
+  expect(studentInScope(data, student, "本人负责", b)).toBe(false);
   expect(studentInScope(data, student, "本组", { ...a, group: "" })).toBe(
     false,
   );
@@ -87,4 +87,36 @@ it("已有本地学员随负责教务补齐队组，筛选命中且刷新后保�
   data.accounts.find(a=>a.name==="Rita")!.group="三组";
   expect(assignSampleTeams(data)).toBe(false);
   expect(organizationView(data,new URLSearchParams({team:"A队",group:"三组"})).students.length).toBeGreaterThan(0);
+});
+
+it("普通账号旧范围不再授权，管理员仍可访问全部，项目只筛选授权结果", () => {
+ const data=createSeed(), account=data.accounts.find(a=>a.id==="u2")!;
+ const student={...data.students[0], owner:account.name, project:"K12"};
+ for(const scope of ["本人负责", "K12", "project:pr0", "project-all:pr0"]){
+   expect(studentInScope(data,student,scope,account)).toBe(false);
+   expect(()=>transition(data,{type:"account.save",account:{...account,scope}})).toThrow("数据范围");
+ }
+ expect(studentInScope(data,student,"全部",data.accounts[0])).toBe(true);
+ expect(studentInScope(data,{...student,owner:"Roma"},"全部",account)).toBe(true);
+ expect(()=>transition(data,{type:"account.save",account:{...account,scope:"全部"}})).not.toThrow();
+ expect(()=>transition(data,{type:"account.save",account:{...account,team:"",group:""}})).toThrow("分配");
+ const rows=[student,{...student,project:"乐说"},{...student,owner:"Roma"}];
+ const authorized=rows.filter(s=>studentInScope(data,s,"本组",account));
+ expect(authorized).toHaveLength(2);
+ expect(authorized.filter(s=>s.project==="K12")).toEqual([student]);
+ expect(()=>transition(data,{type:"account.save",account:{...account,scope:"本队"}})).not.toThrow();
+});
+
+it("导入名册按名册队组隔离，Demo旧账号范围刷新后更新", () => {
+ const data=createSeed(), account=data.accounts.find(a=>a.id==="u2")!;
+ const student={...data.students[0],owner:account.name,roster:{key:"scope-test",row:1,fields:{"教务":account.name,"队别":"B队","组别":account.group!}}};
+ expect(studentInScope(data,student,"本组",account)).toBe(false);
+ student.roster.fields["队别"]=account.team!;
+ expect(studentInScope(data,student,"本组",account)).toBe(true);
+ data.importedBatches=["sample-teams-v1"];
+ account.scope="project-all:pr0";
+ expect(assignSampleTeams(data)).toBe(true);
+ expect(account.scope).toBe("本组");
+ expect(data.accounts.filter(a=>a.roleId!=="admin").every(a=>a.team && a.group && a.scope==="本组")).toBe(true);
+ expect(assignSampleTeams(data)).toBe(false);
 });

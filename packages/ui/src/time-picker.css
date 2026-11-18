@@ -29,7 +29,7 @@
   background: var(--ct-brand-50);
 }
 .ct-time-picker > button:focus-visible {
-  outline: 2px solid var(--ct-brand-500);
+  outline: 2px solid var(--ct-gray-500);
 }
 .ct-time-popup {
   z-index: 1600;
@@ -82,6 +82,6 @@
   font-weight: 500;
 }
 .ct-time-options button:focus-visible {
-  outline: 2px solid var(--ct-brand-500);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: -2px;
 }

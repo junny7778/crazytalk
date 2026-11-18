@@ -74,7 +74,7 @@
   background: var(--ct-brand-50);
 }
 .ct-date-content button:focus-visible {
-  outline: 2px solid var(--ct-brand-500);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: -2px;
 }
 .ct-date-content button:disabled {
@@ -119,12 +119,12 @@
 .ct-date-content button[aria-current="date"],
 .ct-date-content button[data-today] {
   color: var(--ct-brand-700);
-  border-color: var(--ct-brand-200);
+  border-color: var(--ct-gray-300);
 }
 .ct-date-content button[aria-pressed="true"]:not(:disabled) {
   color: var(--ct-white);
   background: var(--ct-brand-700);
-  border-color: var(--ct-brand-700);
+  border-color: transparent;
 }
 .ct-date-footer {
   display: flex;

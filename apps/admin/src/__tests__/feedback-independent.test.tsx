@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -60,7 +61,7 @@ afterEach(() => {
 });
 
 describe("独立反馈验收：关键边界", () => {
-  it("追加跟进可从列表全文搜索定位", () => {
+  it("追加跟进可从列表全文搜索定位", async () => {
     const record = demoRepository.read().feedback[0];
     demoRepository.execute({
       type: "feedback.followUp",
@@ -69,10 +70,14 @@ describe("独立反馈验收：关键边界", () => {
       content: "独立验收回访暗号 ZebraQ72",
     });
     mount();
-    fireEvent.change(
-      screen.getByRole("textbox", { name: "搜索学员姓名或 ID、老师、反馈或跟进内容" }),
-      { target: { value: "ZebraQ72" } },
-    );
+    await testAct(async () => {
+      fireEvent.change(
+        screen.getByRole("textbox", {
+          name: "搜索学员姓名或 ID、老师、反馈或跟进内容",
+        }),
+        { target: { value: "ZebraQ72" } },
+      );
+    });
     expect(screen.getByText("共 1 条反馈")).toBeTruthy();
   });
   it("项目筛选采用反馈保存的历史快照，不随学员当前项目漂移", () => {
@@ -88,15 +93,21 @@ describe("独立反馈验收：关键边界", () => {
     const record = demoRepository.read().feedback[0];
     record.owner = "";
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: "编辑反馈资料" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "编辑反馈资料" }));
+    });
     expect(screen.getByRole("combobox", { name: "教务" }).textContent).toBe(
       "选择教务",
     );
-    fireEvent.change(
-      screen.getByRole("textbox", { name: "学员反馈（原话）" }),
-      { target: { value: "仅补充原话，教务保持未填写" } },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    await testAct(async () => {
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "学员反馈（原话）" }),
+        { target: { value: "仅补充原话，教务保持未填写" } },
+      );
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "编辑反馈资料" })).toBeNull(),
     );
@@ -120,17 +131,23 @@ describe("独立反馈验收：关键边界", () => {
     } as unknown as CanvasRenderingContext2D);
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(jpeg);
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: "编辑反馈资料" }));
-    fireEvent.change(screen.getByLabelText("反馈截图"), {
-      target: {
-        files: [
-          new File(["image payload"], "独立课堂.png", { type: "image/png" }),
-        ],
-      },
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "编辑反馈资料" }));
+    });
+    await testAct(async () => {
+      fireEvent.change(screen.getByLabelText("反馈截图"), {
+        target: {
+          files: [
+            new File(["image payload"], "独立课堂.png", { type: "image/png" }),
+          ],
+        },
+      });
     });
     await screen.findByRole("button", { name: "预览 独立课堂.png" });
     expect(close).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "编辑反馈资料" })).toBeNull(),
     );
@@ -145,7 +162,11 @@ describe("独立反馈验收：关键边界", () => {
     expect(
       screen.getByRole("img", { name: "独立课堂.png" }).getAttribute("src"),
     ).toBe(jpeg);
-    fireEvent.click(screen.getByRole("button", { name: "预览 独立课堂.png" }));
+    await testAct(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "预览 独立课堂.png" }),
+      );
+    });
     expect(
       screen.getByRole("img", { name: "反馈截图预览" }).getAttribute("src"),
     ).toBe(jpeg);
@@ -153,11 +174,17 @@ describe("独立反馈验收：关键边界", () => {
   it("拒绝不支持截图格式且不改变已有截图", async () => {
     const record = demoRepository.read().feedback[0];
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: "编辑反馈资料" }));
-    fireEvent.change(screen.getByLabelText("反馈截图"), {
-      target: {
-        files: [new File(["<svg/>"], "不支持.svg", { type: "image/svg+xml" })],
-      },
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "编辑反馈资料" }));
+    });
+    await testAct(async () => {
+      fireEvent.change(screen.getByLabelText("反馈截图"), {
+        target: {
+          files: [
+            new File(["<svg/>"], "不支持.svg", { type: "image/svg+xml" }),
+          ],
+        },
+      });
     });
     await screen.findByRole("alert");
     expect(screen.getByRole("alert").textContent).toContain("JPG、PNG 或 WebP");
@@ -166,7 +193,7 @@ describe("独立反馈验收：关键边界", () => {
         ?.screenshots,
     ).toEqual([]);
   });
-  it("导出保持原表A:U顺序，客服进度/结果与两类TM字段独立输出", () => {
+  it("导出保持当前25列顺序，客服进度/结果与两类TM字段独立输出", async () => {
     const record = demoRepository.read().feedback[0];
     demoRepository.execute({
       type: "feedback.customer",
@@ -184,12 +211,18 @@ describe("独立反馈验收：关键边界", () => {
       note: "TM原始记录",
     });
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "导出数据" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "导出数据" }));
+    });
     const rows = vi.mocked(exportCsv).mock.calls.at(-1)![1];
     expect(rows[0]).toEqual([
       "反馈日期",
-      "项目/渠道",
+      "反馈来源",
+      "当前项目",
+      "当前渠道",
       "教务",
+      "学员 ID",
+      "学员 ID",
       "学员名称",
       "反馈阶段",
       "反馈等级",
@@ -209,9 +242,9 @@ describe("独立反馈验收：关键边界", () => {
       "TM处理日期",
       "TM跟进记录",
     ]);
-    const row = rows.find((r) => r[14] === "客服原始备注")!;
-    expect(row).toHaveLength(21);
-    expect(row.slice(13)).toEqual([
+    const row = rows.find((r) => r[18] === "客服原始备注")!;
+    expect(row).toHaveLength(25);
+    expect(row.slice(17)).toEqual([
       "已处理",
       "客服原始备注",
       "处理失败",

@@ -350,11 +350,6 @@ export default function StudentCourses({
             ) : (
               <EmptyState
                 title={lessons.length ? "暂无符合条件的课程" : "暂无课程安排"}
-                action={
-                  activeFilters ? (
-                    <Button onClick={clearFilters}>清除筛选</Button>
-                  ) : undefined
-                }
                 description={
                   activeFilters
                     ? "可以清除筛选后再查看。"
@@ -457,11 +452,6 @@ export default function StudentCourses({
               <EmptyState
                 title={
                   activeFilters ? "该周暂无符合条件的课程" : "该周暂无课程"
-                }
-                action={
-                  activeFilters ? (
-                    <Button onClick={clearFilters}>清除筛选</Button>
-                  ) : undefined
                 }
                 description="可以切换周次，或返回列表查看其他日期。"
               />

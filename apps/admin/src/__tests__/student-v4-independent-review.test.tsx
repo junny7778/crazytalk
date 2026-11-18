@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
@@ -55,7 +56,7 @@ afterEach(() => {
 });
 it("history editor prefills stored seed values and preserves missing history as empty", () => {
   const students = demoRepository.read().students;
-  const jayden = students.find((student) => student.name === "Jayden");
+  const jayden = students.find((student) => student.englishName === "Jayden");
   if (!jayden) throw new Error("Missing Jayden fixture");
   mount(<StudentHistoryEditor student={jayden} onClose={() => {}} />);
   const inputValue = (label: string) => {
@@ -71,7 +72,7 @@ it("history editor prefills stored seed values and preserves missing history as 
   expect(inputValue("历史第一节课")).toBe("2026-09-03");
   expect(inputValue("投诉记录（次数）")).toBe("0");
   cleanup();
-  const leo = students.find((student) => student.name === "Leo");
+  const leo = students.find((student) => student.englishName === "Leo");
   if (!leo) throw new Error("Missing Leo fixture");
   mount(<StudentHistoryEditor student={leo} onClose={() => {}} />);
   for (const label of [
@@ -106,22 +107,27 @@ it("student overview explains card details and preserves navigation", async () =
   const progress = screen.getByTitle("查看学习进度");
   expect(progress.textContent).toContain("当前教材：");
   expect(progress.textContent).not.toMatch(/p\.\d/);
-  fireEvent.click(screen.getByRole("tab", { name: "课程与教材进度" }));
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("tab", { name: "课程与教材进度" }));
+  });
   expect(screen.getByText("月度上课情况")).toBeTruthy();
   expect(screen.getByRole("button", { name: "查看月应上课课程" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
-  expect(screen.getByRole("heading", { name: "服务记录统计" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: /投诉次数/ })).toBeTruthy();
-  expect(screen.getByRole("button", { name: /补偿次数/ })).toBeTruthy();
-  expect(screen.getByRole("button", { name: /被缺席次数/ })).toBeTruthy();
-  fireEvent.click(balance);
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
+  });
+  expect(screen.getByRole("heading", { name: "服务记录" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "登记反馈" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "登记补偿" })).toBeTruthy();
+  await testAct(async () => {
+    fireEvent.click(balance);
+  });
   expect(
     screen
       .getByRole("tab", { name: "课时与续费" })
       .getAttribute("aria-selected"),
   ).toBe("true");
 });
-it("independent: new form offers three saves, omits legacy fields, creates linked zero balance student", () => {
+it("independent: new form offers three saves, omits legacy fields, creates linked zero balance student", async () => {
   mount(<StudentProfileEditor onClose={() => {}} />);
   for (const label of [
     "序号",
@@ -135,10 +141,14 @@ it("independent: new form offers three saves, omits legacy fields, creates linke
     expect(screen.queryByLabelText(label)).toBeNull();
   for (const name of ["保存学员资料", "保存并加课时", "保存并去排课"])
     expect(screen.getByRole("button", { name })).toBeTruthy();
-  fireEvent.change(screen.getByLabelText(/学生名字/), {
-    target: { value: "独立验收新学员" },
+  await testAct(async () => {
+    fireEvent.change(screen.getByLabelText(/学生中文名/), {
+      target: { value: "独立验收新学员" },
+    });
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+  });
   const student = demoRepository.read().students[0];
   expect(student).toMatchObject({
     name: "独立验收新学员",
@@ -155,19 +165,19 @@ it("independent: new form offers three saves, omits legacy fields, creates linke
 it("independent: unrelated update retains current progress; stale same-field update rejects", () => {
   let d = createSeed();
   const s = d.students[0];
-  const old = s.name;
+  const old = s.chineseName;
   d = transition(d, {
     type: "student.details.update",
     id: s.id,
-    patch: { name: "新名" },
-    expected: { name: old },
+    patch: { chineseName: "新名" },
+    expected: { chineseName: old },
   }).data;
   expect(() =>
     transition(d, {
       type: "student.details.update",
       id: s.id,
-      patch: { name: "过期名" },
-      expected: { name: old },
+      patch: { chineseName: "过期名" },
+      expected: { chineseName: old },
     }),
   ).toThrow(/已更新/);
   const progress = getStudentSummary(d, s.id).progress;
@@ -337,8 +347,12 @@ it("independent: stopped profile keeps four tabs, offers resume and human readab
   expect(await screen.findByRole("button", { name: "办理复课" })).toBeTruthy();
   expect(screen.getAllByRole("tab")).toHaveLength(4);
   expect(screen.queryByRole("button", { name: "历史资料" })).toBeNull();
-  fireEvent.click(screen.getByText("更多操作"));
-  fireEvent.click(screen.getByRole("button", { name: "补录／更正历史资料" }));
+  await testAct(async () => {
+    fireEvent.click(screen.getByText("更多操作"));
+  });
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "补录／更正历史资料" }));
+  });
   const dialog = screen.getByRole("dialog", { name: "补录／更正历史资料" });
   expect(
     within(dialog).getByRole("button", { name: "保存历史资料" }),
@@ -457,37 +471,55 @@ it("independent final: course report correction through full profile updates par
     .read()
     .students.find((s) => s.id === lesson.studentId)!.balance;
   mount(<App />, `/students/${lesson.studentId}`);
-  fireEvent.click(await screen.findByRole("tab", { name: "课程与教材进度" }));
+  await testAct(async () => {
+    fireEvent.click(await screen.findByRole("tab", { name: "课程与教材进度" }));
+  });
   const courseButtons = screen.getAllByRole("button", {
     name: new RegExp(`查看课程 ${lesson.date} ${lesson.time}`),
   });
-  fireEvent.click(courseButtons[0]);
-  fireEvent.click(await screen.findByRole("button", { name: "更正教材进度" }));
-  fireEvent.change(screen.getByLabelText(/结束页码／章节/), {
-    target: { value: "p99" },
+  await testAct(async () => {
+    fireEvent.click(courseButtons[0]);
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存教材进度" }));
+  await testAct(async () => {
+    fireEvent.click(
+      await screen.findByRole("button", { name: "更正教材进度" }),
+    );
+  });
+  await testAct(async () => {
+    fireEvent.change(screen.getByLabelText(/结束页码／章节/), {
+      target: { value: "p99" },
+    });
+  });
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "保存教材进度" }));
+  });
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(
     demoRepository.read().reports.find((r) => r.lessonId === lesson.id)?.to,
   ).toBe("p2");
-  fireEvent.change(screen.getByLabelText(/进度更正原因/), {
-    target: { value: "独立最终UI核对" },
+  await testAct(async () => {
+    fireEvent.change(screen.getByLabelText(/进度更正原因/), {
+      target: { value: "独立最终UI核对" },
+    });
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存教材进度" }));
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "保存教材进度" }));
+  });
   await waitFor(() =>
     expect(
       demoRepository.read().reports.find((r) => r.lessonId === lesson.id)?.to,
     ).toBe("p99"),
   );
-  fireEvent.click(screen.getAllByRole("button", { name: "关闭" })[0]);
-  expect(screen.getByRole("button", { name: /教材进度 p99/ })).toBeTruthy();
+  await testAct(async () => {
+    fireEvent.click(screen.getAllByRole("button", { name: "关闭" })[0]);
+  });
+  expect(screen.getByTitle("查看学习进度").textContent).toContain("99");
   expect(
     demoRepository.read().students.find((s) => s.id === lesson.studentId)
       ?.balance,
   ).toBe(balance);
 });
-it("independent final: real export arguments keep dynamic statistics in third sheet; xlsx reimport preserves historical counts", async () => {
+it("independent final: real export includes stable student IDs and current roster columns; xlsx reimport preserves exported roster values", async () => {
   exportCapture.mockClear();
   const data = demoRepository.read(),
     s = data.students[0];
@@ -498,7 +530,9 @@ it("independent final: real export arguments keep dynamic statistics in third sh
     total: s.totalUnits,
   };
   mount(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "导出数据" }));
+  await testAct(async () => {
+    fireEvent.click(await screen.findByRole("button", { name: "导出数据" }));
+  });
   await waitFor(() => expect(exportCapture).toHaveBeenCalledTimes(1));
   const [name, headers, rows, extras] = exportCapture.mock.calls[0] as [
     string,
@@ -506,16 +540,14 @@ it("independent final: real export arguments keep dynamic statistics in third sh
     (string | number)[][],
     { name: string; headers: string[]; rows: (string | number)[][] }[],
   ];
-  expect(headers).toHaveLength(27);
-  expect(extras.map((e) => e.name)).toEqual([
-    "月度上课明细",
-    "当前课程与服务统计",
-  ]);
+  expect(headers).toHaveLength(47);
+  expect(headers.slice(0, 3)).toEqual(["学员ID", "学生中文名", "学生英文名"]);
+  expect(extras).toBeUndefined();
   const book = new Workbook();
   const sheet = book.addWorksheet(name);
   sheet.addRow(headers);
   rows.forEach((r) => sheet.addRow(r));
-  for (const e of extras) {
+  for (const e of extras ?? []) {
     const x = book.addWorksheet(e.name);
     x.addRow(e.headers);
     e.rows.forEach((r) => x.addRow(r));
@@ -525,13 +557,17 @@ it("independent final: real export arguments keep dynamic statistics in third sh
   ).buffer;
   const parsed = await readStudentWorkbook(buffer, data);
   const restored = parsed.rows.find((r) => r.name === s.name)!;
-  expect(restored.legacyComplaints).toBe(legacy.complaints);
-  expect(restored.legacyCompensations).toBe(legacy.compensations);
-  expect(restored.legacyMissed).toBe(legacy.missed);
   expect(restored.totalUnits).toBe(legacy.total);
-  expect(extras[1].headers).toContain("投诉已有明细");
+  expect(restored.chineseName).toBe(s.chineseName);
+  expect(restored.material).toBe(s.material);
+  expect(restored.frequencyText).toBe(s.frequencyText);
+  expect(
+    demoRepository.read().students.find((item) => item.id === s.id)
+      ?.legacyComplaints,
+  ).toBe(legacy.complaints);
+  expect(restored.importStudentId).toBe(s.id);
 });
-it("independent final: frequency window ends today plus six days", () => {
+it("independent final: stored weekly frequency stays unchanged when future lessons change", () => {
   const d = createSeed(),
     s = d.students[0],
     base = d.lessons[0];
@@ -543,5 +579,5 @@ it("independent final: frequency window ends today plus six days", () => {
     status: "未开始" as const,
     kind: "固定课" as const,
   }));
-  expect(getStudentSummary(d, s.id).frequencyText).toBe("2节／未来7天");
+  expect(getStudentSummary(d, s.id).frequencyText).toBe(s.frequencyText);
 });

@@ -25,8 +25,12 @@ it("old saved expiry fields are discarded without losing balances or records", a
   expect(restored.students[0]).not.toHaveProperty("expires");
   expect(restored.rules).not.toHaveProperty("expireDays");
   const expected = migrateStudentIds(seed).data;
-  expect(restored.credits).toEqual(expected.credits);
-  expect(restored.lessons).toEqual(expected.lessons);
+  for (const rows of ["credits", "lessons"] as const) {
+    expect(restored[rows].map(({ orderId, ...row }) => {
+      if (orderId) expect(restored.orders?.find(pack => pack.id === orderId)?.studentIds).toContain(row.studentId);
+      return row;
+    })).toEqual(expected[rows]);
+  }
   expect(restored.students.map((student) => student.balance)).toEqual(
     seed.students.map((student) => student.balance),
   );

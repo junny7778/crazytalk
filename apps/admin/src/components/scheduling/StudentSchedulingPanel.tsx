@@ -341,9 +341,9 @@ export function StudentSchedulingPanel({
               disabled={
                 !can("schedule.create") || preview || !dirty || !validDraft
               }
-              onClick={() => {
+              onClick={async () => {
                 try {
-                  const result = act({
+                  const result = await act({
                     type: "student.scheduleIntent.update",
                     studentId: student.id,
                     intent: draft,
@@ -385,7 +385,7 @@ export function StudentSchedulingPanel({
           <h4>推荐排课方案</h4><div className="schedule-plan-toolbar plan-match-filters">
             <Field label="匹配策略"><Select value={priority} onValueChange={setPriority}><option>时间优先</option><option>老师优先</option></Select></Field>
             <Field label="锁课保留分钟"><input type="number" min={1} value={holdMinutes} onChange={e=>setHoldMinutes(Number(e.target.value))}/></Field>
-            {data.slotLocks?.some(l=>l.studentId===student.id && Date.parse(l.expiresAt)>Date.now()) && <Button disabled={preview||!can("schedule.create")} onClick={()=>act({type:"slot.release",studentId:student.id})}>释放当前锁课</Button>}
+            {data.slotLocks?.some(l=>l.studentId===student.id && Date.parse(l.expiresAt)>Date.now()) && <Button disabled={preview||!can("schedule.create")} onClick={async () => { try { await act({ type: "slot.release", studentId: student.id }); } catch (cause) { toast(String(cause), { tone: "error" }); } }}>释放当前锁课</Button>}
             <Field label="推荐老师"><input
               aria-label="搜索推荐老师"
               placeholder="搜索老师姓名"
@@ -491,8 +491,8 @@ export function StudentSchedulingPanel({
                       )}
                     </dl>
                     <div className="schedule-match-actions">
-                      <Button size="sm" disabled={dirty||preview||!can("schedule.create")||!(holdMinutes>0)} onClick={()=>{try{
-                        act({type:"slot.lock",studentId:student.id,duration:saved.duration,slots:plan.slots.filter(s=>s.teacherId && !s.lessonId),expiresAt:new Date(Date.now()+holdMinutes*60000).toISOString()});toast("档期已保留");
+                      <Button size="sm" disabled={dirty||preview||!can("schedule.create")||!(holdMinutes>0)} onClick={async ()=>{try{
+                        await act({type:"slot.lock",studentId:student.id,duration:saved.duration,slots:plan.slots.filter(s=>s.teacherId && !s.lessonId),expiresAt:new Date(Date.now()+holdMinutes*60000).toISOString()});toast("档期已保留");
                       }catch(e){toast(String(e),{tone:"error"});}}}>锁定方案时段</Button>
                       <Button
                         size="sm"

@@ -120,8 +120,8 @@ function TeacherMeasures({ feedback }: { feedback: FeedbackRecord }) {
                 !measures.length ||
                 (measures.includes("扣款") && amount <= 0)
               }
-              onClick={() =>
-                run(
+              onClick={async () =>
+                await run(
                   {
                     type: "feedback.measures",
                     id: feedback.id,
@@ -407,8 +407,8 @@ export function Processing({
           <div className="row wrap">
             <Button
               variant="primary"
-              onClick={() =>
-                run(
+              onClick={async () =>
+                await run(
                   {
                     type: "feedback.customer",
                     id: feedback.id,
@@ -485,8 +485,8 @@ export function Processing({
           <div className="row wrap">
             <Button
               variant="primary"
-              onClick={() =>
-                run(
+              onClick={async () =>
+                await run(
                   {
                     type: "feedback.tm",
                     id: feedback.id,
@@ -549,8 +549,8 @@ export function Processing({
           </Field>
           <Button
             disabled={!follow.trim()}
-            onClick={() =>
-              run(
+            onClick={async () =>
+              await run(
                 {
                   type: "feedback.followUp",
                   id: feedback.id,
@@ -668,8 +668,8 @@ function FeedbackContext({ feedback }: { feedback: FeedbackRecord }) {
             <Button
               variant="primary"
               disabled={selected === feedback.lessonId}
-              onClick={() =>
-                run(
+              onClick={async () =>
+                await run(
                   {
                     type: "feedback.edit",
                     id: feedback.id,
@@ -1010,9 +1010,6 @@ export default function Feedback() {
       ) : id ? (
         <EmptyState
           title="没有找到这条反馈"
-          action={
-            <Button onClick={() => navigate("/feedback")}>返回反馈列表</Button>
-          }
         />
       ) : (
         <>
@@ -1366,11 +1363,6 @@ export default function Feedback() {
                 <EmptyState
                   title="没有符合条件的反馈"
                   description="可以清除筛选条件，或登记新的反馈。"
-                  action={
-                    <Button onClick={() => setParams({ view: "全部" })}>
-                      清除筛选
-                    </Button>
-                  }
                 />
               )}
             </Panel>
@@ -1426,8 +1418,8 @@ export default function Feedback() {
                             <div className="row">
                               <Button
                                 size="xs"
-                                onClick={() =>
-                                  run({
+                                onClick={async () =>
+                                  await run({
                                     type: "action.confirm",
                                     id: action.id,
                                     approve: true,
@@ -1439,8 +1431,8 @@ export default function Feedback() {
                               <Button
                                 size="xs"
                                 variant="ghost"
-                                onClick={() =>
-                                  run({
+                                onClick={async () =>
+                                  await run({
                                     type: "action.confirm",
                                     id: action.id,
                                     approve: false,

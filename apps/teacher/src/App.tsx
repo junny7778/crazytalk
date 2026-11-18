@@ -1,3 +1,4 @@
+import { businessMode, businessRequest, businessAccountId } from "@crazytalk/shared/react";
 import { payrollBreakdown } from "@crazytalk/shared";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -86,29 +87,29 @@ export default function TeacherApp() {
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [seen, setSeen] = useState(() =>
-    readString("ct-teacher-seen", "").split(","),
+    businessMode() ? [] : readString("ct-teacher-seen", "").split(","),
   );
-  const [month, setMonth] = useState("2026-10");
+  const [month, setMonth] = useState(DEMO_TODAY.slice(0, 7));
   const [showAllPending, setShowAllPending] = useState(false);
   const language: Language = data.language;
   const t = (key: TextKey) => (language === "zh" ? zh[key] : en[key]);
-  const teacher = data.teachers.find((item) => item.id === "t1");
+  const teacher = data.teachers.find((item) => item.id === (businessMode() ? demo.teacherId : "t1"));
   const lessons = useMemo(
     () =>
       data.lessons
-        .filter((item) => item.teacherId === "t1")
+        .filter((item) => item.teacherId === teacher?.id)
         .sort((a, b) =>
           `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`),
         ),
-    [data.lessons],
+    [data.lessons, teacher?.id],
   );
   const students = data.students.filter(
     (item) =>
-      item.teacherId === "t1" || lessons.some((l) => l.studentId === item.id),
+      item.teacherId === teacher?.id || lessons.some((l) => l.studentId === item.id),
   );
-  const reports = data.reports.filter((item) => item.teacherId === "t1");
+  const reports = data.reports.filter((item) => item.teacherId === teacher?.id);
   const feedback = data.feedback.filter(
-    (item) => item.teacherId === "t1" && item.status === "已完成",
+    (item) => item.teacherId === teacher?.id && item.status === "已完成",
   );
   const pending = lessons.filter(
     (item) =>
@@ -122,8 +123,9 @@ export default function TeacherApp() {
     (item) => item.date >= DEMO_TODAY && item.status === "未开始",
   );
   const [trainingDone, setTrainingDone] = useState(
-    () => readString("ct-teacher-training", "") === "done",
+    () => !businessMode() && readString("ct-teacher-training", "") === "done",
   );
+  useEffect(() => { if (businessMode()) businessRequest("/preferences").then(value => { setSeen(value.seenNotifications || []); setTrainingDone(value.trainingDone === true); }).catch(cause => toast(cause.message)); }, []);
   const notifications: {
     id: string;
     title: string;
@@ -155,9 +157,13 @@ export default function TeacherApp() {
       icon: <MessageSquare size={20} />,
     });
   const unread = notifications.filter((n) => !seen.includes(n.id)).length;
-  function markSeen(id: string) {
+  async function markSeen(...ids: string[]) {
+    if (businessMode()) {
+      try { const updated = [...new Set([...seen, ...ids])]; await businessRequest("/preferences", "PATCH", { seenNotifications: updated }); setSeen(updated); } catch (cause) { toast(cause instanceof Error ? cause.message : t("retry")); }
+      return;
+    }
     setSeen((current) => {
-      const updated = [...new Set([...current, id])];
+      const updated = [...new Set([...current, ...ids])];
       writeString("ct-teacher-seen", updated.join(","));
       return updated;
     });
@@ -170,9 +176,9 @@ export default function TeacherApp() {
     if (next === "training") markSeen("training");
     if (next === "pay") markSeen("pay");
   }
-  function run(command: Command, message: string) {
+  async function run(command: Command, message: string) {
     try {
-      act(command);
+      await act(command);
       toast(message);
       return true;
     } catch (error) {
@@ -293,8 +299,8 @@ export default function TeacherApp() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() =>
-              run(
+            onClick={async () =>
+              await run(
                 {
                   type: "language.set",
                   language: language === "en" ? "zh" : "en",
@@ -381,11 +387,11 @@ export default function TeacherApp() {
                   ).format(new Date(`${DEMO_TODAY}T12:00:00+08:00`))}
                 </span>
                 <h1>
-                  {t("greeting")} <span className="teacher-greeting-dot" />
+                  {businessMode() ? (language === "en" ? "Hi " + teacher.name : teacher.name + "，你好") : t("greeting")} <span className="teacher-greeting-dot" />
                 </h1>
                 <p>{t("intro")}</p>
               </div>
-              <Avatar name="Carol" size={48} />
+              <Avatar name={teacher.name} size={48} />
             </div>
             {pending.length > 0 && (
               <section className="teacher-pending">
@@ -427,7 +433,7 @@ export default function TeacherApp() {
                     className="teacher-prompt"
                     onClick={() => {
                       markSeen(n.id);
-                      if (n.id === "pay") setMonth("2026-09");
+                      if (n.id === "pay" && !businessMode()) setMonth("2026-09");
                       go(n.target);
                     }}
                   >
@@ -708,11 +714,11 @@ export default function TeacherApp() {
             t={t}
             language={language}
             dateLabel={dateLabel}
-            onSave={(report) => {
-              if (run({ type: "report.save", report }, t("savedReport"))) {
+            onSave={async (report) => {
+              if (await run({ type: "report.save", report }, t("savedReport"))) {
                 try {
                   localStorage.removeItem(
-                    `ct-teacher-draft-${currentLesson.id}`,
+                    `ct-teacher-draft-${businessMode() ? businessAccountId() + "-" : ""}${currentLesson.id}`,
                   );
                 } catch {}
                 go("today");
@@ -888,9 +894,10 @@ export default function TeacherApp() {
           <Training
             done={trainingDone}
             t={t}
-            onDone={() => {
+            onDone={async () => {
+              if (businessMode()) { try { await businessRequest("/preferences", "PATCH", { trainingDone: true }); } catch (cause) { toast(cause instanceof Error ? cause.message : t("retry")); return; } }
               setTrainingDone(true);
-              writeString("ct-teacher-training", "done");
+              if (!businessMode()) writeString("ct-teacher-training", "done");
               toast(t("correct"));
             }}
           />
@@ -984,7 +991,7 @@ export default function TeacherApp() {
               <h1>{t("messages")}</h1>
               <button
                 className="teacher-text-button"
-                onClick={() => notifications.forEach((n) => markSeen(n.id))}
+                onClick={() => markSeen(...notifications.map((n) => n.id))}
               >
                 {t("markRead")}
               </button>
@@ -995,7 +1002,7 @@ export default function TeacherApp() {
                 className={`teacher-message teacher-card ${seen.includes(n.id) ? "" : "teacher-message-unread"}`}
                 onClick={() => {
                   markSeen(n.id);
-                  if (n.id === "pay") setMonth("2026-09");
+                  if (n.id === "pay" && !businessMode()) setMonth("2026-09");
                   go(n.target);
                 }}
               >
@@ -1029,8 +1036,8 @@ export default function TeacherApp() {
             teacher={teacher}
             t={t}
             language={language}
-            setLanguage={(value) =>
-              run(
+            setLanguage={async (value) =>
+              await run(
                 { type: "language.set", language: value },
                 value === "en" ? "English selected" : "已切换中文",
               )
@@ -1045,7 +1052,7 @@ export default function TeacherApp() {
       <Drawer
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
-        title="Carol · BigBrains"
+        title={teacher.name}
         width={Math.min(320, window.innerWidth * 0.82)}
       >
         <div className="teacher-menu">
@@ -1129,7 +1136,8 @@ export default function TeacherApp() {
             <Button onClick={() => setSignOutOpen(false)}>{t("cancel")}</Button>
             <Button
               variant="primary"
-              onClick={() => {
+              onClick={async () => {
+                if (businessMode()) { try { await businessRequest("/session", "DELETE"); location.reload(); } catch (cause) { toast(cause instanceof Error ? cause.message : t("retry")); } return; }
                 setSignOutOpen(false);
                 setSignedIn(false);
               }}

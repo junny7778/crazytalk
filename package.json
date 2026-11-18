@@ -11,9 +11,16 @@
     "check": "pnpm typecheck && pnpm test && pnpm check:ui",
     "check:ui": "node scripts/check-ui.mjs",
     "doctor": "node scripts/doctor.mjs",
-    "format": "prettier --write apps packages scripts"
+    "format": "prettier --write apps packages scripts",
+    "dev:api": "pnpm --filter @crazytalk/api dev",
+    "db:up": "docker compose -p crazytalk-local -f compose.dev.yaml up -d --wait",
+    "doctor:api": "node scripts/doctor-api.mjs",
+    "test:business:ui": "playwright test",
+    "dev:business": "pnpm --filter @crazytalk/admin dev:business",
+    "test:business:api": "pnpm --filter @crazytalk/api exec tsx src/business.integration.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@testing-library/react": "16.3.0",
     "@types/node": "^22.0.0",
     "@types/react": "18.3.0",

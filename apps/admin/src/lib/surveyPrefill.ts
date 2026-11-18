@@ -1,3 +1,4 @@
+import { businessHeaders, businessMode } from "@crazytalk/shared/react";
 import { useEffect, useRef } from "react";
 import type { Command, Student } from "@crazytalk/shared";
 
@@ -6,7 +7,7 @@ export function useSurveyPrefill(students: Student[], enabled: boolean, act: (co
   const apply = useRef(act);
   apply.current = act;
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || businessMode()) return;
     const controller = new AbortController();
     let busy = false;
     async function sync() {
@@ -20,7 +21,7 @@ export function useSurveyPrefill(students: Student[], enabled: boolean, act: (co
           const updateName = synced.current.get(surveyToken) !== chineseName;
           const response = await fetch("/api/intake/" + surveyToken, {
             method: updateName ? "PATCH" : "GET",
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + surveySecret },
+            headers: { ...businessHeaders(), "Content-Type": "application/json", Authorization: "Bearer " + surveySecret },
             body: updateName ? JSON.stringify({ chineseName }) : undefined,
             signal: controller.signal,
           });
@@ -28,7 +29,7 @@ export function useSurveyPrefill(students: Student[], enabled: boolean, act: (co
           const result = await response.json();
           if (controller.signal.aborted) return;
           synced.current.set(surveyToken, chineseName);
-          if (result.answers) apply.current({type: "survey.submit", token: surveyToken, answers: result.answers,
+          if (result.answers) await apply.current({type: "survey.submit", token: surveyToken, answers: result.answers,
             nameEdited: result.nameEdited, submittedAt: result.submittedAt});
         } catch {
           if (controller.signal.aborted) return;

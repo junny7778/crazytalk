@@ -40,7 +40,7 @@ export default function StudentHistoryEditor({
     if (initial.current !== JSON.stringify(draft) || reason) setDiscard(true);
     else onClose();
   }
-  function save() {
+  async function save() {
     if (lock.current) return;
     setError("");
     setFieldErrors({});
@@ -76,12 +76,12 @@ export default function StudentHistoryEditor({
     lock.current = true;
     try {
       toast(
-        act({
+        (await act({
           type: "student.history.update",
           id: student.id,
           history: parsed.data,
           reason: reason.trim(),
-        }).message,
+        })).message,
       );
       onClose();
     } catch (cause) {

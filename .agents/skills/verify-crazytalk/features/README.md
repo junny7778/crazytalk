@@ -7,3 +7,5 @@
 - [课后确认](lessons.md)
 - [反馈与薪资](feedback-payroll.md)
 - [老师端](teacher.md)
+
+- [业务自动验收与外部阻塞](business.md)

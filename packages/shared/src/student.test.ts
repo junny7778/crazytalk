@@ -313,7 +313,7 @@ describe("student digital profiles", () => {
     expect(before.students[1].balance).toBe(0);
     expect(before.students[1].status).toBe(snapshot.students[1].status);
   });
-  it("rejects undo when the current balance is unknown without partially reverting lessons", () => {
+  it("rejects undo when the original package is missing without partially reverting lessons", () => {
     const state = createSeed();
     const lesson = state.lessons.find(
       (item) => item.status === "待确认" && item.attendance === "正常",
@@ -333,13 +333,10 @@ describe("student digital profiles", () => {
         reason: "",
       });
       const current = demoRepository.read();
-      current.students.find(
-        (item) =>
-          item.id ===
-          current.lessons.find((record) => record.id === lesson.id)?.studentId,
-      )!.balanceKnown = false;
+      const chargedPackageId = current.lessons.find(record => record.id === lesson.id)!.orderId;
+      current.orders = current.orders!.filter(pack => pack.id !== chargedPackageId);
       const snapshot = structuredClone(current);
-      expect(() => action.undo?.()).toThrow(/期初余额/);
+      expect(() => action.undo?.()).toThrow(/原扣课套餐/);
       expect(demoRepository.read()).toEqual(snapshot);
     } finally {
       vi.unstubAllGlobals();
@@ -411,6 +408,8 @@ describe("student digital profiles", () => {
     }).data;
     expect(updated.students).toHaveLength(state.students.length);
     expect(updated.students[0].name).toBe(profile().name);
+    expect(updated.students[0].channel).toBe(learner.channel);
+    expect(updated.students[0].project).toBe(learner.project);
   });
   it("records signed opening balances and applies purchased credits against owed lessons", () => {
     const imported = transition(createSeed(), {

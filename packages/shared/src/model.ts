@@ -39,6 +39,7 @@ export const studentSchema = z.object({
   channel: z.string(),
   owner: z.string(),
   phone: z.string(),
+  email: z.string().default(""),
   status: z.enum(["待排课", "在读", "停课", "结课", "退费"]),
   level: z.string(),
   material: z.string(),
@@ -124,11 +125,17 @@ export const studentProfileSchema = studentSchema
         (value) => value === "" || /^1\d{10}$/.test(value),
         "手机号需为 11 位，暂未提供可留空",
       ),
+    email: z
+      .string()
+      .trim()
+      .pipe(z.literal("").or(z.string().email("请填写有效的邮箱地址")))
+      .optional(),
   });
 export const studentEditableSchema = studentProfileSchema.pick({
   name: true, chineseName: true, englishName: true,
   groupName: true,
   phone: true,
+  email: true,
   age: true,
   ageText: true,
   gender: true,
@@ -172,6 +179,7 @@ export function emptyStudentProfile(): StudentProfileInput {
     channel: "",
     owner: "",
     phone: "",
+    email: "",
     status: "待排课",
     level: "",
     material: "",
@@ -238,6 +246,7 @@ export const teacherSchema = z.preprocess(
     name: z.string(),
     so: z.string(),
     tmAccountId: z.string().optional(),
+    classInUid: z.string().regex(/^[1-9]\d*$/).optional(),
     accent: z.string(),
     level: z.string(),
     categories: z.array(z.string()),
@@ -344,7 +353,7 @@ export const feedbackScreenshotSchema = z.object({
   dataUrl: z
     .string()
     .regex(
-      /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/,
+      /^(?:data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}|\/api\/files\/[0-9a-f-]{36})$/,
       "请上传 PNG、JPEG 或 WebP 图片",
     ),
 });
@@ -425,6 +434,8 @@ export const recordRelationTypeSchema = z.enum([
   "student",
 ]);
 export const creditSchema = z.object({
+  purchaseId: z.string().optional(),
+  purchaseStudentIds: z.array(z.string()).optional(),
   orderId: z.string().optional(),
   id: z.string(),
   studentId: z.string(),
@@ -543,7 +554,7 @@ export const payrollSchema = z.object({
     .optional(),
 });
 export const reportSchema = z.object({
-  screenshot:z.string().regex(/^data:image\/(png|jpeg|webp);base64,/).optional(),
+  screenshot:z.string().regex(/^(?:data:image\/(png|jpeg|webp);base64,|\/api\/files\/[0-9a-f-]{36}$)/).optional(),
   id: z.string(),
   lessonId: z.string(),
   studentId: z.string(),
@@ -577,10 +588,13 @@ export const accountSchema = z.object({
 export const catalogSchema = z.object({
   id: z.string(),
   parentId: z.string().optional(),
+  channelIds: z.array(z.string()).optional(),
+  historicalChannelIds: z.array(z.string()).optional(),
+  scopeChannelId: z.string().optional(),
   targetHistory: z.array(z.object({ at: z.string(), lessons: z.number().int().positive(), operator: z.string() })).optional(),
   monthlyLessons: z.number().int().positive().optional(),
   usedInFeedback: z.boolean().optional(),
-  type: z.enum(["教材", "反馈分类", "SO", "下拉选项", "项目", "渠道"]),
+  type: z.enum(["教材", "反馈分类", "SO", "下拉选项", "项目", "渠道", "队伍", "组别"]),
   name: z.string(),
   detail: z.string(),
   enabled: z.boolean(),
@@ -606,7 +620,8 @@ export const stateSchema = z.object({
   revision: z.number(),
   studentIdAliases: z.record(z.string()).optional(),
   classInAccounts: z.array(z.object({id:z.string(), phone:z.string(), uid:z.string(), studentIds:z.array(z.string())})).optional(),
-  orders: z.array(z.object({ id:z.string(), studentIds:z.array(z.string()), units:z.union([z.literal(72),z.literal(144)]), balance:z.number(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
+  packageBalanceVersion: z.union([z.literal(1), z.literal(2)]).optional(),
+  orders: z.array(z.object({ id:z.string(), memberCount:z.number().optional(), hiddenReservations:z.object({ units:z.number(), unknownCount:z.number() }).optional(), studentIds:z.array(z.string()), units:z.number(), balance:z.number(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
   slotLocks:z.array(z.object({studentId:z.string(),teacherId:z.string(),date:z.string(),time:z.string(),duration:z.number().positive(),operator:z.string(),expiresAt:z.string()})).optional(),
   payTerms:z.array(payTermsSchema).optional(),
   settlements:z.array(z.object({teacherId:z.string(),month:z.string(),so:z.string(),at:z.string(),lines:z.array(payLine)})).optional(),
@@ -723,6 +738,7 @@ export type Command = { operator?: string } & (
   | {type:"slot.release";studentId:string}
   | {type:"survey.issue";id:string;token?:string;secret?:string}
   | {type:"survey.submit";token:string;submittedAt?:string;nameEdited?:boolean;answers:z.input<typeof studentSurveyAnswers>}
+  | { type: "order.join"; orderId: string; studentId: string; bindAccountId?: string }
   | { type: "order.buy"; id:string; studentId:string; studentIds:string[]; units:72|144; date:string; kind:string; note:string }
   | { type: "student.bindClassIn"; id: string; phone: string; uid: string }
   | { type: "student.profile"; id: string; profile: StudentProfileInput }
@@ -762,12 +778,14 @@ export type Command = { operator?: string } & (
     }
   | {
       type: "credit.deduct";
+      orderId?: string;
       studentId: string;
       units: number;
       reason: string;
     }
   | {
       type: "credit.add";
+      purchaseId?: string;
       orderId?:string;
       studentId: string;
       units: number;
@@ -841,6 +859,8 @@ export type Command = { operator?: string } & (
     }
   | {
       type: "lesson.resolve";
+      conclusion?: string;
+      minutes?: number;
       ids: string[];
       decision: "扣课" | "不扣" | "缺席";
       reason: string;
@@ -933,11 +953,10 @@ export type Command = { operator?: string } & (
   | { type: "payroll.status"; ids: string[]; status: "已确认" | "已发放" }
   | { type: "role.save"; role: Role }
   | { type: "role.delete"; id: string }
-  | { type: "account.save"; account: Account; handoverTo?: string }
-  | { type: "catalog.save"; entry: CatalogEntry }
+  | { type: "account.save"; account: Account; handoverTo?: string; initialPassword?: string }
+  | { type: "catalog.save"; entry: CatalogEntry; projectIds?: string[] }
   | { type: "feedback-category.delete"; id: string }
   | { type: "rules.save"; rules: DemoState["rules"] }
-  | { type: "connection.save"; sid: string; secret: string }
   | {
       type: "report.correct";
       id: string;
@@ -951,7 +970,12 @@ export type Command = { operator?: string } & (
   | { type: "leave.review"; id: string; approve: boolean }
   | { type: "language.set"; language: "zh" | "en" }
 );
-export const DEMO_TODAY = "2026-10-31";
+// Demo keeps its reference date. Business entry points refresh this before reading or writing.
+export let DEMO_TODAY = "2026-10-31";
+export function configureBusinessClock(now = Date.now()) {
+  DEMO_TODAY = new Date(now + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return DEMO_TODAY;
+}
 export function addDays(date: string, days: number) {
   const d = new Date(`${date}T12:00:00+08:00`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -1042,6 +1066,73 @@ export const permissionGroups = [
     ],
   },
 ];
+export function superAdminRole(): Role {
+  return {
+    id: "admin",
+    name: "超级管理员",
+    description: "管理全部业务和系统设置",
+    permissions: permissionGroups.flatMap((group) => group.keys),
+    scope: "全部",
+  };
+}
+
+export function staffRoles(): Role[] {
+  return [
+    {
+      id: "ops",
+      name: "教务",
+      description: "学员服务、排班与课后确认",
+      permissions: [
+        "dashboard.overview",
+        "dashboard.utilization",
+        "student.view",
+        "student.create",
+        "student.edit",
+        "student.reschedule",
+        "credit.add",
+        "credit.compensate",
+        "schedule.view",
+        "schedule.create",
+        "lesson.view",
+        "lesson.confirm",
+        "lesson.correct",
+        "sync.retry",
+        "classin_account.link",
+        "feedback.view",
+        "feedback.create",
+        "feedback.process",
+        "teacher.view",
+      ],
+      scope: "本组",
+    },
+    {
+      id: "tm",
+      name: "老师管理（TM）",
+      description: "老师资料、教学质量与责任判定",
+      permissions: [
+        "dashboard.overview",
+        "teacher.view",
+        "teacher.edit",
+        "teacher.leave",
+        "teacher.offboard",
+        "availability.edit",
+        "training.edit",
+        "feedback.view",
+        "feedback.process",
+        "feedback.verdict",
+        "teacher_action.deduct",
+        "teacher_action.confirm",
+        "lesson.view",
+      ],
+      scope: "本组",
+    },
+  ];
+}
+
+export function isSystemRole(id: string): boolean {
+  return id === "admin" || id === "ops" || id === "tm";
+}
+
 export const permissionLabels: Record<string, string> = {
   "dashboard.overview": "运营总览",
   "dashboard.utilization": "老师利用率",
@@ -1082,7 +1173,7 @@ export const permissionLabels: Record<string, string> = {
   "payroll.mark_paid": "标记发放",
   "pay_rate.edit": "修改单价",
   "field.pay_amount": "查看薪资金额",
-  "field.student_phone": "查看学员完整手机号",
+  "field.student_phone": "查看学员手机号和邮箱",
   "account.manage": "管理账号",
   "role.manage": "配置角色权限",
   "org.manage": "管理项目渠道",

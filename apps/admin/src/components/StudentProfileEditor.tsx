@@ -51,7 +51,7 @@ export default function StudentProfileEditor({
   const navigate = useNavigate();
   const toast = useToast();
   const [draft, setDraft] = useState<StudentProfileInput>(() =>
-    student ? studentProfileSchema.parse(student) : emptyStudentProfile(),
+    student ? studentProfileSchema.parse(can("field.student_phone") ? student : { ...student, phone: "", email: "" }) : emptyStudentProfile(),
   );
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -78,7 +78,7 @@ export default function StudentProfileEditor({
     setError("");
     setDraft((current) => ({ ...current, ...value }));
   };
-  function save(next: "none" | "credit" | "schedule") {
+  async function save(next: "none" | "credit" | "schedule") {
     if (saveLock.current) return;
     setError("");
     setFieldErrors({});
@@ -118,6 +118,7 @@ export default function StudentProfileEditor({
         "chineseName",
         "groupName",
         "phone",
+        "email",
         "age",
         "ageText",
         "gender",
@@ -138,7 +139,7 @@ export default function StudentProfileEditor({
       const expected: Partial<StudentEditableInput> = Object.fromEntries(
         changed.map((key) => [key, initialProfile.current[key]]),
       );
-      const result = act(
+      const result = await act(
         student
           ? {
               type: "student.details.update",
@@ -214,12 +215,21 @@ export default function StudentProfileEditor({
               <input
                 inputMode="tel"
                 value={
-                  student && !can("field.student_phone") && draft.phone
-                    ? `****${draft.phone.slice(-4)}`
+                  student && !can("field.student_phone")
+                    ? student.phone ? `****${student.phone.slice(-4)}` : ""
                     : draft.phone
                 }
                 disabled={!!student && !can("field.student_phone")}
                 onChange={(event) => patch({ phone: event.target.value })}
+              />
+            </Field>
+            <Field error={fieldErrors.email} label="邮箱">
+              <input
+                inputMode="email"
+                autoComplete="email"
+                value={draft.email ?? ""}
+                disabled={!!student && !can("field.student_phone")}
+                onChange={(event) => patch({ email: event.target.value })}
               />
             </Field>
             <Field error={fieldErrors.age} label="年龄">
@@ -286,14 +296,14 @@ export default function StudentProfileEditor({
               <Choice
                 label="渠道"
                 value={draft.channel}
-                onChange={(channel) => patch({ channel, project: "" })}
+                onChange={(channel) => patch({ channel, project: data.catalog.some(p => p.type === "项目" && p.name === draft.project && p.enabled && data.catalog.some(c => c.name === channel && p.channelIds?.includes(c.id))) ? draft.project : "" })}
                 options={data.catalog
-                  .filter((item) => item.type === "渠道")
+                  .filter((item) => item.type === "渠道" && item.enabled)
                   .map((item) => item.name)}
               />
             </Field>
             <Field label="项目"><Choice label="项目" value={draft.project} onChange={project => patch({project})}
-              options={data.catalog.filter(p => p.enabled && p.type === "项目" && data.catalog.some(c => c.id === p.parentId && c.name === draft.channel)).map(p => p.name)}/></Field>
+              options={data.catalog.filter(p => p.enabled && p.type === "项目" && data.catalog.some(c => p.channelIds?.includes(c.id) && c.name === draft.channel)).map(p => p.name)}/></Field>
             <Field label="负责教务">
               <Choice
                 label="负责教务"

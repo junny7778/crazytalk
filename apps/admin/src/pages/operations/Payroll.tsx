@@ -1,3 +1,4 @@
+import { DEMO_TODAY } from "@crazytalk/shared";
 import OfficePayroll from "./OfficePayroll";
 import ListPagination, { useListPage } from "../../components/ListPagination";
 import { DatePicker } from "@crazytalk/ui";
@@ -29,7 +30,7 @@ export default function Payroll() {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "monthly";
   const q = params.get("q") || "";
-  const [month, setMonth] = useState("2026-10");
+  const [month, setMonth] = useState(DEMO_TODAY.slice(0, 7));
   const [status, setStatus] = useState("全部状态");
   const [selected, setSelected] = useState<string[]>([]);
   const [detailId, setDetailId] = useState("");
@@ -280,17 +281,7 @@ export default function Payroll() {
             {!filtered.length && (
               <EmptyState
                 title="这个月份还没有薪资单"
-                description="演示薪资在 2026 年 10 月，其他月份将在核算后显示。"
-                action={
-                  <Button
-                    onClick={() => {
-                      setMonth("2026-10");
-                      setStatus("全部状态");
-                    }}
-                  >
-                    查看 10 月薪资
-                  </Button>
-                }
+                description="薪资核算后会在这里显示。"
               />
             )}
           </Panel>
@@ -326,10 +317,11 @@ export default function Payroll() {
           )}
         </>
       ) : (
-        <Panel title="老师课酬单价" action={<small>每 25 分钟课酬</small>}>
-          <p className="muted" style={{ marginBottom: 20 }}>
-            示例按老师分别设置单价。修改后用于后续核算，已确认薪资不能调整。
-          </p>
+        <Panel
+          title="老师课酬单价"
+          description="每位老师可以设置不同的课酬单价。修改后用于后续核算，已确认的薪资保持原金额。"
+          action={<small>每 25 分钟课酬</small>}
+        >
           <div className="table-wrap">
             <table>
               <thead>
@@ -498,9 +490,9 @@ export default function Payroll() {
             <Button onClick={() => setConfirm(null)}>取消</Button>
             <Button
               variant="primary"
-              onClick={() =>
+              onClick={async () =>
                 confirm &&
-                run(
+                await run(
                   { type: "payroll.status", ids: selected, status: confirm },
                   () => {
                     setConfirm(null);
@@ -543,9 +535,9 @@ export default function Payroll() {
             <Button
               variant="primary"
               disabled={!amount || !note.trim()}
-              onClick={() =>
+              onClick={async () =>
                 detail &&
-                run(
+                await run(
                   { type: "payroll.adjust", id: detail.id, amount, note },
                   () => setAdjust(false),
                 )
@@ -584,10 +576,10 @@ export default function Payroll() {
             <Button
               variant="primary"
               disabled={rate <= 0}
-              onClick={() => {
+              onClick={async () => {
                 const t = teacher(rateId);
                 if (t)
-                  run({ type: "teacher.save", teacher: { ...t, rate } }, () =>
+                  await run({ type: "teacher.save", teacher: { ...t, rate } }, () =>
                     setRateId(""),
                   );
               }}

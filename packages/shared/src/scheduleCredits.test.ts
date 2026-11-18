@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
-import { getScheduleCredits } from "./scheduleCredits";
+import { getScheduleCredits, withScopedReservations } from "./scheduleCredits";
 
 describe("排课课时余额与占用", () => {
   it("余额8课时不能安排预计消耗10课时的课程", () => {
@@ -105,6 +105,7 @@ function booking(
 }
 function creditsFixture() {
   const data = createSeed();
+  data.classInAccounts = [{id:"login", phone:"13900001234", uid:"101", studentIds:["s4"]}];
   data.lessons = [];
   data.leaves = [];
   data.students[3].balance = 8;
@@ -203,4 +204,29 @@ describe("排课提交余额拦截", () => {
     expect(summary.available).toBe(6);
     expect(summary.error).toBe("");
   });
+});
+
+it("学员范围和老师范围隐藏的课程只贡献套餐占用汇总，排课结果与完整数据一致", () => {
+  const data = createSeed();
+  const [a, b] = data.students;
+  const pack = { id: "shared", studentIds: [a.id, b.id], balance: 8, units: 72,
+    kind: "新购", date: "2026-10-31", channel: "", project: "" };
+  data.orders = [pack];
+  const base = { ...data.lessons[0], orderId: pack.id, deducted: false, status: "未开始" as const };
+  data.lessons = [
+    { ...base, id: "visible", studentId: a.id, duration: 25 },
+    { ...base, id: "hiddenTeacher", studentId: a.id, duration: 50 },
+    { ...base, id: "hiddenStudent", studentId: b.id, duration: 55, plannedUnits: undefined },
+    { ...base, id: "cancelled", studentId: b.id, duration: 25, status: "已取消" },
+  ];
+  const visible = { ...data, students: [a], orders: [{...pack, studentIds: [a.id]}], lessons: data.lessons.slice(0, 1) };
+  const projected = withScopedReservations(data, visible);
+  expect(projected.orders![0].hiddenReservations).toEqual({ units: 2, unknownCount: 1 });
+  expect(projected.lessons).toEqual(visible.lessons);
+  expect(projected.orders![0].studentIds).toEqual([a.id]);
+  expect(getScheduleCredits(projected, a.id, 1, 1)).toEqual(getScheduleCredits(data, a.id, 1, 1));
+  data.lessons[2].plannedUnits = 3;
+  const updated = withScopedReservations(data, visible);
+  expect(getScheduleCredits(updated, a.id, 2, 1)).toMatchObject({ allocations: ["shared","shared"], available: 2, error: "" });
+  expect(getScheduleCredits(updated, a.id, 3, 1).error).toContain("不足");
 });

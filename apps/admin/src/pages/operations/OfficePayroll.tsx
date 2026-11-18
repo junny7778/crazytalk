@@ -1,10 +1,11 @@
+import { DEMO_TODAY } from "@crazytalk/shared";
 import { useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
 import { officePay, type PayTerms, type DemoState } from "@crazytalk/shared";
 import { Select, EmptyState, Field, Button, Panel } from "@crazytalk/ui";
 export default function OfficePayroll() {
   const { data, can } = useDemo();
-  const [month, setMonth] = useState("2026-10"),
+  const [month, setMonth] = useState(DEMO_TODAY.slice(0, 7)),
     [so, setSO] = useState(""),
     [id, setId] = useState("");
   const tutors = data.teachers.filter((t) => !so || t.so === so);
@@ -256,9 +257,9 @@ function PayEditor({
         )}
         <Button
           variant="primary"
-          onClick={() => {
+          onClick={async () => {
             try {
-              act({ type: "pay.terms", terms: form });
+              await act({ type: "pay.terms", terms: form });
               setError("已保存");
             } catch (e) {
               setError(String(e));
@@ -303,9 +304,9 @@ function PayEditor({
                 JSON.stringify(form[k as keyof PayTerms]),
             )
           }
-          onClick={() => {
+          onClick={async () => {
             try {
-              act({ type: "pay.freeze", teacherId: id, month });
+              await act({ type: "pay.freeze", teacherId: id, month });
               setError("已冻结周期明细");
             } catch (e) {
               setError(String(e));

@@ -4,9 +4,9 @@ import type { Command } from "@crazytalk/shared";
 export function useBusinessAction() {
   const { act } = useDemo();
   const toast = useToast();
-  return (command: Command, after?: () => void) => {
+  return async (command: Command, after?: () => void) => {
     try {
-      const result = act(command);
+      const result = await act(command);
       toast(result.message, { undo: result.undo });
       after?.();
       return true;

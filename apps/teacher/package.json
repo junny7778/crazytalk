@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5174",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:business": "vite --mode business --host 127.0.0.1 --port 5176",
+    "build:business": "vite build --mode business"
   },
   "dependencies": {
     "@crazytalk/shared": "workspace:*",

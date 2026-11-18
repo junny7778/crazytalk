@@ -6,6 +6,7 @@ import ListPagination from "../../components/ListPagination";
 import {
   recordAttendance as lessonRecordAttendance,
   attendanceIssue,
+  teacherNoShowHint,
   personAttendance,
   attendanceOptions,
 } from "../../lib/lessonAttendance";
@@ -66,7 +67,8 @@ export default function Lessons() {
     kind: "扣课" | "不扣" | "缺席";
   } | null>(null);
   const [delay,setDelay]=useState("");
-  const [incident,setIncident]=useState("学员缺席"),[evidence,setEvidence]=useState("");
+  const [incident,setIncident]=useState("");
+
   const [reason, setReason] = useState("");
   const [units, setUnits] = useState("");
   const [linkId, setLinkId] = useState("");
@@ -129,17 +131,20 @@ export default function Lessons() {
   useEffect(() => {
     setPage(1);
   }, [params.toString()]);
-  function resolve(l: Lesson, kind: "扣课" | "不扣" | "缺席") {
-    setReason(
-      kind === "不扣"
-        ? ""
-        : kind === "缺席"
-          ? "学员缺席，教务确认扣课数量"
-          : "教务确认已上课",
-    );
+  function openReview(l: Lesson) {
+    if (l.attendance === "账号待关联") {
+      setLinkId(l.id);
+      setLinkStudent(l.studentId);
+      return;
+    }
+    setIncident("");
+    setReason("");
+    setDelay("");
     setUnits(l.confirmedUnits === undefined ? "" : String(l.confirmedUnits));
-    setDecision({ id: l.id, kind });
+    setDecision({ id: l.id, kind: "扣课" });
   }
+  const timed = incident === "老师迟到" || incident === "老师早退";
+  const balance = deciding && student(deciding.studentId)?.balance;
   return (
     <div className="stack">
       <PageHeader
@@ -308,7 +313,9 @@ export default function Lessons() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((l) => (
+              {visible.map((l) => {
+                const noShowHint = teacherNoShowHint(l);
+                return (
                 <tr key={l.id} aria-label={`课程 ${l.id}`}>
                   <td>
                     <button
@@ -336,7 +343,8 @@ export default function Lessons() {
                     </Badge>
                   </td>
                   <td>
-                    {!isOverdueLesson(l, now) && !l.leaveFlag && !attendanceIssue(l) && !l.conflict && "—"}
+                    {noShowHint && <small>{noShowHint}</small>}
+                    {!noShowHint && !isOverdueLesson(l, now) && !l.leaveFlag && !attendanceIssue(l) && !l.conflict && "—"}
                     {isOverdueLesson(l, now) && (
                       <small className="lesson-overdue">
                         已过计划结束时间，待核实
@@ -376,20 +384,7 @@ export default function Lessons() {
                       <Button
                         size="xs"
                         variant="ghost"
-                        onClick={() => {
-                          if (l.attendance === "账号待关联") {
-                            setLinkId(l.id);
-                            setLinkStudent(l.studentId);
-                          } else
-                            resolve(
-                              l,
-                              l.attendance === "老师缺席"
-                                ? "不扣"
-                                : l.attendance === "学员缺席"
-                                  ? "缺席"
-                                  : "扣课",
-                            );
-                        }}
+                        onClick={() => openReview(l)}
                       >
                         {l.attendance === "账号待关联" ? "关联学员" : "核实"}
                       </Button>
@@ -403,7 +398,8 @@ export default function Lessons() {
                     </Button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -413,15 +409,6 @@ export default function Lessons() {
               view === "unsynced"
                 ? "没有符合条件的未同步课程"
                 : "没有符合条件的课程"
-            }
-            action={
-              <Button
-                onClick={() => {
-                  setParams({ tab: "all" });
-                }}
-              >
-                清除筛选
-              </Button>
             }
           />
         )}
@@ -434,14 +421,15 @@ export default function Lessons() {
         />
       </Panel>
       <Drawer
-        open={!!detail}
+        open={!!detail && !decision && !linkId}
         onClose={() => setDetailId("")}
         title="课程详情"
         width={560}
         footer={
           detail && (
             <>
-              {can("lesson.correct") && (
+              {detail.status === "待确认" && can("lesson.confirm") && <Button variant="primary" onClick={() => openReview(detail)}>{detail.attendance === "账号待关联" ? "关联学员" : "核实"}</Button>}
+              {["已完成","缺席"].includes(detail.status) && can("lesson.correct") && (
                 <Button
                   onClick={() => {
                     setReason("");
@@ -460,7 +448,7 @@ export default function Lessons() {
               <Link
                 to={`/feedback?new=1&student=${detail.studentId}&lesson=${detail.id}`}
               >
-                <Button variant="primary">登记反馈</Button>
+                <Button>登记反馈</Button>
               </Link>
             </>
           )
@@ -469,18 +457,11 @@ export default function Lessons() {
         {detail && (
           <div className="stack">
             <CourseSyncLink lesson={detail} detail />
-            {detail.incident && <p>已核实：{detail.incident.reason} · {detail.incident.note} · {detail.incident.operator}</p>}
-            {can("lesson.correct") && <details className="incident-editor"><summary>登记异常考勤</summary><div className="stack"><Field label="异常原因"><Select value={incident} onValueChange={setIncident}>
-              {["学员缺席","学员提前3小时取消","学员3小时内取消","学员网络设备问题","老师缺席","老师迟到","老师早退","老师24小时内取消","老师1–5天取消","老师超过5天请假","老师网络设备问题","教材错误或重复","换老师","换时间","停课","误操作","其他"].map(s=><option key={s}>{s}</option>)}
-            </Select></Field><Field label="核实依据"><textarea value={evidence} onChange={e=>setEvidence(e.target.value)}/></Field>
-            {["老师迟到","老师早退"].includes(incident) && <Field label="核实分钟数"><input type="number" min="0" value={delay} onChange={e=>setDelay(e.target.value)}/></Field>}
-            <Button disabled={!evidence.trim()} onClick={()=>run({type:"lesson.incident",id:detail.id,reason:incident,note:evidence,minutes:["老师迟到","老师早退"].includes(incident) && delay ? Number(delay):undefined},()=>setEvidence(""))}>保存核实结果</Button></div></details>}
+            {detail.incident && <p>已核实：{detail.incident.reason} · {detail.incident.note} · {detail.incident.operator} · {new Date(detail.incident.at).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</p>}
             {(["学员", "老师"] as const).map(person => {
               const at = detail.attendanceMessages?.[person];
               if (!at) return null;
-              const arrived = person === "老师" ? detail.teacherIn : detail.studentIn;
-              const result = personAttendance(detail, person).includes("缺席") ? "缺席" : arrived ? "已到堂" : "未到堂";
-              return <p key={person}>{person}{result} · 已通知{person === "老师" ? " TM" : "教务"} · {new Date(at).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai"})}</p>;
+              return <p key={person}>{person}未到堂提醒 · {new Date(at).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai"})}</p>;
             })}
             {detail.attendanceMessages && <p>学员课时 · {detail.deducted ? `已扣 ${detail.confirmedUnits ?? "—"} 课时` : allData.credits.some(c => c.lessonId === detail.id && c.type === "扣课退回") ? "已退回原扣课时" : detail.status === "已完成" ? "不扣课，已释放占用" : "待确认"}</p>}
             <dl className="detail-pairs">
@@ -577,26 +558,28 @@ export default function Lessons() {
       <Drawer
         open={!!decision}
         onClose={() => setDecision(null)}
-        title={decision?.kind === "不扣" ? "确认不扣课时" : "确认扣课数量"}
+        title="核实上课记录"
         footer={
           <>
             <Button onClick={() => setDecision(null)}>取消</Button>
             <Button
               variant="primary"
               disabled={
-                !reason.trim() ||
+                !incident || !reason.trim() || (timed && (!delay || !Number.isInteger(Number(delay)) || Number(delay) < 0)) ||
                 (decision?.kind !== "不扣" &&
                   (!units.trim() ||
                     !Number.isFinite(Number(units)) ||
                     Number(units) <= 0))
               }
-              onClick={() =>
+              onClick={async () =>
                 decision &&
-                run(
+                await run(
                   {
                     type: "lesson.resolve",
                     ids: [decision.id],
                     decision: decision.kind,
+                    conclusion: incident,
+                    minutes: timed ? Number(delay) : undefined,
                     reason,
                     ...(decision.kind !== "不扣"
                       ? { units: Number(units) }
@@ -606,45 +589,32 @@ export default function Lessons() {
                 )
               }
             >
-              {decision?.kind === "不扣" ? "确认不扣" : "确认扣课"}
+              确认核实
             </Button>
           </>
         }
       >
         {deciding && (
-          <div className="stack">
-            <p>
-              {student(deciding.studentId)?.name} ·{" "}
-              {teacher(deciding.teacherId)?.name}
-            </p>
-            <p>
-              {formatDate(deciding.date)} {deciding.time} · {deciding.duration}{" "}
-              分钟 · {deciding.attendance}
-            </p>
-            <p>
-              老师进入：{deciding.teacherIn || "暂无数据"} · 学员进入：
-              {deciding.studentIn || "暂无数据"}
-            </p>
-            <p>
-              当前剩余 {student(deciding.studentId)?.balance ?? "—"}{" "}
-              课时。确认后可在 10 秒内撤销。
-            </p>
-            <Field label="处理结果">
-              <Select
-                value={decision?.kind || "扣课"}
-                onValueChange={(value) => {
-                  if (value === "扣课" || value === "不扣" || value === "缺席")
-                    resolve(deciding, value);
-                }}
-              >
-                <option value="扣课">正常扣课</option>
-                <option value="缺席">学员缺席，确认扣课</option>
-                <option value="不扣">不扣课时</option>
-              </Select>
-            </Field>
-          </div>
-        )}
-        {decision?.kind !== "不扣" && (
+          <div className="lesson-review">
+            {teacherNoShowHint(deciding) && <div className="inset"><strong>{new Date(deciding.attendanceMessages!.老师!).toLocaleTimeString("zh-CN",{timeZone:"Asia/Shanghai",hour:"2-digit",minute:"2-digit"})} · {teacherNoShowHint(deciding)}</strong> · 待核实</div>}
+            <dl className="detail-pairs">
+              <dt>学员</dt><dd>{student(deciding.studentId)?.name}</dd>
+              <dt>老师</dt><dd>{teacher(deciding.teacherId)?.name}</dd>
+              <dt>计划上课</dt><dd>{formatDate(deciding.date)} {deciding.time}</dd>
+              <dt>时长</dt><dd>{deciding.duration} 分钟</dd>
+            </dl>
+            <table><thead><tr><th>人员</th><th>进入时间</th><th>离开时间</th></tr></thead>
+              <tbody><tr><td>老师</td><td>{deciding.teacherIn || "暂无记录"}</td><td>{deciding.teacherOut || "暂无记录"}</td></tr>
+              <tr><td>学员</td><td>{deciding.studentIn || "暂无记录"}</td><td>{deciding.studentOut || "暂无记录"}</td></tr></tbody></table>
+            <Field label="核实结论" required><Select value={incident} placeholder="请选择核实结论" onValueChange={value => {
+              setIncident(value);
+              setDecision({id: deciding.id, kind: value === "老师缺席" ? "不扣" : value === "学员缺席" ? "缺席" : "扣课"});
+            }}>
+              {["正常上课","老师缺席","学员缺席","老师迟到","老师早退","学员提前3小时取消","学员3小时内取消","学员网络设备问题","老师24小时内取消","老师1–5天取消","老师超过5天请假","老师网络设备问题","教材错误或重复","换老师","换时间","停课","误操作","其他"].map(s => <option key={s}>{s}</option>)}
+            </Select></Field>
+            {timed && <Field label="核实分钟数" required><input type="number" min="0" value={delay} onChange={e=>setDelay(e.target.value)}/></Field>}
+            {incident && incident !== "老师缺席" && <Field label="课时处理"><Select value={decision?.kind === "不扣" ? "不扣" : "扣课"} onValueChange={v=>setDecision({id:deciding.id,kind:v === "不扣" ? "不扣" : incident === "学员缺席" ? "缺席" : "扣课"})}><option>扣课</option><option>不扣</option></Select></Field>}
+        {incident && decision?.kind !== "不扣" && (
           <Field
             label="本节扣课数量"
             required
@@ -659,13 +629,16 @@ export default function Lessons() {
             />
           </Field>
         )}
-        <Field label="请说明原因" required>
+        {incident && <p>{decision?.kind === "不扣" ? "本节不扣课" : "本节扣课"} · 当前余额 {balance ?? "—"} 课时{balance !== undefined && (decision?.kind === "不扣" || Number(units)>0) && `，处理后 ${balance - (decision?.kind === "不扣" ? 0 : Number(units))} 课时`}</p>}
+        <Field label="核实依据" required>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="例如：老师未到场，已与家长确认"
           />
         </Field>
+          </div>
+        )}
       </Drawer>
       <Modal
         open={!!linkId}
@@ -676,8 +649,8 @@ export default function Lessons() {
             <Button onClick={() => setLinkId("")}>取消</Button>
             <Button
               variant="primary"
-              onClick={() =>
-                run(
+              onClick={async () =>
+                await run(
                   { type: "lesson.link", id: linkId, studentId: linkStudent },
                   () => setLinkId(""),
                 )
@@ -713,16 +686,16 @@ export default function Lessons() {
             <Button onClick={() => setCorrect(false)}>取消</Button>
             <Button
               variant="primary"
-              disabled={!reason.trim()}
-              onClick={() =>
+              disabled={!reason.trim() || (deduct && !(Number(units) > 0))}
+              onClick={async () =>
                 detail &&
-                run(
+                await run(
                   {
                     type: "lesson.correct",
                     id: detail.id,
                     deduct,
                     reason,
-                    ...(deduct && !detail.deducted
+                    ...(deduct
                       ? { units: Number(units) }
                       : {}),
                   },
@@ -736,6 +709,7 @@ export default function Lessons() {
         }
       >
         <div className="stack">
+          <p>原课时结果：{detail?.deducted ? `已扣 ${detail.confirmedUnits} 课时` : "不扣课时"}</p>
           <Field label="正确结果">
             <Select
               value={deduct ? "yes" : "no"}
@@ -745,7 +719,7 @@ export default function Lessons() {
               <option value="no">不扣课时</option>
             </Select>
           </Field>
-          {deduct && !detail?.deducted && (
+          {deduct && (
             <Field label="本节扣课数量" required>
               <input
                 type="number"

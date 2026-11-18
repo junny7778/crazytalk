@@ -1,3 +1,4 @@
+import { migratePackageBalances } from "./packageBalances";
 import { stateSchema, type DemoState } from "./model";
 import { createSeed } from "./seed";
 import { migrateStudentIds } from "./studentIds";
@@ -11,6 +12,7 @@ export function unifyRoster(state: DemoState): DemoState {
   )
     return state;
   const baseline = stateSchema.parse(migrateStudentIds(createSeed()).data);
+  if (state.packageBalanceVersion) migratePackageBalances(baseline);
   const remove = new Set<string>();
   const history = [
     "lessons",
@@ -30,7 +32,8 @@ export function unifyRoster(state: DemoState): DemoState {
       continue;
     const id = current.id;
     if (
-      state.orders?.some((o) => o.studentIds.includes(id)) ||
+      state.orders?.some((order) => order.studentIds.includes(id) &&
+        !baseline.orders?.some(original => JSON.stringify(order) === JSON.stringify(original))) ||
       state.classInAccounts?.some((a) => a.studentIds.includes(id)) ||
       state.slotLocks?.some((l) => l.studentId === id) ||
       state.referrals.some(
@@ -71,6 +74,7 @@ export function unifyRoster(state: DemoState): DemoState {
     ...state,
     revision: state.revision + 1,
     students: state.students.filter((s) => !remove.has(s.id)),
+    orders: state.orders?.filter(order => !order.studentIds.every(id => remove.has(id))),
     feedback,
     lessons: state.lessons.filter(keep),
     credits: state.credits.filter(keep),

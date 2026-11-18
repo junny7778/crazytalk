@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -57,7 +58,7 @@ describe("学员事件驱动档案体验", () => {
     const activity = (await screen.findByText(feedback.content)).closest(
       "article",
     )!;
-    fireEvent.click(within(activity).getByRole("button", { name: "查看详情" }));
+    await testAct(async () => { fireEvent.click(within(activity).getByRole("button", { name: "查看详情" })); });
     const detail = await screen.findByRole("dialog", { name: "反馈详情" });
     expect(within(detail).getByText(feedback.content)).toBeTruthy();
     expect(within(detail).queryByRole("textbox")).toBeNull();
@@ -80,19 +81,19 @@ describe("学员事件驱动档案体验", () => {
     expect(
       within(detail).queryByRole("region", { name: "跟进历史" }),
     ).toBeNull();
-    fireEvent.click(history);
+    await testAct(async () => { fireEvent.click(history); });
     expect(history.getAttribute("aria-expanded")).toBe("true");
     expect(
       within(detail).getByRole("region", { name: "跟进历史" }),
     ).toBeTruthy();
-    fireEvent.click(history);
+    await testAct(async () => { fireEvent.click(history); });
     expect(
       within(detail).queryByRole("region", { name: "跟进历史" }),
     ).toBeNull();
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       within(detail).getByRole("button", { name: "前往反馈处理" }),
-    );
-    await screen.findByRole("button", { name: "保存客服处理" });
+    ); });
+    await screen.findByRole("button", { name: "更新客服处理" });
     expect(screen.queryByRole("dialog", { name: "反馈详情" })).toBeNull();
     expect(screen.getAllByText(feedback.content).length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "返回反馈列表" })).toBeTruthy();
@@ -117,7 +118,7 @@ describe("学员事件驱动档案体验", () => {
     expect(
       within(filters).queryByRole("button", { name: /^投诉 / }),
     ).toBeNull();
-    fireEvent.click(within(filters).getByRole("button", { name: /^反馈 / }));
+    await testAct(async () => { fireEvent.click(within(filters).getByRole("button", { name: /^反馈 / })); });
     expect(screen.getByText("服务范围测试好评")).toBeTruthy();
     expect(screen.getAllByText("学员反馈").length).toBeGreaterThan(0);
     expect(screen.queryByText("初始课时登记")).toBeNull();
@@ -129,7 +130,7 @@ describe("学员事件驱动档案体验", () => {
         (item) => item.studentId === feedback.studentId && item.type === "回访",
       )
     ) {
-      fireEvent.click(within(filters).getByRole("button", { name: /^回访 / }));
+      await testAct(async () => { fireEvent.click(within(filters).getByRole("button", { name: /^回访 / })); });
       expect(screen.queryByText("学员反馈")).toBeNull();
       expect(screen.getByText("回访记录")).toBeTruthy();
     } else {
@@ -137,7 +138,7 @@ describe("学员事件驱动档案体验", () => {
         within(filters).queryByRole("button", { name: /^回访 / }),
       ).toBeNull();
     }
-    fireEvent.click(within(filters).getByRole("button", { name: /^全部 / }));
+    await testAct(async () => { fireEvent.click(within(filters).getByRole("button", { name: /^全部 / })); });
     expect(screen.getAllByText("学员反馈").length).toBeGreaterThan(0);
     expect(screen.queryByText("初始课时登记")).toBeNull();
     expect(
@@ -164,14 +165,14 @@ describe("学员事件驱动档案体验", () => {
     ).toBeTruthy();
     for (const name of ["调课", "登记反馈", "加课时", "换老师", "记录回访"])
       expect(within(header).queryByRole("button", { name })).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "课程与教材进度" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "课程与教材进度" })); });
     expect(screen.getByRole("button", { name: "换老师" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "安排课程" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "服务跟进" })); });
     expect(screen.queryByRole("button", { name: "换老师" })).toBeNull();
     expect(screen.getByRole("button", { name: "登记反馈" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "记录回访" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "课时与续费" })); });
     expect(screen.getByRole("button", { name: "加课时" })).toBeTruthy();
   });
 
@@ -203,7 +204,7 @@ describe("学员事件驱动档案体验", () => {
     expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(screen.getByRole("button", { name: "办理复课" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "调课" })).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "服务跟进" })); });
     expect(screen.getByRole("group", { name: "服务记录筛选" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "换老师" })).toBeNull();
   });
@@ -211,16 +212,16 @@ describe("学员事件驱动档案体验", () => {
   it("档案可打开独立历史更正，不会把历史输入放回普通编辑", async () => {
     const learner = demoRepository.read().students[0];
     mount(`/students/${learner.id}`);
-    fireEvent.click(await screen.findByText("更多操作"));
-    fireEvent.click(
+    { const target = await screen.findByText("更多操作"); await testAct(async () => { fireEvent.click(target); }); }
+    await testAct(async () => { fireEvent.click(
       await screen.findByRole("button", { name: "补录／更正历史资料" }),
-    );
+    ); });
     const history = await screen.findByRole("dialog", {
       name: "补录／更正历史资料",
     });
     expect(within(history).getByLabelText("投诉记录（次数）")).toBeTruthy();
-    fireEvent.click(within(history).getByRole("button", { name: "取消" }));
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    await testAct(async () => { fireEvent.click(within(history).getByRole("button", { name: "取消" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑资料" })); });
     const editor = await screen.findByRole("dialog", { name: "编辑学员资料" });
     expect(within(editor).queryByLabelText("投诉记录（次数）")).toBeNull();
     expect(within(editor).queryByLabelText("总课时")).toBeNull();
@@ -250,18 +251,18 @@ describe("学员事件驱动档案体验", () => {
       "/students",
       <StudentLessonDrawer lessonId={lesson.id} onClose={() => {}} />,
     );
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       await screen.findByRole("button", { name: "更正教材进度" }),
-    );
-    fireEvent.change(screen.getByLabelText("结束页码／章节"), {
+    ); });
+    await testAct(async () => { fireEvent.change(screen.getByLabelText("结束页码／章节"), {
       target: { value: "p.6" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存教材进度" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存教材进度" })); });
     expect(await screen.findByRole("alert")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("进度更正原因"), {
+    await testAct(async () => { fireEvent.change(screen.getByLabelText("进度更正原因"), {
       target: { value: "核对课堂记录" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存教材进度" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存教材进度" })); });
     await waitFor(() =>
       expect(
         demoRepository

@@ -163,10 +163,10 @@ export function FlexStudentCalendar({
     setHover("");
   }
   const credits = useScheduleCredits(studentId, intent.duration, slots.length);
-  function submit() {
+  async function submit() {
     try {
       if (!slots.length) return;
-      const result = act({
+      const result = await act({
         type: "lesson.schedule",
         plannedUnits: credits.units,
         schedulingMode: "flex",

@@ -1,4 +1,5 @@
-import { payrollBreakdown, formatStudentProgress } from "@crazytalk/shared";
+import { businessMode, businessRequest, businessAccountId } from "@crazytalk/shared/react";
+import { accountPasswordSchema, payrollBreakdown, formatStudentProgress } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -268,7 +269,7 @@ export function CloseLesson({
   ) => void;
 }) {
   const [draft, setDraft] = useState(() => {
-    const stored = readDraft(lesson.id);
+    const stored = readDraft(businessMode() ? businessAccountId() + "-" + lesson.id : lesson.id);
     return {
       material:
         stored?.material ||
@@ -295,7 +296,7 @@ export function CloseLesson({
     : 0;
   useEffect(() => {
     const timer = setTimeout(() => {
-      writeString(`ct-teacher-draft-${lesson.id}`, JSON.stringify(draft));
+      writeString(`ct-teacher-draft-${businessMode() ? businessAccountId() + "-" : ""}${lesson.id}`, JSON.stringify(draft));
       setSaved(true);
     }, 500);
     return () => clearTimeout(timer);
@@ -309,9 +310,10 @@ export function CloseLesson({
     setError("");
   };
   const expired = existing && existing.date < addDays(DEMO_TODAY, -1);
-  function submit() {
+  async function submit() {
     if(!screenshot){setError(language==="en"?"Upload the ending page screenshot":"请上传本节教材结束页截图");return;}
-    onSave({
+    try {
+    await onSave({
       lessonId: lesson.id,
       studentId: lesson.studentId,
       teacherId: lesson.teacherId,
@@ -323,6 +325,7 @@ export function CloseLesson({
       comment: draft.comment,
       suggestedLevel: draft.level,
     });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "提交失败"); }
   }
   return (
     <>
@@ -467,7 +470,7 @@ export function Availability({
   lessons: Lesson[];
   leaves: ReturnType<typeof useDemo>["data"]["leaves"];
   t: (key: TextKey) => string;
-  run: (command: Command, message: string) => boolean;
+  run: (command: Command, message: string) => boolean | Promise<boolean>;
   language: Language;
 }) {
   const [tab, setTab] = useState("availability");
@@ -500,9 +503,9 @@ export function Availability({
       `${l.date}T${l.time}` >= leaveStart &&
       `${l.date}T${l.time}` <= leaveEnd,
   );
-  function persistAvailability() {
+  async function persistAvailability() {
     if (
-      run(
+      await run(
         {
           type: "teacher.save",
           teacher: {
@@ -528,13 +531,13 @@ export function Availability({
     if (affected.length) setReviewOpen(true);
     else persistAvailability();
   }
-  function request() {
+  async function request() {
     if (!reason.trim() || leaveEnd <= leaveStart) {
       setError(t("leaveRequired"));
       return;
     }
     if (
-      run(
+      await run(
         {
           type: "leave.request",
           leave: {
@@ -900,7 +903,6 @@ export function PayContent({
           <p className="teacher-inline-hint">{pay.deductions ? t("historicalDeduction") : t("noDeduction")}</p>
         )}
       </section>
-      <p className="teacher-inline-hint">{t("payExample")}</p>
     </>
   );
 }
@@ -925,8 +927,8 @@ export function Account({
   return (
     <>
       <div className="teacher-student-hero">
-        <Avatar name="Carol" size={64} />
-        <h1>Carol</h1>
+        <Avatar name={teacher.name} size={64} />
+        <h1>{teacher.name}</h1>
         <p>{teacher.so} · TEFL</p>
       </div>
       <section className="teacher-card">
@@ -983,15 +985,16 @@ export function Account({
             </Button>
             <Button
               variant="primary"
-              onClick={() => {
-                if (!current || next.length < 8) {
+              onClick={async () => {
+                if (!current || !accountPasswordSchema.safeParse(next).success) {
                   setError(t("passwordRequired"));
                   return;
                 }
+                if (businessMode()) { try { await businessRequest("/password", "POST", { current, next }); } catch (cause) { setError(cause instanceof Error ? cause.message : "更新失败"); return; } }
                 setPasswordOpen(false);
                 setCurrent("");
                 setNext("");
-                toast(t("passwordSaved"));
+                toast(businessMode() ? (t("save") === "保存" ? "密码已修改" : "Password updated") : t("passwordSaved"));
               }}
             >
               {t("save")}

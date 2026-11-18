@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -67,11 +68,11 @@ function fixture() {
   return { data, day, lesson };
 }
 describe("独立验收：老师考勤", () => {
-  it("待上课课程即使残留实际时间也不展示，日历与列表一致", () => {
+  it("待上课课程即使残留实际时间也不展示，日历与列表一致", async () => {
     fixture();
     mount(<TeacherAttendance teacherId="t1" />);
     expect(within(screen.getByRole("table")).getAllByText("—")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("tab", { name: "列表" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "列表" })); });
     const row = within(screen.getByRole("table")).getByText("待上课").closest("tr")!;
     expect(within(row).getAllByText("—")).toHaveLength(2);
   });
@@ -97,12 +98,12 @@ describe("独立验收：老师考勤", () => {
       "待核实 1 次",
     ]);
   });
-  it("日期联动详情、日历和列表一致，并支持跨月与返回本月", () => {
+  it("日期联动详情、日历和列表一致，并支持跨月与返回本月", async () => {
     const { day } = fixture();
     mount(<TeacherAttendance teacherId="t1" />);
     const dateButton = screen.getByRole("button", { name: `查看${day}考勤` });
     expect(dateButton.textContent).toContain("有异常");
-    fireEvent.click(dateButton);
+    await testAct(async () => { fireEvent.click(dateButton); });
     expect(dateButton.getAttribute("aria-pressed")).toBe("true");
     expect(screen.getAllByRole("row")).toHaveLength(5);
     const detail = screen.getByRole("table");
@@ -110,15 +111,15 @@ describe("独立验收：老师考勤", () => {
     expect(within(detail).getByText("早退")).toBeTruthy();
     expect(within(detail).getAllByText("未获取")).toHaveLength(2);
     expect(within(detail).getAllByText("10:25").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("tab", { name: "列表" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "列表" })); });
     expect(screen.getAllByRole("row")).toHaveLength(6);
     expect(within(screen.getByRole("table")).getByText("待上课")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "考勤上个月" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "考勤上个月" })); });
     expect(screen.getAllByRole("row")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "本月" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "本月" })); });
     expect(screen.getAllByRole("row")).toHaveLength(6);
   });
-  it("未同步、缺少实际时间、未来课程不会误报正常；跨午夜显示次日结束", () => {
+  it("未同步、缺少实际时间、未来课程不会误报正常；跨午夜显示次日结束", async () => {
     const { data, lesson, day } = fixture();
     expect(attendanceTags(lesson("missing", { teacherOut: "" }))).toEqual([
       "待核实",
@@ -136,7 +137,7 @@ describe("独立验收：老师考勤", () => {
     ).toEqual(["待上课"]);
     data.lessons = [lesson("midnight", { time: "23:50", duration: 25 })];
     mount(<TeacherAttendance teacherId="t1" />);
-    fireEvent.click(screen.getByRole("button", { name: `查看${day}考勤` }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: `查看${day}考勤` })); });
     expect(screen.getByText("次日 00:15")).toBeTruthy();
   });
   it("schema拒绝矛盾、重复结果，接受迟到与早退；更正考勤清除旧结果而纯扣课更正保留", () => {
@@ -175,7 +176,7 @@ describe("独立验收：老师考勤", () => {
   });
 });
 describe("独立验收：老师反馈", () => {
-  it("只展示当前老师反馈，筛选评价及处理状态，保留详情入口", () => {
+  it("只展示当前老师反馈，筛选评价及处理状态，保留详情入口", async () => {
     const data = demoRepository.read();
     const base = data.feedback[0];
     data.feedback = [
@@ -207,18 +208,18 @@ describe("独立验收：老师反馈", () => {
         .getAllByRole("link", { name: "查看详情" })
         .map((e) => e.getAttribute("href")),
     ).toEqual(["/feedback/b", "/feedback/a"]);
-    fireEvent.click(screen.getByRole("combobox", { name: "评价类型筛选" }));
-    fireEvent.click(screen.getByRole("option", { name: "差评" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("combobox", { name: "评价类型筛选" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: "差评" })); });
     expect(screen.getAllByRole("row")).toHaveLength(2);
     expect(screen.getByText("需跟进互动")).toBeTruthy();
-    fireEvent.click(screen.getByRole("combobox", { name: "处理状态筛选" }));
-    fireEvent.click(screen.getByRole("option", { name: "已完成" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("combobox", { name: "处理状态筛选" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: "已完成" })); });
     expect(screen.getByText("没有符合条件的反馈记录")).toBeTruthy();
   });
 });
 
 describe("独立验收：入口与日期筛选", () => {
-  it("老师详情考勤在反馈之前，两个Tab均能进入", () => {
+  it("老师详情考勤在反馈之前，两个Tab均能进入", async () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <DemoProvider>
@@ -235,12 +236,12 @@ describe("独立验收：入口与日期筛选", () => {
     const tabs = screen.getAllByRole("tab").map((e) => e.textContent);
     expect(tabs.indexOf("考勤")).toBeLessThan(tabs.indexOf("反馈"));
     expect(screen.queryByRole("tab", { name: "反馈与考勤" })).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "考勤" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "考勤" })); });
     expect(screen.getByRole("button", { name: "考勤上个月" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "反馈" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "反馈" })); });
     expect(screen.getByRole("columnheader", { name: "反馈日期" })).toBeTruthy();
   });
-  it("反馈日期范围包含起止当天，反向范围给出错误提示", () => {
+  it("反馈日期范围包含起止当天，反向范围给出错误提示", async () => {
     const data = demoRepository.read();
     const base = data.feedback[0];
     data.feedback = [
@@ -249,13 +250,13 @@ describe("独立验收：入口与日期筛选", () => {
     ];
     mount(<TeacherFeedback teacherId="t1" />);
     const inputs = screen.getAllByRole("textbox");
-    fireEvent.change(inputs[0], { target: { value: "2026-10-10" } });
-    fireEvent.change(inputs[1], { target: { value: "2026-10-10" } });
+    await testAct(async () => { fireEvent.change(inputs[0], { target: { value: "2026-10-10" } }); });
+    await testAct(async () => { fireEvent.change(inputs[1], { target: { value: "2026-10-10" } }); });
     expect(screen.getAllByRole("row")).toHaveLength(2);
     expect(
       screen.getByRole("link", { name: "查看详情" }).getAttribute("href"),
     ).toBe("/feedback/date-a");
-    fireEvent.change(inputs[0], { target: { value: "2026-10-12" } });
+    await testAct(async () => { fireEvent.change(inputs[0], { target: { value: "2026-10-12" } }); });
     expect(screen.getByRole("alert").textContent).toBe(
       "结束日期不能早于开始日期",
     );

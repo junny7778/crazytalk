@@ -1,7 +1,8 @@
+import { migratePackageBalances, refreshPackageBalances } from "./packageBalances";
 import { splitRosterName } from "./studentNames";
-import { assignSampleTeams } from "./organization";
+import { assignSampleTeams, migrateTeamCatalog, migrateProjectChannels } from "./organization";
 import { unifyRoster } from "./unifyRoster";
-import { withRosterActivity } from "./rosterActivity";
+import { withRosterActivity, withTeacherNoShowSamples } from "./rosterActivity";
 import LZString from "lz-string";
 import { initializePayroll } from "./payroll";
 import { autoSettleLessons } from "./autoLessonSettlement";
@@ -25,10 +26,66 @@ const storedFeedbackPresenceSchema = z.object({
   feedback: z.array(z.object({ id: z.string() }).passthrough()),
 });
 let memory: DemoState | undefined;
-function serialize(data: DemoState) {
-  const json=JSON.stringify(data);
-  return json.length>1000000 ? "lz:"+LZString.compressToUTF16(json) : json;
+function writeSnapshot(data: DemoState) {
+  const json = JSON.stringify(data);
+  try {
+    localStorage.setItem(storageKey, json);
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "QuotaExceededError")
+      throw error;
+    localStorage.setItem(storageKey, "lz:" + LZString.compressToUTF16(json));
+  }
 }
+const previousCopy = new Map([
+  ["示例待办，可在学生档案记录处理结果。", "请回访学习情况，并在学员档案记录处理结果。"],
+  ["演示课包", "期初课时"],
+  ["模拟考勤：开课满 10 分钟，老师仍未到堂，待核实。", "开课满 10 分钟，老师仍未到堂，待核实。"],
+  ["演示期初课酬（预设汇总减可追溯课酬），非真实结算凭据", "按汇总金额扣除可追溯课酬后计入期初。"],
+  ["当前Demo没有外部候课名单，需确认实际停用范围。", "外部候课名单待核实，需确认停用范围。"],
+  ["仅模拟停止本地排课；不冻结真实ClassIn或其他账号。", "已停止本地排课，外部账号权限待核实。"],
+  ["更新机构连接，密钥不保存到演示数据", "更新机构连接信息，密钥未保存"],
+]);
+
+function updateStoredCopy(data: DemoState) {
+  let changed = false;
+  function update(message: string) {
+    const next = previousCopy.get(message) ?? message;
+    changed ||= next !== message;
+    return next;
+  }
+  function updateReminder(message: string) {
+    const next = message
+      .replace(/^(剩余 -?[\d.]+ 课时，)本次演示提醒线为/, "$1提醒阈值为")
+      .replace(/^(最近 \d+ 天已确认缺席 \d+ 节，)本次演示条件为/, "$1提醒阈值为");
+    changed ||= next !== message;
+    return next;
+  }
+  for (const task of data.tasks) {
+    if (task.id === "task-demo-1") task.note = update(task.note);
+    if (task.sourceType === "reminder") task.note = updateReminder(task.note);
+  }
+  for (const credit of data.credits) {
+    if (credit.type === "期初课时") credit.note = update(credit.note);
+  }
+  for (const lesson of data.lessons) {
+    if (/^demo-teacher-no-show-[123]$/.test(lesson.id)) lesson.note = update(lesson.note);
+  }
+  for (const item of data.payroll) {
+    if (item.opening) item.opening.source = update(item.opening.source);
+    if (item.breakdownSnapshot) {
+      item.breakdownSnapshot.opening.source = update(item.breakdownSnapshot.opening.source);
+    }
+  }
+  for (const student of data.students)
+    for (const item of student.serviceStopResults ?? []) item.detail = update(item.detail);
+  for (const event of data.events) {
+    for (const item of event.serviceStopResults ?? []) item.detail = update(item.detail);
+    if (event.type === "课程连接") event.content = update(event.content);
+    if (event.type === "跟进提醒") event.content = updateReminder(event.content);
+  }
+  return changed;
+}
+
 function read(): DemoState {
   if (memory) return memory;
   if (typeof localStorage !== "undefined") {
@@ -43,10 +100,13 @@ function read(): DemoState {
           initializePayroll(memory);
           const original = storedFeedbackPresenceSchema.parse(input);
           const catalog = migrateFeedbackCatalog(memory.catalog);
-          let upgraded = catalog !== memory.catalog || payrollUpgrade;
+          const copyUpdated = updateStoredCopy(memory);
+          let upgraded = catalog !== memory.catalog || payrollUpgrade || copyUpdated;
           const teamsUpdated = assignSampleTeams(memory);
           upgraded ||= teamsUpdated;
           memory.catalog = catalog;
+          upgraded = migrateTeamCatalog(memory) || upgraded;
+          upgraded = migrateProjectChannels(memory) || upgraded;
           const noticeRecoveryKey = `${storageKey}:nancy-sync-notice-2026-11-05`;
           const noticeRestored = !localStorage.getItem(noticeRecoveryKey) && restoreLessonSyncNotice(memory);
           upgraded ||= noticeRestored;
@@ -124,8 +184,9 @@ function read(): DemoState {
             if (!localStorage.getItem(STUDENT_ID_BACKUP_KEY))
               localStorage.setItem(STUDENT_ID_BACKUP_KEY, raw);
           }
-          if (migrated.changed || upgraded) {
-            localStorage.setItem(storageKey, serialize(migrated.data));
+          const packagesMigrated = migratePackageBalances(migrated.data);
+          if (migrated.changed || upgraded || packagesMigrated) {
+            writeSnapshot(migrated.data);
             if (noticeRestored) localStorage.setItem(noticeRecoveryKey, "done");
             memory = migrated.data;
           }
@@ -139,22 +200,27 @@ function read(): DemoState {
     }
   }
   memory = migrateStudentIds(createSeed()).data;
+  migratePackageBalances(memory);
   initializePayroll(memory);
   return memory;
 }
 function save(data: DemoState) {
+  migratePackageBalances(data);
+  refreshPackageBalances(data);
   initializePayroll(data);
-  if (typeof localStorage !== "undefined")
-    localStorage.setItem(storageKey, serialize(data));
+  if (typeof localStorage !== "undefined") writeSnapshot(data);
   memory = data;
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event("crazytalk-change"));
 }
 export const demoRepository = {
   read,
-  populateRosterActivity() {
+  initializeRoster(importCommand?: Extract<Command, { type: "student.import" }>) {
     const before = read();
-    const after = withRosterActivity(unifyRoster(before));
+    const roster = importCommand
+      ? autoSettleLessons(transition(before, importCommand).data)
+      : before;
+    const after = withTeacherNoShowSamples(withRosterActivity(unifyRoster(roster)));
     if (after !== before) save(after);
   },
   settleCompletedLessons(now = Date.now()) {
@@ -208,26 +274,25 @@ export const demoRepository = {
           const s = latest.students.find((s) => s.id === now.studentId);
           if (s && now.deducted && !old.deducted) {
             const order = now.orderId ? latest.orders?.find(o => o.id === now.orderId) : undefined;
-            if (!order && !s.balanceKnown)
-              throw new Error("请先补录期初余额，再撤销扣课");
+            if (!order)
+              throw new Error("找不到原扣课套餐，无法撤销");
             const units = now.confirmedUnits;
             if (units === undefined)
               throw new Error("缺少已确认扣课数量，不能撤销余额");
-            if (order) order.balance += units; else s.balance += units;
+            order.balance += units;
             latest.credits.unshift({
               id: crypto.randomUUID(),
               studentId: s.id,
               date: DEMO_TODAY,
               type: "撤销扣课",
               units,
-              balance: order?.balance ?? s.balance,
-              orderId: order?.id, lessonId: now.id,
+              balance: order.balance,
+              orderId: order.id, lessonId: now.id,
               note: `撤销 ${now.date} ${now.time} 的确认`,
               operator: "Rita",
             });
           }
-          Object.assign(now, old);
-          now.autoSettlementPaused = true;
+          latest.lessons[latest.lessons.indexOf(now)] = { ...old, autoSettlementPaused: true };
           const p = latest.payroll.find(
             (p) =>
               p.teacherId === now.teacherId &&

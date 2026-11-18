@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -45,14 +46,17 @@ function mount(child = <TaskPage />, path = "/") {
     </QueryClientProvider>,
   );
 }
-function change(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+async function change(label: string, value: string) {
+  await testAct(async () => { fireEvent.change(screen.getByLabelText(label, { exact: true }), {
     target: { value },
-  });
+  }); });
 }
-function choose(label: string, value: string) {
-  fireEvent.click(screen.getByRole("combobox", { name: label }));
-  fireEvent.click(screen.getByRole("option", { name: value }));
+async function choose(label: string, value: string) {
+  const trigger = screen.getByRole("combobox", { name: label });
+  await testAct(async () => { trigger.focus(); fireEvent.click(trigger); });
+  const option = await screen.findByRole("option", { name: value });
+  await testAct(async () => { fireEvent.click(option); });
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
 }
 beforeEach(() => {
   localStorage.clear();
@@ -78,18 +82,18 @@ describe("学员待办简洁操作", () => {
   it("新增待办表单按需打开，期限可空，总结可空直接完成", async () => {
     mount();
     expect(screen.queryByLabelText("待办事项", { exact: true })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "新增待办" }));
-    change("待办事项", "联系本周课程");
-    fireEvent.click(screen.getByRole("button", { name: "登记待办" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "新增待办" })); });
+    await change("待办事项", "联系本周课程");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "登记待办" })); });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     const article = screen
       .getByText("联系本周课程", { exact: true })
       .closest("article");
     if (!article) throw new Error("未显示新待办");
     expect(within(article).getByText(/期限未安排/)).toBeTruthy();
-    fireEvent.click(within(article).getByRole("button", { name: "标记完成" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认完成" }));
-    fireEvent.click(screen.getByRole("button", { name: /^已完成（/ }));
+    await testAct(async () => { fireEvent.click(within(article).getByRole("button", { name: "标记完成" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认完成" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /^已完成（/ })); });
     expect(
       await screen.findByText("处理结果：已完成，未补充说明"),
     ).toBeTruthy();
@@ -113,16 +117,16 @@ describe("学员待办简洁操作", () => {
       .getByText("确认下周安排", { exact: true })
       .closest("article");
     if (!article) throw new Error("缺少待办");
-    fireEvent.click(within(article).getByRole("button", { name: "标记完成" }));
-    change("处理说明", "家长已确认");
-    fireEvent.click(screen.getByRole("button", { name: "确认完成" }));
-    fireEvent.click(screen.getByRole("button", { name: /^已完成（/ }));
+    await testAct(async () => { fireEvent.click(within(article).getByRole("button", { name: "标记完成" })); });
+    await change("处理说明", "家长已确认");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认完成" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /^已完成（/ })); });
     expect(await screen.findByText("处理结果：家长已确认")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "标记完成" })).toBeNull();
     expect(screen.getByText("确认下周安排", { exact: true })).toBeTruthy();
   });
 
-  it("老师异动自动带入来源和课程，展开后可打开实际课程", () => {
+  it("老师异动自动带入来源和课程，展开后可打开实际课程", async () => {
     const data = demoRepository.read();
     demoRepository.execute({
       type: "teacher.leave",
@@ -134,8 +138,8 @@ describe("学员待办简洁操作", () => {
     });
     mount();
     expect(screen.getByText("来源：老师异动", { exact: true })).toBeTruthy();
-    fireEvent.click(screen.getByText(/关联 .* 节课程/));
-    fireEvent.click(screen.getAllByRole("button", { name: "去处理" })[0]);
+    await testAct(async () => { fireEvent.click(screen.getByText(/关联 .* 节课程/)); });
+    await testAct(async () => { fireEvent.click(screen.getAllByRole("button", { name: "去处理" })[0]); });
     const lessonId = openLesson.mock.calls[0][0];
     expect(
       demoRepository
@@ -147,20 +151,20 @@ describe("学员待办简洁操作", () => {
     ).toBe(true);
   });
 
-  it("空状态隐藏辅助筛选和演示工具，表单取消不写入记录", () => {
+  it("空状态隐藏辅助筛选和演示工具，表单取消不写入记录", async () => {
     demoRepository.read().tasks = [];
     mount();
     expect(screen.getByText("暂无待处理事项")).toBeTruthy();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByText("演示提醒")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "新增待办" }));
-    change("待办事项", "未保存的事项");
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "新增待办" })); });
+    await change("待办事项", "未保存的事项");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
     expect(demoRepository.read().tasks).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "新增待办" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "新增待办" })); });
     expect(screen.getByLabelText("待办事项").getAttribute("value")).toBe("");
   });
-  it("待处理按期限排序，筛选无结果可清除，取消完成不改状态", () => {
+  it("待处理按期限排序，筛选无结果可清除，取消完成不改状态", async () => {
     const data = demoRepository.read();
     data.tasks = [];
     for (const [title, dueDate, owner] of [
@@ -184,12 +188,12 @@ describe("学员待办简洁操作", () => {
       ),
     ).toEqual(["最早逾期", "较晚逾期", "未来任务", "无期限"]);
     expect(screen.getAllByText("已逾期")).toHaveLength(2);
-    choose("待办负责人筛选", "Rita");
-    choose("待办期限", "未安排期限");
+    await choose("待办负责人筛选", "Rita");
+    await choose("待办期限", "未安排期限");
     expect(screen.getByText("没有符合条件的事项")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "标记完成" })[0]);
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "清除筛选" })); });
+    await testAct(async () => { fireEvent.click(screen.getAllByRole("button", { name: "标记完成" })[0]); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
     expect(
       demoRepository.read().tasks.every((task) => task.status === "待处理"),
     ).toBe(true);
@@ -227,18 +231,18 @@ describe("学员待办简洁操作", () => {
     expect(
       screen.getByText("更多操作").closest("details")?.hasAttribute("open"),
     ).toBe(false);
-    fireEvent.click(screen.getByText("更多操作"));
-    fireEvent.click(screen.getByRole("button", { name: "查看操作记录" }));
+    await testAct(async () => { fireEvent.click(screen.getByText("更多操作")); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "查看操作记录" })); });
     expect(screen.getByRole("dialog", { name: "操作记录" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "关闭" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "服务跟进" })); });
     const record = screen.getByText("测试退费").closest("article");
     if (!record) throw new Error("未找到退费事件");
-    fireEvent.click(within(record).getByRole("button", { name: "查看详情" }));
+    await testAct(async () => { fireEvent.click(within(record).getByRole("button", { name: "查看详情" })); });
     expect(screen.getByRole("dialog", { name: "退费记录" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "服务停用进展" })).toBeTruthy();
   });
-  it("关联反馈提供去处理入口，但打开反馈不会自动完成待办", () => {
+  it("关联反馈提供去处理入口，但打开反馈不会自动完成待办", async () => {
     const data = demoRepository.read();
     data.tasks = [];
     const student = data.students[0];
@@ -256,7 +260,7 @@ describe("学员待办简洁操作", () => {
     task.sourceType = "feedback";
     task.sourceId = feedback.id;
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "去处理" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "去处理" })); });
     expect(openFeedback).toHaveBeenCalledWith(feedback.id);
     expect(demoRepository.read().tasks[0].status).toBe("待处理");
   });

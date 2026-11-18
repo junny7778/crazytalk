@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,7 +12,10 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
-import { demoRepository } from "../../../../packages/shared/src/repository";
+import {
+  demoRepository,
+  DEMO_STORAGE_KEY,
+} from "../../../../packages/shared/src/repository";
 import Schedule from "../pages/Schedule";
 
 function mount(path = "/schedule?teacher=t1&date=2026-11-20") {
@@ -34,6 +38,19 @@ function mount(path = "/schedule?teacher=t1&date=2026-11-20") {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
+  demoRepository.read().classInAccounts = [
+    {
+      id: "verified-test-account",
+      phone: "13800000000",
+      uid: "123456",
+      studentIds: demoRepository.read().students.map((student) => student.id),
+    },
+  ];
+  const fixture = demoRepository.read();
+  fixture.students[2].name = "排课测试学员";
+  fixture.students[2].chineseName = "排课测试学员";
+  localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(fixture));
+  demoRepository.refresh();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -49,13 +66,19 @@ afterEach(() => {
 });
 
 describe("可用时间与临时排课", () => {
-  it("学员未填写意向时不推荐老师，清空开始日期不能保存", () => {
+  it("学员未填写意向时不推荐老师，清空开始日期不能保存", async () => {
     mount("/schedule?student=s4&date=2026-11-20");
     expect(screen.queryByRole("region", { name: "推荐老师" })).toBeNull();
-    fireEvent.change(screen.getByLabelText("开始日期"), {
-      target: { value: "" },
+    await testAct(async () => {
+      fireEvent.change(screen.getByLabelText("开始日期"), {
+        target: { value: "" },
+      });
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存意向并匹配老师" }));
+    await testAct(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "保存意向并匹配老师" }),
+      );
+    });
     expect(
       screen
         .getByRole("button", { name: "保存意向并匹配老师" })
@@ -63,41 +86,60 @@ describe("可用时间与临时排课", () => {
     ).toBe(true);
     expect(screen.queryByRole("alert")).toBeNull();
   });
-  it("非常规时间经确认创建临时课，保留常规时间并记录沟通", () => {
+  it("非常规时间经确认创建临时课，保留常规时间并记录沟通", async () => {
     const before = structuredClone(
       demoRepository.read().teachers.find((t) => t.id === "t1"),
     );
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
-    fireEvent.click(screen.getByLabelText("学员"));
-    fireEvent.click(screen.getByRole("option", { name: /Lucy/ }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByLabelText("学员"));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /排课测试学员/ }));
+    });
     const dialog = screen.getByRole("dialog");
     const ui = within(dialog);
-    fireEvent.change(ui.getByLabelText("第1节上课时间"), {
-      target: { value: "19:25" },
+    await testAct(async () => {
+      fireEvent.change(ui.getByLabelText("第1节上课时间"), {
+        target: { value: "19:25" },
+      });
     });
     expect(ui.getByText(/（非常规时间）/)).toBeTruthy();
     const submit = ui.getByRole("button", { name: "确认排课" });
     expect(submit.hasAttribute("disabled")).toBe(true);
-    fireEvent.change(ui.getByLabelText("沟通备注（选填）"), {
-      target: { value: "老师已同意周五临时加课" },
+    await testAct(async () => {
+      fireEvent.change(ui.getByLabelText("沟通备注（选填）"), {
+        target: { value: "老师已同意周五临时加课" },
+      });
     });
-    fireEvent.click(
-      ui.getByRole("checkbox", { name: /已与 .*确认本节授课时间/ }),
-    );
+    await testAct(async () => {
+      fireEvent.click(
+        ui.getByRole("checkbox", { name: /已与 .*确认本节授课时间/ }),
+      );
+    });
     expect(submit.hasAttribute("disabled")).toBe(false);
-    fireEvent.click(submit);
+    await testAct(async () => {
+      fireEvent.click(submit);
+    });
     expect(screen.getByRole("dialog", { name: "排课完成" })).toBeTruthy();
-    fireEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }),
-    );
+    await testAct(async () => {
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: "关闭",
+        }),
+      );
+    });
     const data = demoRepository.read();
     const created = data.lessons.find(
       (l) =>
         l.date === "2026-11-20" &&
         l.time === "19:25" &&
         l.studentId ===
-          demoRepository.read().students.find((s) => s.name === "Lucy")?.id,
+          demoRepository.read().students.find((s) => s.name === "排课测试学员")
+            ?.id,
     );
     expect(created).toMatchObject({
       kind: "临时课",
@@ -109,21 +151,31 @@ describe("可用时间与临时排课", () => {
     expect(data.teachers.find((t) => t.id === "t1")).toEqual(before);
   });
 
-  it("更改非常规课次时间后必须重新确认", () => {
+  it("更改非常规课次时间后必须重新确认", async () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
-    fireEvent.click(screen.getByLabelText("学员"));
-    fireEvent.click(screen.getByRole("option", { name: /Lucy/ }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByLabelText("学员"));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /排课测试学员/ }));
+    });
     const ui = within(screen.getByRole("dialog"));
     const confirmation = ui.getByRole<HTMLInputElement>("checkbox", {
       name: /已与 .*确认本节授课时间/,
     });
-    fireEvent.click(confirmation);
+    await testAct(async () => {
+      fireEvent.click(confirmation);
+    });
     expect(
       ui.getByRole("button", { name: "确认排课" }).hasAttribute("disabled"),
     ).toBe(false);
-    fireEvent.change(ui.getByLabelText("第1节上课时间"), {
-      target: { value: "20:15" },
+    await testAct(async () => {
+      fireEvent.change(ui.getByLabelText("第1节上课时间"), {
+        target: { value: "20:15" },
+      });
     });
     expect(confirmation.checked).toBe(false);
     expect(
@@ -131,17 +183,27 @@ describe("可用时间与临时排课", () => {
     ).toBe(true);
   });
 
-  it("常规时间支持分钟排课，清空日期不会崩溃且不能提交", () => {
+  it("常规时间支持分钟排课，清空日期不会崩溃且不能提交", async () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
-    fireEvent.click(screen.getByLabelText("学员"));
-    fireEvent.click(screen.getByRole("option", { name: /Lucy/ }));
-    const ui = within(screen.getByRole("dialog"));
-    fireEvent.change(ui.getByLabelText("第1节上课日期"), {
-      target: { value: "2026-12-04" },
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "安排课程" }));
     });
-    fireEvent.change(ui.getByLabelText("第1节上课时间"), {
-      target: { value: "16:35" },
+    await testAct(async () => {
+      fireEvent.click(screen.getByLabelText("学员"));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /排课测试学员/ }));
+    });
+    const ui = within(screen.getByRole("dialog"));
+    await testAct(async () => {
+      fireEvent.change(ui.getByLabelText("第1节上课日期"), {
+        target: { value: "2026-12-04" },
+      });
+    });
+    await testAct(async () => {
+      fireEvent.change(ui.getByLabelText("第1节上课时间"), {
+        target: { value: "16:35" },
+      });
     });
     expect(
       ui.queryByRole("checkbox", { name: /已与 .*确认本节授课时间/ }),
@@ -149,16 +211,22 @@ describe("可用时间与临时排课", () => {
     expect(
       ui.getByRole("button", { name: "确认排课" }).hasAttribute("disabled"),
     ).toBe(false);
-    fireEvent.change(ui.getByLabelText("第1节上课日期"), {
-      target: { value: "" },
+    await testAct(async () => {
+      fireEvent.change(ui.getByLabelText("第1节上课日期"), {
+        target: { value: "" },
+      });
     });
     expect(
       ui.getByRole("button", { name: "确认排课" }).hasAttribute("disabled"),
     ).toBe(true);
-    fireEvent.change(ui.getByLabelText("第1节上课日期"), {
-      target: { value: "2026-12-04" },
+    await testAct(async () => {
+      fireEvent.change(ui.getByLabelText("第1节上课日期"), {
+        target: { value: "2026-12-04" },
+      });
     });
-    fireEvent.click(ui.getByRole("button", { name: "确认排课" }));
+    await testAct(async () => {
+      fireEvent.click(ui.getByRole("button", { name: "确认排课" }));
+    });
     expect(
       demoRepository
         .read()
@@ -167,7 +235,9 @@ describe("可用时间与临时排课", () => {
             l.time === "16:35" &&
             l.date === "2026-12-04" &&
             l.studentId ===
-              demoRepository.read().students.find((s) => s.name === "Lucy")?.id,
+              demoRepository
+                .read()
+                .students.find((s) => s.name === "排课测试学员")?.id,
         ),
     ).toBe(true);
     expect(document.querySelector(".schedule-date")?.textContent).toContain(

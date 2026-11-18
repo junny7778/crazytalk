@@ -1,4 +1,4 @@
-import { assignSampleTeams } from "./organization";
+import { assignSampleTeams, migrateTeamCatalog, migrateProjectChannels } from "./organization";
 import { initializePayroll } from "./payroll";
 import { migrateFeedbackCatalog } from "./feedbackCatalog";
 import { emptyStudentProfile } from "./model";
@@ -8,7 +8,8 @@ import {
   type Teacher,
   type Lesson,
   type AvailabilitySlot,
-  permissionGroups,
+  superAdminRole,
+  staffRoles,
   addDays,
   DEMO_TODAY,
 } from "./model";
@@ -135,6 +136,7 @@ export function createSeed(): DemoState {
     channel: ["许老师", "ToC", "黄子妈妈", "艺动"][i % 4],
     owner: i % 3 ? "Rita" : "Roma",
     phone: `1380000${String(1234 + i)}`,
+    email: "",
     status:
       i === 3 || i === 13 || i === 20
         ? "待排课"
@@ -293,7 +295,7 @@ export function createSeed(): DemoState {
         title: "回访学习情况",
         owner: students[0].owner,
         dueDate: DEMO_TODAY,
-        note: "示例待办，可在学生档案记录处理结果。",
+        note: "请回访学习情况，并在学员档案记录处理结果。",
         status: "待处理",
         result: "",
         completedAt: "",
@@ -429,7 +431,7 @@ export function createSeed(): DemoState {
       type: "期初课时",
       units: s.balance,
       balance: s.balance,
-      note: "演示课包",
+      note: "期初课时",
       operator: "Rita",
     })),
     events: [
@@ -492,61 +494,8 @@ export function createSeed(): DemoState {
     ],
     reports: [],
     roles: [
-      {
-        id: "admin",
-        name: "超级管理员",
-        description: "管理全部业务和系统设置",
-        permissions: permissionGroups.flatMap((g) => g.keys),
-        scope: "全部",
-      },
-      {
-        id: "ops",
-        name: "教务",
-        description: "学员服务、排班与课后确认",
-        permissions: [
-          "dashboard.overview",
-          "dashboard.utilization",
-          "student.view",
-          "student.create",
-          "student.edit",
-          "student.reschedule",
-          "credit.add",
-          "credit.compensate",
-          "schedule.view",
-          "schedule.create",
-          "lesson.view",
-          "lesson.confirm",
-          "lesson.correct",
-          "sync.retry",
-          "classin_account.link",
-          "feedback.view",
-          "feedback.create",
-          "feedback.process",
-          "teacher.view",
-        ],
-        scope: "K12",
-      },
-      {
-        id: "tm",
-        name: "老师管理",
-        description: "老师资料、教学质量与责任判定",
-        permissions: [
-          "dashboard.overview",
-          "teacher.view",
-          "teacher.edit",
-          "teacher.leave",
-          "teacher.offboard",
-          "availability.edit",
-          "training.edit",
-          "feedback.view",
-          "feedback.process",
-          "feedback.verdict",
-          "teacher_action.deduct",
-          "teacher_action.confirm",
-          "lesson.view",
-        ],
-        scope: "全部",
-      },
+      superAdminRole(),
+      ...staffRoles(),
       {
         id: "finance",
         name: "财务",
@@ -560,7 +509,7 @@ export function createSeed(): DemoState {
           "pay_rate.edit",
           "teacher.view",
         ],
-        scope: "全部",
+        scope: "本组",
       },
     ],
     accounts: [
@@ -577,7 +526,7 @@ export function createSeed(): DemoState {
         name: "Rita",
         phone: "13800001234",
         roleId: "ops",
-        scope: "K12",
+        scope: "本组",
         enabled: true,
       },
       {
@@ -585,7 +534,7 @@ export function createSeed(): DemoState {
         name: "Roma",
         phone: "13900005678",
         roleId: "ops",
-        scope: "14",
+        scope: "本组",
         enabled: true,
       },
       {
@@ -593,7 +542,7 @@ export function createSeed(): DemoState {
         name: "Tina",
         phone: "13700009012",
         roleId: "tm",
-        scope: "全部",
+        scope: "本组",
         enabled: true,
       },
     ],
@@ -723,10 +672,12 @@ export function createSeed(): DemoState {
   initializePayroll(seed);
   for (const payroll of seed.payroll) {
     if (payroll.status === "待确认" && payroll.opening) {
-      payroll.opening.source = "演示期初课酬（预设汇总减可追溯课酬），非真实结算凭据";
+      payroll.opening.source = "按汇总金额扣除可追溯课酬后计入期初。";
     }
   }
   assignSampleTeams(seed);
+  migrateTeamCatalog(seed);
+  migrateProjectChannels(seed);
   return seed;
 }
 

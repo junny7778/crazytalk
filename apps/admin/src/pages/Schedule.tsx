@@ -1,3 +1,4 @@
+import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import CourseSyncLink from "../components/CourseSyncLink";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../components/DataTransferButton";
@@ -73,7 +74,7 @@ export default function Schedule() {
   const view = params.get("view") === "day" ? "day" : "week";
   const base = params.get("date") || DEMO_TODAY;
   const weekStart = monday(base);
-  const [selectedTeacher, setTeacher] = useState(params.get("teacher") || "t1");
+  const [selectedTeacher, setTeacher] = useState(params.get("teacher") || (businessMode() ? data.teachers[0]?.id || "" : "t1"));
   const [panel, setPanel] = useState(
     params.get("student") ? "pending" : "teachers",
   );
@@ -107,7 +108,7 @@ export default function Schedule() {
   const [error, setError] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState(DEMO_TODAY);
   const [rescheduleTime, setRescheduleTime] = useState("19:00");
-  const [rescheduleTeacher, setRescheduleTeacher] = useState("t1");
+  const [rescheduleTeacher, setRescheduleTeacher] = useState((businessMode() ? data.teachers[0]?.id || "" : "t1"));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [calendarNode, setCalendarNode] = useState<HTMLDivElement | null>(null);
@@ -301,9 +302,9 @@ export default function Schedule() {
   useEffect(() => {
     setRescheduleConfirmed(false);
   }, [rescheduleTeacher, rescheduleDate, rescheduleTime]);
-  function run(command: Command, onSuccess?: () => void) {
+  async function run(command: Command, onSuccess?: () => void) {
     try {
-      const result = act(command);
+      const result = await act(command);
       toast(result.message, { undo: result.undo });
       onSuccess?.();
     } catch (e) {
@@ -1355,9 +1356,9 @@ export default function Schedule() {
                 Boolean(movePrecheck) ||
                 (moveNeedsConfirmation && !rescheduleConfirmed)
               }
-              onClick={() => {
+              onClick={async () => {
                 if (lesson)
-                  run(
+                  await run(
                     {
                       type: "lesson.reschedule",
                       id: lesson.id,

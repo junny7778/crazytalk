@@ -1,3 +1,4 @@
+import { businessHeaders, businessMode } from "@crazytalk/shared/react";
 import { demoRepository, matchingSurveyAnswers, matchingSurveyQuestions, recommendedTags } from "@crazytalk/shared";
 import { useEffect, useState } from "react";
 import { BookOpenText, Check } from "lucide-react";
@@ -50,7 +51,7 @@ export function SurveyLink({ student }: { student: Student }) {
     try {
       const response = await fetch("/api/intake", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...businessHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({chineseName: student.chineseName}),
       });
       if (!response.ok) throw new Error("问卷服务暂不可用");
@@ -58,18 +59,18 @@ export function SurveyLink({ student }: { student: Student }) {
       if (student.surveyToken && student.surveySecret) {
         const old = await fetch("/api/intake/" + student.surveyToken, {
           method: "DELETE",
-          headers: { Authorization: "Bearer " + student.surveySecret },
+          headers: { ...businessHeaders(), Authorization: "Bearer " + student.surveySecret },
         });
         if (!old.ok && old.status !== 404) throw new Error("重新生成失败，请重试");
-        if (old.ok) {
+        if (old.ok && !businessMode()) {
           const result = await old.json();
           const current = demoRepository.read().students.find(s => s.id === student.id);
           if (result.answers && current?.surveyToken === student.surveyToken && !current.surveySubmittedAt)
-            act({type: "survey.submit", token: student.surveyToken, answers: result.answers,
+            await act({type: "survey.submit", token: student.surveyToken, answers: result.answers,
               submittedAt: result.submittedAt, nameEdited: result.nameEdited});
         }
       }
-      act({ type: "survey.issue", id: student.id, ...next });
+      await act({ type: "survey.issue", id: student.id, ...next });
       setError("");
     } catch (e) {
       setError(String(e));
@@ -230,7 +231,7 @@ function SurveyForm({ token }: { token?: string }) {
           setError("");
           try {
             const response = await fetch("/api/intake/" + token, {
-              method: "POST", headers: { "Content-Type": "application/json" },
+              method: "POST", headers: { ...businessHeaders(), "Content-Type": "application/json" },
               body: JSON.stringify({...result.data, initialName}),
             });
             if (!response.ok && response.status !== 409)

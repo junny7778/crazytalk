@@ -318,7 +318,17 @@ export default function Students() {
           />
         ),
       },
-      ...["拉群日期（充值）","套餐共用","起始教材"].map(label=>({id:label,header:label,accessorFn:(s:Student)=>rosterValues(s,data)[label] || "未填写"})),
+      {
+        id: "套餐共用", header: "套餐共用",
+        accessorFn: (s) => {
+          const shared = data.orders?.filter(pack => pack.studentIds.includes(s.id) && (pack.memberCount ?? pack.studentIds.length) > 1);
+          return shared?.length ? "共享套餐" : rosterValues(s, data)["套餐共用"] || "—";
+        },
+        cell: ({ row, getValue }) => getValue() === "共享套餐"
+          ? <Link to={`/students/${row.original.id}?tab=credits`}>共享套餐</Link>
+          : String(getValue()),
+      },
+      ...["拉群日期（充值）","起始教材"].map(label=>({id:label,header:label,accessorFn:(s:Student)=>rosterValues(s,data)[label] || "未填写"})),
       ...orderedFields.filter(f=>f.key!=="material").map(
         (field): ColumnDef<Student> => ({
           id: field.key,
@@ -593,7 +603,6 @@ export default function Students() {
           <EmptyState
             title="没有符合条件的学员"
             description="试试其他关键词，或清除当前筛选。"
-            action={<Button onClick={() => setParams({})}>清除筛选</Button>}
           />
         )}
         <ListPagination

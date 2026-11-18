@@ -19,15 +19,32 @@ it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导�
   const run = (cmd: Command) => {
     data = transition(data, cmd).data;
   };
-  const profile = { ...emptyStudentProfile(), name: "同名", owner: "Roma" };
-  run({ type: "student.create", student: profile });
+  const profile = {
+    ...emptyStudentProfile(),
+    name: "同名",
+    chineseName: "同名",
+    owner: "Roma",
+  };
+  await run({ type: "student.create", student: profile });
   const id = data.students[0].id;
-  run({ type: "student.create", student: profile });
+  await run({ type: "student.create", student: profile });
   const sibling = data.students[0].id;
   expect(id).not.toBe(sibling);
+  await run({
+    type: "student.bindClassIn",
+    id,
+    phone: "13800001111",
+    uid: "99911",
+  });
+  await run({
+    type: "student.bindClassIn",
+    id: sibling,
+    phone: "13800001111",
+    uid: "99911",
+  });
   const t = data.teachers[0],
     material = "Book";
-  run({
+  await run({
     type: "order.buy",
     id: "family",
     studentId: id,
@@ -37,7 +54,7 @@ it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导�
     kind: "新购",
     note: "",
   });
-  run({
+  await run({
     type: "lesson.schedule",
     studentId: id,
     teacherId: t.id,
@@ -64,10 +81,10 @@ it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导�
       screenshot: "data:image/png;base64,iVBORw0KGgo=",
     },
   };
-  run(report);
-  run(report);
+  await run(report);
+  await run(report);
   expect(data.orders!.find((o) => o.id === "family")?.balance).toBe(70);
-  run({
+  await run({
     type: "feedback.create",
     feedback: {
       studentId: id,
@@ -99,11 +116,11 @@ it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导�
       (l) => l.id === lesson.id,
     ),
   ).toBe(false);
-  run({
+  await run({
     type: "student.details.update",
     id,
-    expected: { name: "同名" },
-    patch: { name: "改名后" },
+    expected: { chineseName: "同名" },
+    patch: { chineseName: "改名后" },
   });
   const student = data.students.find((s) => s.id === id)!;
   const values = rosterValues(student, data);
@@ -117,7 +134,7 @@ it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导�
   );
   expect(rows[0]).toMatchObject({ name: "改名后", importStudentId: id });
   const count = data.students.length;
-  run({ type: "student.import", mode: "update", students: rows });
+  await run({ type: "student.import", mode: "update", students: rows });
   expect(data.students.length).toBe(count);
   expect(data.students.find((s) => s.id === sibling)?.name).toBe("同名");
   const edited = data.students.at(-1)!;

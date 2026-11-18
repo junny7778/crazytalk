@@ -60,6 +60,7 @@ export default function StudentRecordDrawer({
       (item) =>
         item.id === target.id &&
         (item.studentId === student.id ||
+          data.orders?.some(pack => pack.id === item.orderId && pack.studentIds.includes(student.id)) ||
           data.referrals.some(
             (relation) =>
               relation.id === item.referralId &&
@@ -78,6 +79,7 @@ export default function StudentRecordDrawer({
                 data.students.find((learner) => learner.id === item.studentId)
                   ?.name,
               ],
+              ...(item.purchaseId ? [["购课订单号", item.purchaseId] as [string, string]] : []),
               ["业务日期", item.date],
               ["课时变动", `${item.units > 0 ? "+" : ""}${item.units} 课时`],
               [
@@ -274,7 +276,7 @@ export default function StudentRecordDrawer({
                     }
                   >
                     {result.status === "本地模拟完成"
-                      ? "已处理（演示）"
+                      ? "已处理"
                       : result.status === "待确认范围"
                         ? "待核实"
                         : result.status}

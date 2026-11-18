@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id           String    @id @default(uuid())
+  login        String    @unique
+  name         String
+  passwordHash String
+  enabled      Boolean   @default(true)
+  roleId       String    @default("admin")
+  teacherId    String?
+  sessions     Session[]
+  preferences  Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Session {
+  id        String   @id
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  csrfToken String
+  expiresAt DateTime
+}
+
+model AppliedCommand {
+  undo      Json?
+  id        String   @id
+  accountId String
+  command   Json
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model BusinessSettings {
+  id   Int  @id
+  data Json
+}
+
+model Student {
+  owner       String
+  project     String
+  channel     String
+  lessons     Lesson[]
+  credits     Credit[]
+  memberships OrderMember[]
+  id          String        @id
+  position    Int
+  data        Json
+}
+
+model Teacher {
+  lessons  Lesson[]
+  id       String   @id
+  position Int
+  data     Json
+}
+
+model Lesson {
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  teacherId String
+  teacher   Teacher  @relation(fields: [teacherId], references: [id])
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  date      String
+  time      String
+  status    String
+  credits   Credit[]
+  reports   Report[]
+  id        String   @id
+  position  Int
+  data      Json
+
+  @@index([teacherId, date, time])
+  @@index([studentId, date])
+}
+
+model Feedback {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Credit {
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
+  orderId   String?
+  order     Order?  @relation(fields: [orderId], references: [id])
+  lessonId  String?
+  lesson    Lesson? @relation(fields: [lessonId], references: [id])
+  id        String  @id
+  position  Int
+  data      Json
+}
+
+model Event {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model TeacherAction {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Payroll {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Report {
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+  id       String @id
+  position Int
+  data     Json
+
+  @@index([lessonId])
+}
+
+model Role {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model TeamAccount {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Catalog {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Leave {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Referral {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Task {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model ClassInAccount {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Order {
+  lessons  Lesson[]
+  credits  Credit[]
+  members  OrderMember[]
+  id       String        @id
+  position Int
+  data     Json
+}
+
+model SlotLock {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model PayTerms {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Settlement {
+  id       String @id
+  position Int
+  data     Json
+}
+
+model Intake {
+  token            String    @id
+  secretHash       String
+  chineseName      String
+  answers          Json?
+  nameEdited       Boolean?
+  submittedAt      DateTime?
+  revokedAt        DateTime?
+  creatorAccountId String
+}
+
+model Attachment {
+  id      String @id
+  ownerId String
+  mime    String
+  size    Int
+  path    String
+}
+
+model ClassInJob {
+  id        String   @id @default(uuid())
+  lessonId  String
+  operation String
+  payload   Json
+  status    String   @default("pending")
+  attempts  Int      @default(0)
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrderMember {
+  orderId   String
+  studentId String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id])
+
+  @@id([orderId, studentId])
+}
+
+model ClassInWebhook {
+  id          String    @id
+  command     String
+  payload     Json
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  error       String?
+}
+
+model ClassInLesson {
+  lessonId   String  @id
+  courseId   String?
+  classId    String?
+  teacherUid String?
+  studentUid String?
+}

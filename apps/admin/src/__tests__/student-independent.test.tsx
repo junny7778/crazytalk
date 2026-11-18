@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { Blob as NodeBlob } from "node:buffer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,19 +43,30 @@ function mount(path = "/students") {
     </QueryClientProvider>,
   );
 }
-function change(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label, { exact: true }), {
-    target: { value },
+async function change(label: string, value: string) {
+  await testAct(async () => {
+    fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+      target: { value },
+    });
   });
 }
-function choose(label: string, option: string) {
-  fireEvent.click(screen.getByRole("combobox", { name: label }));
-  fireEvent.click(screen.getByRole("option", { name: option }));
+async function choose(label: string, option: string) {
+  const trigger = screen.getByRole("combobox", { name: label });
+  await testAct(async () => {
+    trigger.focus();
+    fireEvent.click(trigger);
+  });
+  const target = await screen.findByRole("option", { name: option });
+  await testAct(async () => {
+    fireEvent.click(target);
+  });
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
 }
 function originalProfile() {
   return {
     ...emptyStudentProfile(),
     name: "独立验收学员",
+    chineseName: "独立验收学员",
     groupName: "QA901专属学习群",
     sourceSequence: "51",
     channel: "独立渠道",
@@ -118,25 +130,29 @@ afterEach(() => {
 describe("独立学员数字化验收", () => {
   it("新建资料与历史补录分开，空手机及年龄原文保留，历史零值保存后读回", async () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "新建学员" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "新建学员" }));
+    });
     const fields: Record<string, string> = {
-      学生名字: "完整建档验收",
-      学生群名: "QA902学习群",
+      学生中文名: "完整建档验收",
       年龄: "/",
       小孩性格: "活泼",
       喜欢的老师类型: "幽默耐心",
       教材: "New Book",
       "起始单元／页码": "p.23",
     };
-    Object.entries(fields).forEach(([label, value]) => change(label, value));
+    for (const [label, value] of Object.entries(fields))
+      await change(label, value);
     const activeTeacher = demoRepository
       .read()
       .teachers.find((teacher) => teacher.status === "在职");
     if (!activeTeacher) throw new Error("缺少在职老师");
-    choose("上课老师", `${activeTeacher.name} · ${activeTeacher.so}`);
-    choose("性别", "女");
-    choose("外教上课经验", "有");
-    fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    await choose("上课老师", `${activeTeacher.name} · ${activeTeacher.so}`);
+    await choose("性别", "女");
+    await choose("外教上课经验", "有");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "新建学员" })).toBeNull(),
     );
@@ -219,14 +235,18 @@ describe("独立学员数字化验收", () => {
       demoRepository.read().lessons.filter((l) => l.studentId === student.id),
     );
     mount(`/students/${student.id}`);
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    });
     expect(screen.queryByRole("combobox", { name: "订单状态" })).toBeNull();
     expect(screen.queryByLabelText("上课老师")).toBeNull();
     expect(screen.queryByLabelText("总课时")).toBeNull();
-    change("学生群名", "更新后的原表群名");
-    change("手机号码", "");
-    change("年龄", "0");
-    fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    await change("学生中文名", "更新后的原表群名");
+    await change("手机号码", "");
+    await change("年龄", "0");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "编辑学员资料" })).toBeNull(),
     );
@@ -234,7 +254,7 @@ describe("独立学员数字化验收", () => {
       .read()
       .students.find((s) => s.id === student.id)!;
     expect(after).toMatchObject({
-      groupName: "更新后的原表群名",
+      chineseName: "更新后的原表群名",
       teacherName: student.teacherName,
       teacherId: student.teacherId,
       status: student.status,
@@ -248,7 +268,7 @@ describe("独立学员数字化验收", () => {
       demoRepository.read().lessons.filter((l) => l.studentId === student.id),
     ).toEqual(beforeLessons);
   });
-  it("完整档案分别展示原表月度/课中/换师记录和真实反馈详情入口", async () => {
+  it("完整档案展示画像和历史月度，服务记录可进入真实反馈详情", async () => {
     const student = importProfile();
     const feedback = demoRepository.read().feedback[0];
     demoRepository.execute({
@@ -271,24 +291,40 @@ describe("独立学员数字化验收", () => {
       },
     });
     mount(`/students/${student.id}`);
-    expect(screen.getByText("QA901专属学习群")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "独立验收学员", level: 1 }),
+    ).toBeTruthy();
     expect(screen.getByText("慢热")).toBeTruthy();
-    expect(screen.getAllByText("周二19:00，不规律").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("暂未排课").length).toBeGreaterThan(0);
     expect(screen.getAllByText("2*50mins").length).toBeGreaterThan(0);
-    expect(screen.getByText("历史老师A")).toBeTruthy();
-    expect(screen.getByText("历史老师B")).toBeTruthy();
-    expect(screen.getByText("历史老师C")).toBeTruthy();
-    expect(screen.getByText("7")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "课程与教材进度" }));
-    fireEvent.click(screen.getByText("历史月度记录"));
+    expect(
+      demoRepository.read().students.find((s) => s.id === student.id),
+    ).toMatchObject({
+      originalTeacher: "历史老师A",
+      firstChangedTeacher: "历史老师B",
+      secondChangedTeacher: "历史老师C",
+      legacyComplaints: "7",
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: "课程与教材进度" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByText("历史月度记录"));
+    });
     const month = screen.getByRole("row", { name: /7月（原表，年份未注明）/ });
     expect(within(month).getByText("未填写")).toBeTruthy();
     expect(within(month).getByText("0")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
+    });
     const content = screen.getByText("真实反馈关联测试", { exact: true });
     const article = content.closest("article");
     if (!article) throw new Error("反馈缺少服务记录");
-    fireEvent.click(within(article).getByRole("button", { name: "查看详情" }));
+    await testAct(async () => {
+      fireEvent.click(
+        within(article).getByRole("button", { name: "查看详情" }),
+      );
+    });
     expect(
       await screen.findByRole("dialog", { name: "反馈详情" }),
     ).toBeTruthy();
@@ -301,24 +337,34 @@ describe("独立学员数字化验收", () => {
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "保存客服处理" })).toBeNull();
     expect(screen.queryByRole("textbox", { name: "客服备注" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "前往反馈处理" }));
-    expect(
-      await screen.findByRole("combobox", { name: "客服处理进度" }),
-    ).toBeTruthy();
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "前往反馈处理" }));
+    });
+    const updateCustomer = await screen.findByRole("button", {
+      name: "更新客服处理",
+    });
+    await testAct(async () => {
+      fireEvent.click(updateCustomer);
+    });
+    expect(screen.getByRole("combobox", { name: "客服处理进度" })).toBeTruthy();
   });
   it("导入未知余额显示未核实，录入0余额必须带核实说明并产生独立流水", async () => {
     const student = importProfile();
     mount(`/students/${student.id}?tab=credits`);
     expect(screen.getAllByText("未核实").length).toBeGreaterThan(0);
-    change("初始剩余课时", "0");
-    fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
+    await change("初始剩余课时", "0");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
+    });
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(
       demoRepository.read().students.find((s) => s.id === student.id)
         ?.balanceKnown,
     ).toBe(false);
-    change("核实说明", "已核对原台账为0");
-    fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
+    await change("核实说明", "已核对原台账为0");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
+    });
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "确认录入余额" })).toBeNull(),
     );
@@ -330,19 +376,16 @@ describe("独立学员数字化验收", () => {
     ).toHaveLength(1);
     expect(screen.getByRole("cell", { name: "已核对原台账为0" })).toBeTruthy();
   });
-  it("列表按唯一 ID 搜索并按原表订单/续课筛选，未知余额不当作欠课", async () => {
+  it("列表按唯一 ID 搜索和订单状态筛选，未知余额保持未核实", async () => {
     const student = importProfile();
     mount();
-    change("搜索学员 ID、姓名或手机号", student.id);
+    await change("搜索学员 ID、姓名或手机号", student.id);
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "独立验收学员" })).toBeTruthy(),
     );
-    choose("订单状态筛选", "正常");
-    choose("是否续课筛选", "是");
+    await choose("订单状态筛选", "正常");
+    expect(screen.queryByRole("combobox", { name: "是否续课筛选" })).toBeNull();
     expect(screen.getByRole("link", { name: "独立验收学员" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "显示列" }));
-    fireEvent.click(screen.getByLabelText("剩余课时"));
-    expect(screen.getByRole("cell", { name: "未核实" })).toBeTruthy();
     expect(
       demoRepository.read().students.find((s) => s.id === student.id)
         ?.balanceKnown,
@@ -350,14 +393,16 @@ describe("独立学员数字化验收", () => {
   });
   it("教务按权限使用资料功能，导入和导出入口不越权显示", async () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "测试切换教务" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "测试切换教务" }));
+    });
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "导入数据" })).toBeNull(),
     );
     expect(screen.queryByRole("button", { name: "导出数据" })).toBeNull();
     expect(screen.getByRole("button", { name: "新建学员" })).toBeTruthy();
   });
-  it("实际导出文件含27列原表及完整月度明细，保留未知年份、0和其他月份", async () => {
+  it("实际导出47列客服原表，保留学员ID、零课时和年龄原文", async () => {
     const student = importProfile();
     demoRepository.execute({
       type: "student.history.update",
@@ -394,48 +439,59 @@ describe("独立学员数字化验收", () => {
     );
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     mount("/students?q=QA901");
-    fireEvent.click(screen.getByRole("button", { name: "导出数据" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "导出数据" }));
+    });
     await waitFor(() => expect(exported).toBeDefined());
     const { Workbook } = await import("exceljs");
     const book = new Workbook();
     await book.xlsx.load(await exported!.arrayBuffer());
-    expect(book.worksheets).toHaveLength(3);
-    expect(book.worksheets[2].name).toBe("当前课程与服务统计");
-    expect(book.worksheets[2].getRow(1).values).toContain("历史统计起算");
-    expect(book.worksheets[0].columnCount).toBe(27);
-    expect(book.worksheets[0].rowCount).toBe(2);
-    expect(book.worksheets[0].getRow(2).getCell(6).value).toBe("独立验收学员");
-    expect(book.worksheets[0].getRow(2).getCell(8).value).toBe(0);
-    expect(book.worksheets[0].getRow(2).getCell(16).value).toBe("/");
-    const values = book.worksheets[1].getSheetValues().flat().filter(Boolean);
-    expect(values).toContain("7月（原表，年份未注明）");
-    expect(values).toContain("2026-11");
-    expect(values).toContain("新增月度记录");
-    expect(book.worksheets[1].rowCount).toBe(3);
-    expect(book.worksheets[1].getRow(2).getCell(4).value).toBe("");
-    expect(book.worksheets[1].getRow(2).getCell(5).value).toBe(0);
-    expect(book.worksheets[1].getRow(3).getCell(5).value).toBe(0);
+    expect(book.worksheets).toHaveLength(1);
+    const sheet = book.worksheets[0];
+    expect(sheet.columnCount).toBe(47);
+    expect(sheet.rowCount).toBe(2);
+    const headers = sheet.getRow(1).values as string[];
+    const cell = (name: string) =>
+      sheet.getRow(2).getCell(headers.indexOf(name)).value;
+    expect(cell("学员ID")).toBe(student.id);
+    expect(cell("学生中文名")).toBe("独立验收学员");
+    expect(cell("总课时")).toBe(0);
+    expect(cell("年龄")).toBe("/");
+    expect(
+      demoRepository.read().students.find((s) => s.id === student.id)
+        ?.monthlyRecords,
+    ).toHaveLength(2);
     // Keep the browser URL stub alive until the download revocation timer finishes.
     await new Promise((resolve) => setTimeout(resolve, 1100));
   });
-  it("导入学员可录入负期初余额，共享订单与历史欠额分开核对", async () => {
+  it("导入学员可录入负期初余额，续费累加到该课包", async () => {
     const student = importProfile();
     mount(`/students/${student.id}?tab=credits`);
-    change("初始剩余课时", "-2");
-    change("核实说明", "旧台账确认欠2课时");
-    fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
+    await change("初始剩余课时", "-2");
+    await change("核实说明", "旧台账确认欠2课时");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
+    });
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "确认录入余额" })).toBeNull(),
     );
     expect(
       demoRepository.read().students.find((s) => s.id === student.id),
     ).toMatchObject({ balance: -2, balanceKnown: true, totalUnits: 0 });
-    fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
-    fireEvent.click(screen.getByRole("button", { name: "加课时" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "加课时" }));
+    });
     const dialog = screen.getByRole("dialog", {
       name: "给 独立验收学员 加课时",
     });
-    fireEvent.click(within(dialog).getByRole("button",{name:"确认加 72 课时"}));
+    await testAct(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "确认加 72 课时" }),
+      );
+    });
     await waitFor(() =>
       expect(
         screen.queryByRole("dialog", { name: "给 独立验收学员 加课时" }),
@@ -443,8 +499,12 @@ describe("独立学员数字化验收", () => {
     );
     expect(
       demoRepository.read().students.find((s) => s.id === student.id),
-    ).toMatchObject({ balance: -2, totalUnits: 0 });
-    expect(demoRepository.read().orders?.[0].balance).toBe(72);
+    ).toMatchObject({ balance: 70 });
+    const packages = demoRepository
+      .read()
+      .orders?.filter((order) => order.studentIds.includes(student.id));
+    expect(packages).toHaveLength(1);
+    expect(packages?.[0]).toMatchObject({ kind: "期初余额", balance: 70 });
   });
   it("原表没有最后上课日期的在读学员不误列为两周没上课", async () => {
     const profile = { ...originalProfile(), status: "在读" as const };
@@ -464,10 +524,14 @@ describe("独立学员数字化验收", () => {
   it("非法手机号用中文提示而非校验JSON，不创建学员", async () => {
     const count = demoRepository.read().students.length;
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "新建学员" }));
-    change("学生名字", "手机号校验测试");
-    change("手机号码", "138");
-    fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "新建学员" }));
+    });
+    await change("学生中文名", "手机号校验测试");
+    await change("手机号码", "138");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    });
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("手机号需为 11 位，暂未提供可留空");
     expect(alert.textContent).not.toMatch(/\[|\{|code|path|ZodError/);
@@ -481,9 +545,13 @@ describe("独立学员数字化验收", () => {
   });
   it("无需编号也能建档，零余额直接进入加课时弹窗", async () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "新建学员" }));
-    change("学生名字", "空白编号验收");
-    fireEvent.click(screen.getByRole("button", { name: "保存并加课时" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "新建学员" }));
+    });
+    await change("学生中文名", "空白编号验收");
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存并加课时" }));
+    });
     const dialog = await screen.findByRole("dialog", {
       name: "给 空白编号验收 加课时",
     });
@@ -498,4 +566,34 @@ describe("独立学员数字化验收", () => {
       await screen.findByRole("dialog", { name: "给 空白编号验收 加课时" }),
     ).toBeTruthy();
   });
+});
+
+it("共享套餐详情标注实际使用人，学员链接打开成员档案", () => {
+  const [a, b] = demoRepository.read().students;
+  for (const id of [a.id, b.id])
+    demoRepository.execute({
+      type: "student.bindClassIn",
+      id,
+      phone: "13900001234",
+      uid: "101",
+    });
+  demoRepository.execute({
+    type: "order.buy",
+    id: "ui-family",
+    studentId: a.id,
+    studentIds: [a.id, b.id],
+    units: 72,
+    kind: "新购",
+    date: "2026-11-01",
+    note: "",
+  });
+  mount(`/students/${b.id}?tab=credits`);
+  const packageRow = within(
+    screen.getByText(/共享课时 · 2 人共用/).closest("tr")!,
+  );
+  expect(packageRow.getByText("72 课时")).toBeTruthy();
+  expect(
+    packageRow.getByRole("link", { name: a.name }).getAttribute("href"),
+  ).toBe(`/students/${a.id}`);
+  expect(screen.getAllByRole("button", { name: "加课时" })).toHaveLength(1);
 });

@@ -1,22 +1,25 @@
+import TeamGroupTree from "./TeamGroupTree";
+import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import AccountPasswordModal from "../../components/AccountPasswordModal";
 import { passwordError, setDemoPassword } from "../../lib/demoPasswords";
 import ClassInSyncManagement from "../../components/ClassInSyncManagement";
 import FeedbackCategoryTree from "./FeedbackCategoryTree";
 import DataTransferButton from "../../components/DataTransferButton";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
 import { useBlocker, useSearchParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
+  Eye,
+  EyeOff,
   ChevronRight,
   Pencil,
   Plus,
   Copy,
-  Eye,
   Save,
   ShieldCheck,
   AlertTriangle,
-  CheckCircle2,
-  KeyRound,
   Users,
   Network,
   BookOpen,
@@ -26,9 +29,11 @@ import {
 } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
+  accountPasswordHint,
   feedbackCategoryPath,
   feedbackCategoryDeletionError,
-  projectLabel, scopeLabel,
+  scopeLabel,
+  isSystemRole,
   permissionGroups,
   permissionLabels,
   type Account,
@@ -45,10 +50,14 @@ import {
   Panel,
   SearchInput,
   Tabs,
-  useToast,
 } from "@crazytalk/ui";
 import { exportCsv, useBusinessAction } from "./common";
 import "./operations.css";
+const classInConnectionSchema = z.object({
+  status: z.enum(["正常", "配置不可用", "验证失败"]),
+  sid: z.string().nullable(),
+  maskedSecret: z.string().nullable(),
+});
 const settingTabs = [
   {
     icon: Users,
@@ -99,13 +108,30 @@ const settingGroups = [
   { label: "系统管理", tabs: ["classin", "audit"] },
 ];
 export default function Settings() {
-  const { data, can, setRole } = useDemo();
+  const { data, can, accountId } = useDemo();
   const navigate = useNavigate();
   const run = useBusinessAction();
-  const toast = useToast();
   const [params, setParams] = useSearchParams();
   const allowed = settingTabs.filter((t) => can(t.permission));
   const tab = params.get("tab") || allowed[0]?.value || "accounts";
+  const isBusiness = businessMode();
+  const classInConnection = useQuery({
+    queryKey: ["classin-connection", accountId],
+    queryFn: async ({ signal }) => classInConnectionSchema.parse(
+      await businessRequest("/classin/connection", "GET", undefined, signal),
+    ),
+    enabled: isBusiness && tab === "classin" && can("classin.view"),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const connection = !isBusiness
+    ? data.connection
+    : classInConnection.isFetching
+      ? "检查中"
+      : classInConnection.isError
+        ? "验证失败"
+        : classInConnection.data?.status ?? "检查中";
+  const connected = connection === "正常";
   const [query, setQuery] = useState("");
   const roleId = params.get("role") || "";
   const [draftRole, setDraftRole] = useState<Role | null>(null);
@@ -118,6 +144,7 @@ export default function Settings() {
   const [passwordSaveError, setPasswordSaveError] = useState("");
 
   const [handover, setHandover] = useState("");
+  const [organizationType, setOrganizationType] = useState<"渠道" | "项目">("渠道");
   const [catalogType, setCatalogType] = useState<CatalogEntry["type"]>("教材");
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
   const [categoryToDelete, setCategoryToDelete] = useState<CatalogEntry | null>(
@@ -127,19 +154,15 @@ export default function Settings() {
   const [movingCategory, setMovingCategory] = useState<CatalogEntry | null>(
     null,
   );
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   function openEntry(value: CatalogEntry) {
+    setSelectedProjectIds(data.catalog.filter(p => p.type === "项目" && p.channelIds?.includes(value.id)).map(p => p.id));
     setEntry(value);
   }
   const [categoryToDisable, setCategoryToDisable] =
     useState<CatalogEntry | null>(null);
   const [rules, setRules] = useState({ ...data.rules });
   const [ruleConfirm, setRuleConfirm] = useState(false);
-  const [credential, setCredential] = useState(false);
-  const [sid, setSid] = useState("");
-  const [secret, setSecret] = useState("");
-  const [tested, setTested] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
   const [logId, setLogId] = useState("");
   const [deleteRole, setDeleteRole] = useState(false);
   const [deleteName, setDeleteName] = useState("");
@@ -176,7 +199,7 @@ export default function Settings() {
           name: "新角色",
           description: "",
           permissions: [],
-          scope: "全部",
+          scope: "本组",
         };
     openRole(copy.id);
     setDraftRole(copy);
@@ -197,25 +220,15 @@ export default function Settings() {
       keys = keys.filter((p) => !p.startsWith(module + "."));
     setDraftRole({ ...role, permissions: keys });
   }
-  function testConnection() {
-    setTesting(true);
-    setTested(false);
-    setTimeout(() => {
-      setTesting(false);
-      if (/^\d{4,}$/.test(sid) && secret.length >= 6) {
-        setTested(true);
-        toast("演示检查通过。正式连接将在接入机构后验证。", { tone: "info" });
-      } else
-        toast("请填写至少 4 位机构编号和至少 6 位密钥，再重新检查。", {
-          tone: "error",
-        });
-    }, 600);
-  }
   const categoryDeleteError = categoryToDelete
     ? feedbackCategoryDeletionError(data, categoryToDelete.id)
     : null;
   const rulesDirty = JSON.stringify(rules) !== JSON.stringify(data.rules);
   const savedAccount = data.accounts.find((item) => item.id === account?.id);
+  const hasAvailableTeams = data.catalog.some(c => c.type === "队伍" && c.enabled);
+  const accountTeamId = data.catalog.find(c => c.type === "队伍" && c.name === account?.team)?.id;
+  const hasAvailableGroups = data.catalog.some(c => c.type === "组别" && c.enabled && c.parentId === accountTeamId);
+
   const savedEntry = data.catalog.find((item) => item.id === entry?.id);
   const accountDirty =
     !!account &&
@@ -243,9 +256,9 @@ export default function Settings() {
     categoryDescendants.length > 0;
   const entryDirty =
     !!entry &&
-    (savedEntry
+    ((entry.type === "渠道" && JSON.stringify([...selectedProjectIds].sort()) !== JSON.stringify(data.catalog.filter(p => p.type === "项目" && p.channelIds?.includes(entry.id)).map(p => p.id).sort())) || (savedEntry
       ? JSON.stringify(entry) !== JSON.stringify(savedEntry)
-      : !!(entry.name || entry.detail));
+      : !!(entry.name || entry.detail)));
   const originalMove = data.catalog.find(
     (item) => item.id === movingCategory?.id,
   );
@@ -295,8 +308,7 @@ export default function Settings() {
     rulesDirty ||
     accountDirty ||
     entryDirty ||
-    moveDirty ||
-    (credential && !!(sid || secret));
+    moveDirty;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty &&
@@ -317,9 +329,6 @@ export default function Settings() {
     setCategoryConfirm(false);
     setCategoryToDelete(null);
     setMovingCategory(null);
-    setCredential(false);
-    setSecret("");
-    setSid("");
     setRoleConfirm(false);
     setRuleConfirm(false);
   }
@@ -332,18 +341,19 @@ export default function Settings() {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
-  function saveEntry() {
+  async function saveEntry() {
     if (!entry) return;
-    run({ type: "catalog.save", entry }, () => {
+    await run({ type: "catalog.save", entry, ...(entry.type === "渠道" ? {projectIds: selectedProjectIds} : {}) }, () => {
       setEntry(null);
       setCategoryConfirm(false);
       setCategoryToDisable(null);
     });
   }
+  const showCatalogType = tab !== "org" && catalogType !== "SO";
   const catalogRows = data.catalog.filter(
     (c) =>
       (tab === "org"
-        ? c.type === "项目" || c.type === "渠道"
+        ? c.type === organizationType
         : c.type === catalogType) &&
       `${
         c.type === "反馈分类"
@@ -415,7 +425,7 @@ export default function Settings() {
                       name: "",
                       phone: "",
                       roleId: "ops",
-                      scope: "全部",
+                      scope: "本组",
                       enabled: true,
                     });
                   }}
@@ -429,7 +439,7 @@ export default function Settings() {
                 <SearchInput
                   value={query}
                   onChange={setQuery}
-                  placeholder="搜索姓名或手机号"
+                  placeholder="搜索姓名或登录账号"
                 />
               </div>
               <div className="table-wrap">
@@ -437,7 +447,7 @@ export default function Settings() {
                   <thead>
                     <tr>
                       <th>姓名</th>
-                      <th>登录手机号</th>
+                      <th>登录账号</th>
                       <th>角色</th><th>数据范围</th><th>队伍</th><th>组别</th>
                       <th>负责学员</th>
                       <th>状态</th>
@@ -478,7 +488,7 @@ export default function Settings() {
                             <Button
                               size="xs"
                               variant="ghost"
-                              disabled={a.id === "u1"}
+                              disabled={businessMode() ? a.id === accountId : a.id === "u1"}
                               onClick={() => {
                                 setAccount({ ...a });
                                 setHandover("");
@@ -498,10 +508,12 @@ export default function Settings() {
             !roleId ? (
               <Panel
                 title="角色与权限"
+                description="管理团队角色，进入角色详情查看或编辑权限。"
                 action={
                   <Button
                     variant="primary"
                     size="sm"
+                    data-diagnostic-action="new-role"
                     onClick={() => createRole()}
                   >
                     <Plus size={14} />
@@ -509,9 +521,6 @@ export default function Settings() {
                   </Button>
                 }
               >
-                <p className="ops-subtitle">
-                  管理团队角色，进入角色详情查看或编辑权限。
-                </p>
                 <div className="table-wrap">
                   <table className="settings-role-list">
                     <thead>
@@ -536,7 +545,7 @@ export default function Settings() {
                             >
                               <ShieldCheck size={18} />
                               <strong>{item.name}</strong>
-                              {item.id === "admin" && (
+                              {isSystemRole(item.id) && (
                                 <Badge tone="neutral">系统角色</Badge>
                               )}
                             </button>
@@ -588,16 +597,9 @@ export default function Settings() {
                     <div className="row">
                       {!draftRole && (
                         <>
-                          <Button size="sm" onClick={() => createRole(role)}>
+                          <Button size="sm" data-diagnostic-action="copy-role" onClick={() => createRole(role)}>
                             <Copy size={14} />
                             复制角色
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => setRole(role.id, true)}
-                          >
-                            <Eye size={14} />
-                            预览角色
                           </Button>
                           {role.id !== "admin" && (
                             <Button
@@ -666,63 +668,93 @@ export default function Settings() {
                           />
                         </Field>
                       </div>
-                    ) : (
-                      <p className="muted">
-                        {role.description || "暂无角色说明"}
-                      </p>
-                    )}
+                    ) : null}
                     <div className="row between">
                       <h3>权限配置</h3>
-                      <small className="muted">
-                        {draftRole
-                          ? "修改权限后，保存时将展示变更影响。"
-                          : "当前为查看模式"}
-                      </small>
+                      {draftRole && (
+                        <small className="muted">
+                          修改权限后，保存时将展示变更影响。
+                        </small>
+                      )}
                     </div>
-                    {permissionGroups.map((group) => (
-                      <section
-                        className="settings-permission-group"
-                        key={group.name}
-                      >
-                        <h3 style={{ marginBottom: 12 }}>
-                          {group.name}{" "}
-                          <small>
-                            {
-                              group.keys.filter((k) =>
-                                role.permissions.includes(k),
-                              ).length
-                            }
-                            /{group.keys.length}
-                          </small>
-                        </h3>
-                        <div className="ops-permissions">
-                          {group.keys.map((key) => (
-                            <label key={key} className="select-row" title={key}>
-                              <input
-                                type="checkbox"
-                                disabled={!draftRole || role.id === "admin"}
-                                checked={role.permissions.includes(key)}
-                                onChange={(e) =>
-                                  togglePermission(key, e.target.checked)
-                                }
-                              />
-                              {permissionLabels[key] || "其他业务操作"}
-                              {[
-                                "student.refund",
-                                "payroll.confirm",
-                                "role.manage",
-                                "classin.manage",
-                                "field.pay_amount",
-                              ].includes(key) && (
-                                <AlertTriangle size={12} className="warning" />
-                              )}
-                            </label>
-                          ))}
-                        </div>
-                      </section>
-                    ))}
+                    {permissionGroups.map((group) => {
+                      const selectedCount = group.keys.filter((key) =>
+                        role.permissions.includes(key),
+                      ).length;
+                      const allSelected = selectedCount === group.keys.length;
+                      return (
+                        <section
+                          className="settings-permission-group"
+                          key={group.name}
+                        >
+                          <h3 className="settings-permission-heading">
+                            {group.name}{" "}
+                            <small>
+                              {selectedCount}/{group.keys.length}
+                            </small>
+                          </h3>
+                          <div className="ops-permissions">
+                            {draftRole && role.id !== "admin" && (
+                              <label className="select-row">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`${group.name}全部权限`}
+                                  checked={allSelected}
+                                  ref={(input) => {
+                                    if (input) {
+                                      input.indeterminate =
+                                        selectedCount > 0 && !allSelected;
+                                    }
+                                  }}
+                                  onChange={(event) => {
+                                    const permissions = event.target.checked
+                                      ? [
+                                          ...new Set([
+                                            ...role.permissions,
+                                            ...group.keys,
+                                          ]),
+                                        ]
+                                      : role.permissions.filter(
+                                          (key) => !group.keys.includes(key),
+                                        );
+                                    setDraftRole({ ...role, permissions });
+                                  }}
+                                />
+                                全部
+                              </label>
+                            )}
+                            {group.keys.map((key) => (
+                              <label
+                                key={key}
+                                className="select-row"
+                                title={key}
+                              >
+                                <input
+                                  type="checkbox"
+                                  disabled={!draftRole || role.id === "admin"}
+                                  checked={role.permissions.includes(key)}
+                                  onChange={(e) =>
+                                    togglePermission(key, e.target.checked)
+                                  }
+                                />
+                                {permissionLabels[key] || "其他业务操作"}
+                                {[
+                                  "student.refund",
+                                  "payroll.confirm",
+                                  "role.manage",
+                                  "classin.manage",
+                                  "field.pay_amount",
+                                ].includes(key) && (
+                                  <AlertTriangle size={12} className="warning" />
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })}
 
-                    {role.id !== "admin" && (
+                    {(draftRole || !isSystemRole(role.id)) && (
                       <div className="row between settings-role-footer">
                         {!draftRole ? (
                           <Button
@@ -756,6 +788,7 @@ export default function Settings() {
                               <Button
                                 variant="primary"
                                 disabled={!roleDirty || !role.name.trim()}
+                                data-diagnostic-action="save-role"
                                 onClick={() => setRoleConfirm(true)}
                               >
                                 <Save size={15} />
@@ -773,15 +806,17 @@ export default function Settings() {
               <Panel>
                 <EmptyState
                   title="角色不存在或已删除"
-                  action={
-                    <Button onClick={() => openRole("")}>返回角色列表</Button>
-                  }
                 />
               </Panel>
             )
           ) : tab === "org" || tab === "basics" ? (
             <Panel
               title={tab === "org" ? "项目与渠道" : "基础资料"}
+              description={
+                tab === "org" || catalogType !== "反馈分类"
+                  ? "已使用的资料保留历史记录，不直接删除。停用后不再提供给新业务选择。"
+                  : undefined
+              }
               action={
                 <Button
                   variant="primary"
@@ -789,7 +824,7 @@ export default function Settings() {
                   onClick={() =>
                     openEntry({
                       id: `c${Date.now()}`,
-                      type: tab === "org" ? "渠道" : catalogType,
+                      type: tab === "org" ? organizationType : catalogType,
                       ...(tab === "basics" && catalogType === "反馈分类"
                         ? { parentId: "" }
                         : {}),
@@ -801,23 +836,26 @@ export default function Settings() {
                 >
                   <Plus size={14} />
                   {tab === "org"
-                    ? "新建项目 / 渠道"
+                    ? `新建${organizationType}`
                     : catalogType === "反馈分类"
                       ? "新增一级分类"
                       : "新增"}
                 </Button>
               }
             >
+              {tab === "org" && <Tabs value={organizationType} onChange={value => {
+                if (value === "渠道" || value === "项目") { setOrganizationType(value); setQuery(""); }
+              }} items={[{value:"渠道",label:"渠道"},{value:"项目",label:"项目"}]}/>}
               {tab === "basics" && (
                 <Tabs
                   value={catalogType}
                   onChange={(v) => {
-                    if (v === "教材" || v === "反馈分类" || v === "SO")
+                    if (v === "教材" || v === "反馈分类" || v === "SO" || v === "队伍")
                       setCatalogType(v);
                   }}
-                  items={["教材", "反馈分类", "SO"].map((v) => ({
+                  items={["教材", "反馈分类", "SO", "队伍"].map((v) => ({
                     value: v,
-                    label: v,
+                    label: v === "队伍" ? "队伍与组别" : v,
                   }))}
                 />
               )}
@@ -828,7 +866,12 @@ export default function Settings() {
                   placeholder="搜索名称"
                 />
               </div>
-              {tab === "basics" && catalogType === "反馈分类" ? (
+              {tab === "basics" && catalogType === "队伍" ? (
+                <TeamGroupTree catalog={data.catalog} query={query}
+                  onEdit={value => openEntry({...value})}
+                  onAdd={team => openEntry({id: `c${Date.now()}`, type: "组别", parentId: team.id, name: "", detail: "", enabled: true})}
+                />
+              ) : tab === "basics" && catalogType === "反馈分类" ? (
                 <FeedbackCategoryTree
                   catalog={data.catalog}
                   query={query}
@@ -844,17 +887,19 @@ export default function Settings() {
                     })
                   }
                   onMove={(value) => setMovingCategory({ ...value })}
-                  onToggle={(value) => {
+                  onToggle={async (value) => {
                     if (value.enabled)
                       setCategoryToDisable({ ...value, enabled: false });
                     else
-                      run({
+                      await run({
                         type: "catalog.save",
                         entry: { ...value, enabled: true },
                       });
                   }}
                   onDelete={(value) => setCategoryToDelete(value)}
                 />
+              ) : !catalogRows.length ? (
+                <EmptyState title="没有符合条件的资料" />
               ) : (
                 <>
                   <div className="table-wrap">
@@ -862,8 +907,8 @@ export default function Settings() {
                       <thead>
                         <tr>
                           <th>名称</th>
-                          <th>类型</th>
-                          {tab === "org" && <><th>所属渠道</th><th>月应上课数</th></>}
+                          {showCatalogType && <th>类型</th>}
+                          {tab === "org" && <><th>{organizationType === "渠道" ? "合作项目" : "合作渠道"}</th>{organizationType === "项目" && <th>月应上课数</th>}</>}
                           <th>说明</th>
                           <th>状态</th>
                           <th>操作</th>
@@ -875,8 +920,8 @@ export default function Settings() {
                             <td>
                               <strong>{c.name}</strong>
                             </td>
-                            <td>{c.type}</td>
-                            {tab === "org" && <><td>{c.type === "项目" ? data.catalog.find(channel=>channel.id===c.parentId)?.name || "待补录" : "—"}</td><td>{c.type==="项目" ? c.monthlyLessons ?? "待补录" : "—"}</td></>}
+                            {showCatalogType && <td>{c.type}</td>}
+                            {tab === "org" && <><td>{c.type === "项目" ? data.catalog.filter(channel=>c.channelIds?.includes(channel.id)).map(channel=>channel.name).join("、") || "暂无合作渠道" : data.catalog.filter(p => p.type === "项目" && p.channelIds?.includes(c.id)).map(p => p.name).join("、") || "暂无合作项目"}</td>{organizationType === "项目" && <td>{c.monthlyLessons ?? "待补录"}</td>}</>}
                             <td>{c.detail || "—"}</td>
                             <td>
                               <Badge tone={c.enabled ? "success" : "neutral"}>
@@ -894,8 +939,8 @@ export default function Settings() {
                                 </Button>
                                 <Button
                                   size="xs"
-                                  onClick={() =>
-                                    run({
+                                  onClick={async () =>
+                                    await run({
                                       type: "catalog.save",
                                       entry: { ...c, enabled: !c.enabled },
                                     })
@@ -910,20 +955,7 @@ export default function Settings() {
                       </tbody>
                     </table>
                   </div>
-                  {!catalogRows.length && (
-                    <EmptyState
-                      title="没有符合条件的资料"
-                      action={
-                        <Button onClick={() => setQuery("")}>清除搜索</Button>
-                      }
-                    />
-                  )}
                 </>
-              )}
-              {!(catalogType === "反馈分类" && tab === "basics") && (
-                <p className="ops-subtitle">
-                  已使用的资料保留历史记录，不直接删除。停用后不再提供给新业务选择。
-                </p>
               )}
             </Panel>
           ) : tab === "rules" ? (
@@ -1011,48 +1043,34 @@ export default function Settings() {
                 title="ClassIn 同步管理"
                 action={
                   <Badge
-                    tone={data.connection === "正常" ? "success" : "warning"}
+                    tone={connected ? "success" : "warning"}
                   >
-                    {data.connection}
+                    {connection}
                   </Badge>
                 }
               >
                 <div className="stack">
-                  <div className="ops-state-line">
-                    {data.connection === "正常"
+                  <div className={connected ? "ops-state-line" : undefined}>
+                    {connected
                       ? "课程连接正常"
-                      : "课程连接需要检查"}
+                      : connection === "检查中" ? "正在验证 ClassIn API" : "课程连接需要检查"}
                   </div>
                   <div className="inset">
                     <dl className="detail-pairs">
-                      <dt>机构编号</dt>
-                      <dd>已配置</dd>
-                      <dt>机构密钥</dt>
-                      <dd>•••••••••••• · 已保存</dd>
+                      <dt>SID</dt>
+                      <dd>{classInConnection.data?.sid ?? "—"}</dd>
+                      <dt>密钥</dt>
+                      <dd>{classInConnection.data?.maskedSecret ?? "—"}</dd>
                     </dl>
                   </div>
-                  {can("classin.manage") && (
-                    <div className="row">
-                      <Button
-                        onClick={() => {
-                          setSid("");
-                          setSecret("");
-                          setTested(false);
-                          setCredential(true);
-                        }}
-                      >
-                        <KeyRound size={16} />
-                        修改连接信息
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </Panel>
-              <ClassInSyncManagement />
+              <ClassInSyncManagement connected={connected} />
             </>
           ) : (
             <Panel
               title="操作日志"
+              description="日志只读，不能修改或删除。"
               action={
                 <DataTransferButton
                   direction="export"
@@ -1128,7 +1146,6 @@ export default function Settings() {
                   description="关键业务操作会自动记录在这里。"
                 />
               )}
-              <p className="ops-subtitle">日志只读，不能修改或删除。</p>
             </Panel>
           )}
         </div>
@@ -1192,7 +1209,7 @@ export default function Settings() {
                 passwordSaving ||
                 (!savedAccount && !!passwordError(initialPassword, confirmPassword)) ||
                 !account?.name.trim() ||
-                !/^1\d{10}$/.test(account.phone) ||
+                !account.phone.trim() ||
                 (!account.enabled &&
                   (data.students.some((s) => s.owner === account.name) ||
                     data.feedback.some(
@@ -1204,8 +1221,8 @@ export default function Settings() {
                 if (!account) return;
                 setPasswordSaving(true); setPasswordSaveError("");
                 try {
-                  if (!savedAccount) await setDemoPassword(account.id, initialPassword);
-                  run({ type: "account.save", account, handoverTo: handover || undefined }, () => {
+                  if (!savedAccount && !businessMode()) await setDemoPassword(account.id, initialPassword);
+                  await run({ type: "account.save", account, ...(businessMode() && !savedAccount ? { initialPassword } : {}), handoverTo: handover || undefined }, () => {
                     setAccount(null); setInitialPassword(""); setConfirmPassword("");
                   });
                 } catch (cause) { setPasswordSaveError(cause instanceof Error ? cause.message : "设置密码失败"); }
@@ -1228,9 +1245,9 @@ export default function Settings() {
                   }
                 />
               </Field>
-              <Field label="登录手机号" required>
+              <Field label="登录账号" required>
                 <input
-                  type="tel"
+                  type="text"
                   value={account.phone}
                   onChange={(e) =>
                     setAccount({ ...account, phone: e.target.value })
@@ -1239,21 +1256,16 @@ export default function Settings() {
               </Field>
             </div>
             {!savedAccount && <>
-              <Field label="初始密码" required hint="8–64 个字符，包含字母和数字">
-                <input type="password" autoComplete="new-password" value={initialPassword} onChange={e => setInitialPassword(e.target.value)} />
-              </Field>
-              <Field label="确认密码" required>
-                <input type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
-              </Field>
-              {initialPassword && confirmPassword && passwordError(initialPassword, confirmPassword) && <p role="alert">{passwordError(initialPassword, confirmPassword)}</p>}
-              <small className="muted">密码仅在本次页面会话中模拟生效，刷新后恢复演示初始密码 Demo12345。</small>
+              <AccountPasswordField label="初始密码" hint={accountPasswordHint} error={initialPassword ? passwordError(initialPassword, initialPassword) : undefined} value={initialPassword} onChange={setInitialPassword} />
+              <AccountPasswordField label="确认密码" error={confirmPassword && initialPassword !== confirmPassword ? "两次输入的密码不一致" : undefined} value={confirmPassword} onChange={setConfirmPassword} />
+              {!businessMode() && <small className="muted">密码仅在当前页面有效，刷新后恢复为初始密码 Demo12345。</small>}
             </>}
-            {passwordSaveError && <p role="alert">{passwordSaveError}</p>}
+            {passwordSaveError && <p className="danger" role="alert">{passwordSaveError}</p>}
             <Field label="角色">
               <Select
                 value={account.roleId}
                 onValueChange={(value) =>
-                  setAccount({ ...account, roleId: value })
+                  setAccount({ ...account, roleId: value, scope: value === "admin" ? "全部" : "本组" })
                 }
               >
                 {data.roles.map((r) => (
@@ -1263,13 +1275,12 @@ export default function Settings() {
                 ))}
               </Select>
             </Field>
-            <Field label="所属队伍"><Select value={account.team || ""} onValueChange={team => setAccount({...account, team, group:""})}>
-              <option value="">待分配</option>{["A队","B队"].map(t => <option key={t}>{t}</option>)}
+            <Field label="所属队伍" hint={!hasAvailableTeams ? "暂无可选队伍，请先在基础资料的「队伍与组别」中新增或启用。" : undefined}><Select disabled={!hasAvailableTeams} value={account.team || ""} onValueChange={team => setAccount({...account, team, group:""})}>
+              <option value="">待分配</option>{data.catalog.filter(c => c.type === "队伍" && (c.enabled || c.name === account.team)).map(t => <option key={t.id} value={t.name} disabled={!t.enabled}>{t.name}{!t.enabled && "（已停用）"}</option>)}
             </Select></Field>
-            <Field label="队内组别"><Select disabled={!account.team} value={account.group || ""} onValueChange={group=>setAccount({...account,group})}>
-              <option value="">待分配</option>{Array.from(new Set([...(account.team==="A队"?["一组","二组"]:["一组"]),...data.accounts.filter(a=>a.team===account.team && a.group).map(a=>a.group!),...(account.group?[account.group]:[])])).map(g=><option key={g}>{g}</option>)}
+            <Field label="队内组别" hint={account.team && !hasAvailableGroups ? "该队伍暂无可选组别，请先在基础资料中新增或启用。" : undefined}><Select disabled={!account.team || !hasAvailableGroups} value={account.group || ""} onValueChange={group=>setAccount({...account,group})}>
+              <option value="">待分配</option>{data.catalog.filter(c => c.type === "组别" && c.parentId === data.catalog.find(t => t.type === "队伍" && t.name === account.team)?.id && (c.enabled || c.name === account.group)).map(g => <option key={g.id} value={g.name} disabled={!g.enabled}>{g.name}{!g.enabled && "（已停用）"}</option>)}
             </Select></Field>
-            {account.team && <details><summary>填写其他组名</summary><Field label="组名"><input value={account.group || ""} onChange={e=>setAccount({...account,group:e.target.value})}/></Field></details>}
 
             <Field label="数据范围">
               <Select
@@ -1278,10 +1289,8 @@ export default function Settings() {
                   setAccount({ ...account, scope: value })
                 }
               >
-                {Array.from(new Set(["全部", "本人负责", "本组", "本队", account.scope])).map(s =>
-                  <option key={s} value={s}>{scopeLabel(data.catalog, s)}</option>)}
-                {data.catalog.filter(c => c.type === "项目" && c.enabled && c.parentId && account.scope !== "project:" + c.id).map(p =>
-                  <option key={p.id} value={"project:" + p.id}>{projectLabel(data.catalog, p)}</option>)}
+                {(account.roleId === "admin" ? ["全部"] : ["全部", "本组", "本队"]).map(s =>
+                  <option key={s} value={s}>{s}</option>)}
               </Select>
             </Field>
             <label className="select-row">
@@ -1355,9 +1364,9 @@ export default function Settings() {
             <Button
               variant="danger"
               disabled={!!categoryDeleteError}
-              onClick={() =>
+              onClick={async () =>
                 categoryToDelete &&
-                run(
+                await run(
                   { type: "feedback-category.delete", id: categoryToDelete.id },
                   () => setCategoryToDelete(null),
                 )
@@ -1390,11 +1399,11 @@ export default function Settings() {
             <Button onClick={() => setCategoryToDisable(null)}>取消</Button>
             <Button
               variant="danger"
-              onClick={() =>
+              onClick={async () =>
                 categoryToDisable &&
                 (entry?.id === categoryToDisable.id
                   ? saveEntry()
-                  : run(
+                  : await run(
                       { type: "catalog.save", entry: categoryToDisable },
                       () => setCategoryToDisable(null),
                     ))
@@ -1438,9 +1447,9 @@ export default function Settings() {
             <Button
               variant="primary"
               disabled={!moveDirty}
-              onClick={() =>
+              onClick={async () =>
                 movingCategory &&
-                run({ type: "catalog.save", entry: movingCategory }, () =>
+                await run({ type: "catalog.save", entry: movingCategory }, () =>
                   setMovingCategory(null),
                 )
               }
@@ -1579,7 +1588,7 @@ export default function Settings() {
             {tab === "org" && (
               <Field label="类型">
                 <Select
-                  disabled={!!savedEntry}
+                  disabled
                   value={entry.type}
                   onValueChange={(value) => {
                     if (savedEntry) return;
@@ -1587,18 +1596,12 @@ export default function Settings() {
                       setEntry({ ...entry, type: value });
                   }}
                 >
-                  <option>项目</option>
                   <option>渠道</option>
+                  <option>项目</option>
                 </Select>
               </Field>
             )}
-            {entry.type === "项目" && <>
-              <Field label="所属渠道" required><Select value={entry.parentId || ""} onValueChange={parentId => setEntry({...entry, parentId})}>
-                <option value="">请选择渠道</option>
-                {data.catalog.filter(c => c.type === "渠道" && c.enabled).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select></Field>
-              <Field label="月应上课数" required><input type="number" min={1} step={1} value={entry.monthlyLessons ?? ""} onChange={e => setEntry({...entry, monthlyLessons: e.target.value ? Number(e.target.value) : undefined})}/></Field>
-            </>}
+            {entry.type === "组别" && <Field label="所属队伍"><input readOnly value={data.catalog.find(t => t.id === entry.parentId)?.name || ""}/></Field>}
             {entry.type === "反馈分类" && (
               <div className="settings-category-context">
                 <small>上级分类</small>
@@ -1625,6 +1628,22 @@ export default function Settings() {
                 }
               />
             </Field>
+            {entry.type === "渠道" && <Field label="合作项目"><div className="settings-partner-options">
+              {data.catalog.filter(p => p.type === "项目").map(p => <label key={p.id} className="select-row">
+                <input type="checkbox" checked={selectedProjectIds.includes(p.id)} disabled={!p.enabled && !p.channelIds?.includes(entry.id)} onChange={e => setSelectedProjectIds(e.target.checked ? [...selectedProjectIds, p.id] : selectedProjectIds.filter(id => id !== p.id))}/>
+                {p.name}{!p.enabled && "（已停用）"}
+              </label>)}
+              {!data.catalog.some(p => p.type === "项目") && <small>暂无可选项目，可先保存渠道，创建项目后再关联。</small>}
+            </div></Field>}
+            {entry.type === "项目" && <>
+              <Field label="合作渠道"><div className="settings-partner-options">
+                {data.catalog.filter(c => c.type === "渠道").map(c => <label key={c.id} className="select-row">
+                  <input type="checkbox" checked={entry.channelIds?.includes(c.id) || false} disabled={!c.enabled && !entry.channelIds?.includes(c.id)} onChange={e => setEntry({...entry, channelIds: e.target.checked ? [...(entry.channelIds || []), c.id] : (entry.channelIds || []).filter(id => id !== c.id)})}/>
+                  {c.name}{!c.enabled && "（已停用）"}
+                </label>)}
+              </div></Field>
+              <Field label="月应上课数" required><input type="number" min={1} step={1} value={entry.monthlyLessons ?? ""} onChange={e => setEntry({...entry, monthlyLessons: e.target.value ? Number(e.target.value) : undefined})}/></Field>
+            </>}
             <Field
               label={
                 entry.type === "SO"
@@ -1665,9 +1684,10 @@ export default function Settings() {
             <Button onClick={() => setRoleConfirm(false)}>取消</Button>
             <Button
               variant="primary"
-              onClick={() =>
+              data-diagnostic-action="confirm-role"
+              onClick={async () =>
                 draftRole &&
-                run({ type: "role.save", role: draftRole }, () => {
+                await run({ type: "role.save", role: draftRole }, () => {
                   setRoleConfirm(false);
                   setDraftRole(null);
                 })
@@ -1714,8 +1734,8 @@ export default function Settings() {
             <Button onClick={() => setRuleConfirm(false)}>取消</Button>
             <Button
               variant="primary"
-              onClick={() =>
-                run({ type: "rules.save", rules }, () => setRuleConfirm(false))
+              onClick={async () =>
+                await run({ type: "rules.save", rules }, () => setRuleConfirm(false))
               }
             >
               确认保存
@@ -1724,105 +1744,8 @@ export default function Settings() {
         }
       >
         <p>
-          本演示保存后立即用于后续操作和列表预警，已确认的扣课记录不会重新计算。暂不支持选择未来生效日期。
+          规则保存后立即生效，适用于后续操作和列表预警。已确认的扣课记录不会重新计算。
         </p>
-      </Modal>
-      <Modal
-        open={credential}
-        onClose={() =>
-          requestClose(
-            () => {
-              setCredential(false);
-              setSecret("");
-              setSid("");
-              setTested(false);
-            },
-            !!(sid || secret),
-          )
-        }
-        title="修改 ClassIn 连接信息"
-        footer={
-          <>
-            <Button
-              onClick={() =>
-                requestClose(
-                  () => {
-                    setCredential(false);
-                    setSecret("");
-                    setSid("");
-                    setTested(false);
-                  },
-                  !!(sid || secret),
-                )
-              }
-            >
-              取消
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!tested}
-              onClick={() =>
-                run({ type: "connection.save", sid, secret }, () => {
-                  setCredential(false);
-                  setSecret("");
-                })
-              }
-            >
-              保存连接信息
-            </Button>
-          </>
-        }
-      >
-        <div className="stack">
-          <div className="notice notice-info">
-            演示只检查填写格式，不会连接真实机构，也不会保存密钥。
-          </div>
-          <Field label="机构编号（SID）" required>
-            <input
-              value={sid}
-              onChange={(e) => {
-                setSid(e.target.value);
-                setTested(false);
-              }}
-            />
-          </Field>
-          <Field
-            label="机构密钥（SECRET）"
-            required
-            hint="已保存的密钥不会显示。"
-          >
-            <div className="row">
-              <input
-                type={showSecret ? "text" : "password"}
-                value={secret}
-                autoComplete="new-password"
-                onChange={(e) => {
-                  setSecret(e.target.value);
-                  setTested(false);
-                }}
-              />
-              <Button
-                size="sm"
-                onClick={() => setShowSecret(!showSecret)}
-                aria-label="显示或隐藏密钥"
-              >
-                <Eye size={16} />
-              </Button>
-            </div>
-          </Field>
-          <div className="row">
-            <Button loading={testing} onClick={testConnection}>
-              检查连接信息
-            </Button>
-            {tested && (
-              <span className="success row">
-                <CheckCircle2 size={16} />
-                格式检查通过
-              </span>
-            )}
-          </div>
-          <small>修改后课程更新会使用新连接信息，请核对机构归属。</small>
-        </div>
       </Modal>
       <Modal
         open={!!log}
@@ -1857,8 +1780,8 @@ export default function Settings() {
                 deleteName !== role?.name ||
                 data.accounts.some((a) => a.roleId === roleId)
               }
-              onClick={() =>
-                run({ type: "role.delete", id: roleId }, () => {
+              onClick={async () =>
+                await run({ type: "role.delete", id: roleId }, () => {
                   setDeleteRole(false);
                   openRole("");
                 })
@@ -1886,5 +1809,42 @@ export default function Settings() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+
+function AccountPasswordField({
+  label,
+  hint,
+  error,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <Field label={label} required hint={hint} error={error}>
+      <div className="settings-account-password">
+        <input
+          type={visible ? "text" : "password"}
+          autoComplete="new-password"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <button
+          type="button"
+          aria-label={`${visible ? "隐藏" : "显示"}${label}`}
+          onClick={() => setVisible((current) => !current)}
+        >
+          {visible ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
+        </button>
+      </div>
+    </Field>
   );
 }

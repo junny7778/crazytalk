@@ -55,6 +55,9 @@ export function migrateStudentIds(current: DemoState) {
     data.events,
   ])
     for (const record of records) record.studentId = remap(record.studentId);
+  for (const entry of data.credits) {
+    if (entry.purchaseStudentIds) entry.purchaseStudentIds = entry.purchaseStudentIds.map(remap);
+  }
   for(const account of data.classInAccounts || [])account.studentIds=account.studentIds.map(remap);
   for(const order of data.orders || [])order.studentIds=order.studentIds.map(remap);
   for(const lock of data.slotLocks || [])lock.studentId=remap(lock.studentId);

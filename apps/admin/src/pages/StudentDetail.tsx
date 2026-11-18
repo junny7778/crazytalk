@@ -135,9 +135,6 @@ export default function StudentDetail() {
     return (
       <EmptyState
         title="没有找到这位学员"
-        action={
-          <Button onClick={() => navigate("/students")}>返回学员列表</Button>
-        }
       />
     );
   const rawTab = params.get("tab") || "profile";
@@ -156,7 +153,8 @@ export default function StudentDetail() {
       result.set("tab", next);
       return result;
     });
-  const sharedBalance=(data.orders || []).filter(o=>o.studentIds.includes(student.id)).reduce((n,o)=>n+o.balance,0);
+  const packages = (data.orders ?? []).filter(order => order.studentIds.includes(student.id));
+  const shared = packages.filter(order => (order.memberCount ?? order.studentIds.length) > 1);
   const nextLesson = data.lessons
     .filter(
       (item) =>
@@ -178,12 +176,15 @@ export default function StudentDetail() {
       (b.recordedAt || b.date).localeCompare(a.recordedAt || a.date),
     )[0];
   const fieldLabels: Record<string, string> = {
+    name: "学生中文名",
     firstLessonDate: "首次上课日期",
   };
   const displayedValue = (
     key: Parameters<typeof studentFieldValue>[1],
   ): ReactNode => {
     switch (key) {
+      case "name":
+        return student.chineseName;
       case "teacherName":
         return currentTeacher;
       case "material":
@@ -364,7 +365,7 @@ export default function StudentDetail() {
           label="剩余课时"
           title="查看课时明细"
           value={
-            sharedBalance ? `共享 ${sharedBalance} · 个人 ${student.balanceKnown ? student.balance : "待核"}` : student.balanceKnown ? `${student.balance} 课时` : "余额待核实"
+            packages.length ? `${packages.reduce((total, item) => total + item.balance, 0)} 课时${shared.length ? packages.length === 1 ? ` · ${shared[0].memberCount ?? shared[0].studentIds.length} 人共用` : " · 含共享套餐" : ""}` : student.balanceKnown ? `${student.balance} 课时` : "余额待核实"
           }
           note={
             student.orderStatus === "退款" ? (
@@ -449,6 +450,11 @@ export default function StudentDetail() {
               <Panel key={group.title} title={group.title}>
                 <Details
                   entries={group.fields
+                    .concat(
+                      group.title === "学生基本信息" && can("field.student_phone")
+                        ? [{ key: "email", label: "邮箱" }]
+                        : [],
+                    )
                     .filter(
                       (field) =>
                         field.key !== "sourceSequence" &&

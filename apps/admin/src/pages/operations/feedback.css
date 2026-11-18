@@ -398,9 +398,9 @@
   overflow: auto;
   padding: 10px 14px;
   border-radius: 8px;
-  background: var(--ct-gray-900, #252a33);
+  background: var(--ct-gray-900);
   color: white;
-  box-shadow: 0 4px 16px #0002;
+  box-shadow: 0 4px 16px var(--ct-feedback-shadow);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;

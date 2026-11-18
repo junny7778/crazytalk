@@ -5,7 +5,11 @@ import { emptyStudentProfile, studentHistorySchema } from "./model";
 import { getStudentSummary } from "./studentSummary";
 describe("事件驱动学员资料", () => {
   it("普通新建为正常待排课且已知零余额；导入未知余额不冒充零", () => {
-    const profile = { ...emptyStudentProfile(), name: "新同学" };
+    const profile = {
+      ...emptyStudentProfile(),
+      chineseName: "新同学",
+      name: "新同学",
+    };
     const made = transition(createSeed(), {
       type: "student.create",
       student: profile,
@@ -101,8 +105,8 @@ describe("事件驱动学员资料", () => {
     const updated = transition(data, {
       type: "student.details.update",
       id: s.id,
-      patch: { name: "新名字" },
-      expected: { name: s.name },
+      patch: { chineseName: "新名字" },
+      expected: { chineseName: s.chineseName },
     }).data;
     expect(getStudentSummary(updated, s.id).progress).toMatchObject({
       material: "新教材",
@@ -112,8 +116,8 @@ describe("事件驱动学员资料", () => {
       transition(updated, {
         type: "student.details.update",
         id: s.id,
-        patch: { name: "旧表单" },
-        expected: { name: s.name },
+        patch: { chineseName: "旧表单" },
+        expected: { chineseName: s.chineseName },
       }),
     ).toThrow(/已更新/);
     expect(() =>
@@ -291,7 +295,11 @@ describe("事件驱动学员资料", () => {
     });
     const created = transition(data, {
       type: "student.create",
-      student: { ...emptyStudentProfile(), name: "明确新建零基数" },
+      student: {
+        ...emptyStudentProfile(),
+        chineseName: "明确新建零基数",
+        name: "明确新建零基数",
+      },
     }).data;
     const fresh = created.students[0];
     expect(fresh.totalUnits).toBe(0);

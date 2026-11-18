@@ -56,7 +56,7 @@ export function CoursePlanEditor({
     date: string,
   ) => void;
 }) {
-  const { data, act, can, preview } = useDemo();
+  const { data, act, can, preview, accountId } = useDemo();
   const toast = useToast();
   const [studentId, setStudent] = useState(initialStudent);
   const [kind, setKind] = useState(initialKind);
@@ -83,7 +83,7 @@ export function CoursePlanEditor({
   const [calendarStart, setCalendarStart] = useState(
     slots[0]?.date || DEMO_TODAY,
   );
-  const draftKey = `crazytalk-course-plan:${initialStudent || "new"}:${initialKind}`;
+  const draftKey = `crazytalk-course-plan:${accountId || "demo"}:${initialStudent || "new"}:${initialKind}`;
   const [savedDraft, setSavedDraft] = useState(() => {
     try {
       const parsed = draftSchema.safeParse(
@@ -189,10 +189,10 @@ export function CoursePlanEditor({
     setRows(next);
   }
   const credits = useScheduleCredits(studentId, duration, ready.length);
-  function submit() {
+  async function submit() {
     try {
       if (!student) throw new Error("请选择学员");
-      const result = act({
+      const result = await act({
         type: "lesson.schedule",
         plannedUnits: credits.units,
         studentId,

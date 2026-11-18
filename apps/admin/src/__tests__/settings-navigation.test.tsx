@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { webcrypto } from "node:crypto";
 import { changeDemoPassword } from "../lib/demoPasswords";
@@ -73,12 +74,12 @@ function categoryRow(name: string) {
 }
 
 async function changeRule() {
-  fireEvent.change(
+  await testAct(async () => { fireEvent.change(
     await screen.findByRole("spinbutton", {
       name: "课时快用完（剩余课时 ≤）",
     }),
     { target: { value: "6" } },
-  );
+  ); });
 }
 
 describe("独立设置布局与导航", () => {
@@ -88,7 +89,7 @@ describe("独立设置布局与导航", () => {
     expect(screen.queryByRole("link", { name: "学员中心" })).toBeNull();
     expect(screen.queryByRole("button", { name: /搜索学员或老师/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "通知" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Rita 教务运营" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rita 超级管理员" })).toBeTruthy();
     for (const name of ["团队与权限", "业务资料", "系统管理"])
       expect(within(nav).getByRole("heading", { name })).toBeTruthy();
     expect(within(nav).queryByRole("heading", { name: "业务规则" })).toBeNull();
@@ -113,9 +114,9 @@ describe("独立设置布局与导航", () => {
   it("返回进入前的业务地址和查询参数，并保留侧栏偏好", async () => {
     localStorage.setItem("ct-sidebar", "open");
     const router = mount("/students?project=K12");
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    { const target = await screen.findByRole("button", { name: "设置" }); await testAct(async () => { fireEvent.click(target); }); }
     await screen.findByRole("navigation", { name: "设置导航" });
-    fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回工作台" })); });
     await screen.findByRole("link", { name: "学员中心" });
     expect(router.state.location.pathname + router.state.location.search).toBe(
       "/students?project=K12",
@@ -124,12 +125,12 @@ describe("独立设置布局与导航", () => {
   });
   it("直接访问设置时返回数据看板", async () => {
     const router = mount("/settings?tab=audit");
-    fireEvent.click(await screen.findByRole("button", { name: "返回工作台" }));
+    { const target = await screen.findByRole("button", { name: "返回工作台" }); await testAct(async () => { fireEvent.click(target); }); }
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
   it("页签切换支持地址与历史导航", async () => {
     const router = mount();
-    fireEvent.click(await screen.findByRole("button", { name: "操作日志" }));
+    { const target = await screen.findByRole("button", { name: "操作日志" }); await testAct(async () => { fireEvent.click(target); }); }
     expect(router.state.location.search).toBe("?tab=audit");
     expect(
       await screen.findByRole("heading", { name: "操作日志" }),
@@ -158,19 +159,19 @@ describe("独立设置布局与导航", () => {
     ).toBeNull();
     expect(save.hasAttribute("disabled")).toBe(true);
     await changeRule();
-    fireEvent.click(screen.getByRole("button", { name: "团队账号" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "团队账号" })); });
     let dialog = await screen.findByRole("dialog", { name: "有未保存的修改" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" })); });
     expect(
       screen
         .getByRole("spinbutton", { name: "课时快用完（剩余课时 ≤）" })
         .getAttribute("value"),
     ).toBe("6");
-    fireEvent.click(screen.getByRole("button", { name: "团队账号" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "团队账号" })); });
     dialog = await screen.findByRole("dialog", { name: "有未保存的修改" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" })); });
     await screen.findByRole("heading", { name: "团队账号" });
-    fireEvent.click(screen.getByRole("button", { name: "业务规则" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "业务规则" })); });
     expect(
       (await screen.findByRole("button", { name: "保存规则" })).hasAttribute(
         "disabled",
@@ -180,43 +181,43 @@ describe("独立设置布局与导航", () => {
   it("规则保存成功后可以直接返回，实际数据更新", async () => {
     mount("/settings?tab=rules");
     await changeRule();
-    fireEvent.click(screen.getByRole("button", { name: "保存规则" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存规则" })); });
     const dialog = await screen.findByRole("dialog", {
       name: "确认修改业务规则",
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认保存" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "确认保存" })); });
     await waitFor(() => expect(demoRepository.read().rules.lowBalance).toBe(6));
-    fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回工作台" })); });
     expect(screen.queryByRole("dialog", { name: "有未保存的修改" })).toBeNull();
     await screen.findByRole("link", { name: "学员中心" });
   });
   it("浏览器返回和工作台返回均拦截未保存修改", async () => {
     const router = mount("/settings");
-    fireEvent.click(await screen.findByRole("button", { name: "业务规则" }));
+    { const target = await screen.findByRole("button", { name: "业务规则" }); await testAct(async () => { fireEvent.click(target); }); }
     await changeRule();
     await act(async () => {
       await router.navigate(-1);
     });
     let dialog = await screen.findByRole("dialog", { name: "有未保存的修改" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" })); });
     expect(router.state.location.search).toBe("?tab=rules");
-    fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回工作台" })); });
     dialog = await screen.findByRole("dialog", { name: "有未保存的修改" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" })); });
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
   it("账号编辑关闭时保护输入，放弃后不写入数据", async () => {
     mount();
-    fireEvent.click(await screen.findByRole("button", { name: "新建账号" }));
+    { const target = await screen.findByRole("button", { name: "新建账号" }); await testAct(async () => { fireEvent.click(target); }); }
     const account = await screen.findByRole("dialog", { name: "新建团队账号" });
-    fireEvent.change(within(account).getByRole("textbox", { name: "姓名" }), {
+    await testAct(async () => { fireEvent.change(within(account).getByRole("textbox", { name: "姓名" }), {
       target: { value: "专项测试账号" },
-    });
-    fireEvent.click(within(account).getByRole("button", { name: "取消" }));
+    }); });
+    await testAct(async () => { fireEvent.click(within(account).getByRole("button", { name: "取消" })); });
     const dialog = await screen.findByRole("dialog", {
       name: "有未保存的修改",
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" })); });
     expect(screen.queryByRole("dialog", { name: "新建团队账号" })).toBeNull();
     expect(
       demoRepository.read().accounts.some((a) => a.name === "专项测试账号"),
@@ -229,7 +230,7 @@ describe("角色列表与详情", () => {
     const router = mount("/settings?tab=roles");
     expect(await screen.findByRole("table")).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "教务" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "教务 系统角色" })); });
     expect(router.state.location.search).toContain("role=ops");
     expect(await screen.findByRole("heading", { name: "教务" })).toBeTruthy();
     expect(
@@ -245,18 +246,18 @@ describe("角色列表与详情", () => {
   });
   it("直接访问角色详情，编辑后确认保存并回到只读状态", async () => {
     mount("/settings?tab=roles&role=ops");
-    fireEvent.click(await screen.findByRole("button", { name: "编辑权限" }));
+    { const target = await screen.findByRole("button", { name: "编辑权限" }); await testAct(async () => { fireEvent.click(target); }); }
     expect(
       screen.getByRole("button", { name: "保存权限" }).hasAttribute("disabled"),
     ).toBe(true);
-    fireEvent.change(screen.getByRole("textbox", { name: "角色名称" }), {
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "角色名称" }), {
       target: { value: "教务新名称" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存权限" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存权限" })); });
     const confirm = await screen.findByRole("dialog", {
       name: "确认修改角色权限",
     });
-    fireEvent.click(within(confirm).getByRole("button", { name: "确认修改" }));
+    await testAct(async () => { fireEvent.click(within(confirm).getByRole("button", { name: "确认修改" })); });
     await waitFor(() =>
       expect(
         demoRepository.read().roles.find((role) => role.id === "ops")?.name,
@@ -265,44 +266,44 @@ describe("角色列表与详情", () => {
     expect(
       await screen.findByRole("button", { name: "编辑权限" }),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "返回角色列表" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回角色列表" })); });
     expect(
-      await screen.findByRole("button", { name: "教务新名称" }),
+      await screen.findByRole("button", { name: "教务新名称 系统角色" }),
     ).toBeTruthy();
   });
   it("未改动的编辑可以直接返回，修改后返回保护草稿", async () => {
     mount("/settings?tab=roles&role=ops");
-    fireEvent.click(await screen.findByRole("button", { name: "编辑权限" }));
-    fireEvent.click(screen.getByRole("button", { name: "返回角色列表" }));
+    { const target = await screen.findByRole("button", { name: "编辑权限" }); await testAct(async () => { fireEvent.click(target); }); }
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回角色列表" })); });
     expect(await screen.findByRole("table")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "教务" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "教务 系统角色" })); });
     expect(screen.queryByRole("textbox", { name: "角色名称" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "编辑权限" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "说明" }), {
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑权限" })); });
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "说明" }), {
       target: { value: "修改中" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "返回角色列表" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回角色列表" })); });
     let dialog = await screen.findByRole("dialog", { name: "有未保存的修改" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" })); });
     expect(
       screen.getByRole("textbox", { name: "说明" }).getAttribute("value"),
     ).toBe("修改中");
-    fireEvent.click(screen.getByRole("button", { name: "返回角色列表" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回角色列表" })); });
     dialog = await screen.findByRole("dialog", { name: "有未保存的修改" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" })); });
     expect(await screen.findByRole("table")).toBeTruthy();
   });
   it("新建角色在详情中编辑，取消新建只需一次放弃确认", async () => {
     mount("/settings?tab=roles");
-    fireEvent.click(await screen.findByRole("button", { name: "新建角色" }));
+    { const target = await screen.findByRole("button", { name: "新建角色" }); await testAct(async () => { fireEvent.click(target); }); }
     expect(
       await screen.findByRole("textbox", { name: "角色名称" }),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "取消编辑" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消编辑" })); });
     const dialog = await screen.findByRole("dialog", {
       name: "有未保存的修改",
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "放弃修改" })); });
     expect(await screen.findByRole("table")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -312,16 +313,16 @@ describe("角色列表与详情", () => {
     expect(screen.queryByRole("button", { name: "编辑权限" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除角色" })).toBeNull();
     const count = screen
-      .getAllByRole("checkbox")
-      .filter((input) => input.getAttribute("checked") !== null).length;
-    fireEvent.click(screen.getByRole("button", { name: "复制角色" }));
+      .getAllByRole("checkbox", { checked: true })
+      .filter((input) => input.closest("label[title]")).length;
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "复制角色" })); });
     expect(
       await screen.findByRole("textbox", { name: "角色名称" }),
     ).toBeTruthy();
     expect(
       screen
-        .getAllByRole("checkbox")
-        .filter((input) => input.getAttribute("checked") !== null),
+        .getAllByRole("checkbox", { checked: true })
+        .filter((input) => input.closest("label[title]")),
     ).toHaveLength(count);
     expect(
       screen
@@ -329,35 +330,45 @@ describe("角色列表与详情", () => {
         .every((input) => !input.hasAttribute("disabled")),
     ).toBe(true);
   });
-  it("无效角色地址提供返回列表入口", async () => {
+  it("无效角色地址只显示空状态提示", async () => {
     mount("/settings?tab=roles&role=missing");
     expect(await screen.findByText("角色不存在或已删除")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "返回角色列表" }));
-    expect(await screen.findByRole("table")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "返回角色列表" })).toBeNull();
   });
 });
 
 describe("角色详情权限与删除约束", () => {
   it("新建角色保留权限依赖，保存后可从列表再次查看并删除", async () => {
     mount("/settings?tab=roles");
-    fireEvent.click(await screen.findByRole("button", { name: "新建角色" }));
-    fireEvent.change(await screen.findByRole("textbox", { name: "角色名称" }), {
+    { const target = await screen.findByRole("button", { name: "新建角色" }); await testAct(async () => { fireEvent.click(target); }); }
+    await testAct(async () => { fireEvent.change(await screen.findByRole("textbox", { name: "角色名称" }), {
       target: { value: "专项验证角色" },
-    });
-    fireEvent.click(screen.getByRole("checkbox", { name: "新建学员" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "新建学员" })); });
     expect(
       screen.getByRole("checkbox", { name: "查看学员" }).matches(":checked"),
     ).toBe(true);
-    fireEvent.click(screen.getByRole("checkbox", { name: "查看学员" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "查看学员" })); });
     expect(
       screen.getByRole("checkbox", { name: "新建学员" }).matches(":checked"),
     ).toBe(false);
-    fireEvent.click(screen.getByRole("checkbox", { name: "查看学员" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存权限" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "查看学员" })); });
+    const studentAll = screen.getByRole("checkbox", { name: "学员全部权限" });
+    const dashboardAll = screen.getByRole("checkbox", { name: "数据看板全部权限" });
+    expect(studentAll).toHaveProperty("indeterminate", true);
+    await testAct(async () => { fireEvent.click(dashboardAll); });
+    await testAct(async () => { fireEvent.click(studentAll); });
+    expect(studentAll).toHaveProperty("checked", true);
+    expect(screen.getByRole("checkbox", { name: "加课时" })).toHaveProperty("checked", true);
+    await testAct(async () => { fireEvent.click(studentAll); });
+    expect(screen.getByRole("checkbox", { name: "查看学员" })).toHaveProperty("checked", false);
+    expect(dashboardAll).toHaveProperty("checked", true);
+    await testAct(async () => { fireEvent.click(studentAll); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存权限" })); });
     const confirm = await screen.findByRole("dialog", {
       name: "确认修改角色权限",
     });
-    fireEvent.click(within(confirm).getByRole("button", { name: "确认修改" }));
+    await testAct(async () => { fireEvent.click(within(confirm).getByRole("button", { name: "确认修改" })); });
     await waitFor(() =>
       expect(
         demoRepository
@@ -365,28 +376,71 @@ describe("角色详情权限与删除约束", () => {
           .roles.some(
             (role) =>
               role.name === "专项验证角色" &&
-              role.permissions.includes("student.view"),
+              role.permissions.includes("student.view") &&
+              role.permissions.includes("credit.add") &&
+              role.permissions.includes("dashboard.overview") &&
+              role.permissions.length === 13,
           ),
       ).toBe(true),
     );
-    fireEvent.click(screen.getByRole("button", { name: "返回角色列表" }));
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "返回角色列表" })); });
+    await testAct(async () => { fireEvent.click(
       await screen.findByRole("button", { name: "专项验证角色" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "删除角色" }));
+    ); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "删除角色" })); });
     const deletion = await screen.findByRole("dialog", { name: "删除角色" });
-    fireEvent.change(within(deletion).getByRole("textbox"), {
+    await testAct(async () => { fireEvent.change(within(deletion).getByRole("textbox"), {
       target: { value: "专项验证角色" },
-    });
-    fireEvent.click(within(deletion).getByRole("button", { name: "确认删除" }));
+    }); });
+    await testAct(async () => { fireEvent.click(within(deletion).getByRole("button", { name: "确认删除" })); });
     expect(await screen.findByRole("table")).toBeTruthy();
     expect(
       demoRepository.read().roles.some((role) => role.name === "专项验证角色"),
     ).toBe(false);
   });
-  it("仍被账号使用的角色不能删除", async () => {
-    mount("/settings?tab=roles&role=ops");
-    fireEvent.click(await screen.findByRole("button", { name: "删除角色" }));
+  it.each([
+    ["ops", "教务"],
+    ["tm", "老师管理（TM）"],
+  ])("内置角色 %s 可保存权限变更，不能删除", async (id, name) => {
+    mount(`/settings?tab=roles&role=${id}`);
+    await screen.findByRole("heading", { name });
+    expect(screen.queryByRole("button", { name: "删除角色" })).toBeNull();
+    expect(() => demoRepository.execute({ type: "role.delete", id }))
+      .toThrow("系统角色不能删除");
+
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "编辑权限" }));
+    });
+    const exportPermission = screen.getByRole("checkbox", { name: "导出看板" });
+    expect(exportPermission).toHaveProperty("checked", false);
+    await testAct(async () => { fireEvent.click(exportPermission); });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存权限" }));
+    });
+    const dialog = await screen.findByRole("dialog", { name: "确认修改角色权限" });
+    await testAct(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "确认修改" }));
+    });
+    await screen.findByRole("button", { name: "编辑权限" });
+    expect(demoRepository.read().roles.find((item) => item.id === id)?.permissions)
+      .toContain("dashboard.export");
+    expect(screen.getByRole("checkbox", { name: "导出看板" }))
+      .toHaveProperty("checked", true);
+  });
+  it("仍被账号使用的自定义角色不能删除", async () => {
+    const state = demoRepository.read();
+    const role = state.roles.find((item) => item.id === "ops")!;
+    const account = state.accounts.find((item) => item.roleId === "ops")!;
+    demoRepository.execute({
+      type: "role.save",
+      role: { ...role, id: "custom-ops", name: "自定义教务" },
+    });
+    demoRepository.execute({
+      type: "account.save",
+      account: { ...account, roleId: "custom-ops" },
+    });
+    mount("/settings?tab=roles&role=custom-ops");
+    { const target = await screen.findByRole("button", { name: "删除角色" }); await testAct(async () => { fireEvent.click(target); }); }
     const deletion = await screen.findByRole("dialog", { name: "删除角色" });
     expect(
       within(deletion).getByText(
@@ -406,13 +460,13 @@ describe("资料弹窗标题", () => {
     "%s 页签按编辑和新增操作展示对应标题",
     async (type) => {
       mount("/settings?tab=basics");
-      fireEvent.click(await screen.findByRole("tab", { name: type }));
+      { const target = await screen.findByRole("tab", { name: type }); await testAct(async () => { fireEvent.click(target); }); }
       expect(screen.queryByRole("tab", { name: "下拉选项" })).toBeNull();
-      fireEvent.click(
+      await testAct(async () => { fireEvent.click(
         type === "反馈分类"
           ? screen.getByRole("button", { name: "编辑一级分类 老师相关" })
           : screen.getAllByRole("button", { name: "编辑" })[0],
-      );
+      ); });
       const editing = await screen.findByRole("dialog", {
         name: type === "反馈分类" ? "编辑一级分类" : `编辑${type}`,
       });
@@ -423,12 +477,12 @@ describe("资料弹窗标题", () => {
           })
           .getAttribute("value"),
       ).toBeTruthy();
-      fireEvent.click(within(editing).getByRole("button", { name: "取消" }));
-      fireEvent.click(
+      await testAct(async () => { fireEvent.click(within(editing).getByRole("button", { name: "取消" })); });
+      await testAct(async () => { fireEvent.click(
         screen.getByRole("button", {
           name: type === "反馈分类" ? "新增一级分类" : "新增",
         }),
-      );
+      ); });
       expect(
         await screen.findByRole("dialog", {
           name: type === "反馈分类" ? "新增一级分类" : `新增${type}`,
@@ -438,6 +492,7 @@ describe("资料弹窗标题", () => {
   );
   it.each(["项目", "渠道"])("共享弹窗编辑%s时也展示对应类型", async (type) => {
     mount("/settings?tab=org");
+    fireEvent.click(await screen.findByRole("tab", {name:type}));
     await screen.findByRole("table");
     const entry = demoRepository
       .read()
@@ -445,7 +500,7 @@ describe("资料弹窗标题", () => {
     if (!entry) throw new Error(`缺少${type}测试资料`);
     const row = screen.getByText(entry.name, { exact: true }).closest("tr");
     if (!row) throw new Error("未找到资料所在行");
-    fireEvent.click(within(row).getByRole("button", { name: "编辑" }));
+    await testAct(async () => { fireEvent.click(within(row).getByRole("button", { name: "编辑" })); });
     expect(
       await screen.findByRole("dialog", {
         name: type === "反馈分类" ? "编辑一级分类" : `编辑${type}`,
@@ -457,7 +512,7 @@ describe("资料弹窗标题", () => {
 describe("反馈分类维护", () => {
   it("树状层级展示，编辑只填写当前级别名称", async () => {
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
     expect(screen.getByRole("tree", { name: "反馈分类树" })).toBeTruthy();
     expect(
       screen
@@ -465,9 +520,9 @@ describe("反馈分类维护", () => {
         .getAttribute("aria-level"),
     ).toBe("3");
     const row = categoryRow("缺乏互动");
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       within(row).getByRole("button", { name: "编辑三级分类 缺乏互动" }),
-    );
+    ); });
     const dialog = await screen.findByRole("dialog", { name: "编辑三级分类" });
     expect(
       within(dialog)
@@ -476,28 +531,28 @@ describe("反馈分类维护", () => {
     ).toBe("缺乏互动");
     expect(within(dialog).getByText("老师相关 › 教学问题")).toBeTruthy();
     expect(within(dialog).getAllByRole("textbox")).toHaveLength(2);
-    fireEvent.change(
+    await testAct(async () => { fireEvent.change(
       within(dialog).getByRole("textbox", { name: "三级分类名称" }),
       { target: { value: "课堂互动不足" } },
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    ); });
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "保存" })); });
     expect(await screen.findByText("课堂互动不足")).toBeTruthy();
   });
   it("添加子分类自动带出上级，保存后显示在对应列", async () => {
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
     const row = categoryRow("教学问题");
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       within(row).getByRole("button", { name: "添加教学问题的子分类" }),
-    );
+    ); });
     const dialog = await screen.findByRole("dialog", { name: "新增三级分类" });
     expect(within(dialog).getByText("老师相关 › 教学问题")).toBeTruthy();
     expect(within(dialog).getAllByRole("textbox")).toHaveLength(2);
-    fireEvent.change(
+    await testAct(async () => { fireEvent.change(
       within(dialog).getByRole("textbox", { name: "三级分类名称" }),
       { target: { value: "板书不清晰" } },
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    ); });
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "保存" })); });
     expect(
       await screen.findByRole("treeitem", { name: "板书不清晰" }),
     ).toBeTruthy();
@@ -537,10 +592,10 @@ describe("反馈分类维护", () => {
 describe("反馈分类与录入联动", () => {
   it("停用上级先确认，确认后下级同时停用", async () => {
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
     const row = categoryRow("老师相关");
-    fireEvent.click(within(row).getByRole("button", { name: "更多" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "停用分类" }));
+    await testAct(async () => { fireEvent.click(within(row).getByRole("button", { name: "更多" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "停用分类" })); });
     const dialog = await screen.findByRole("dialog", { name: "停用反馈分类" });
     expect(
       demoRepository
@@ -548,7 +603,7 @@ describe("反馈分类与录入联动", () => {
         .catalog.filter((item) => item.type === "反馈分类")
         .every((item) => item.enabled),
     ).toBe(true);
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认停用" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "确认停用" })); });
     await waitFor(() =>
       expect(
         demoRepository
@@ -579,16 +634,16 @@ describe("反馈分类与录入联动", () => {
       entry: { ...disabled, enabled: false },
     });
     mount("/feedback?new=1");
-    fireEvent.click(await screen.findByRole("combobox", { name: "一级分类" }));
-    fireEvent.click(screen.getByRole("option", { name: "课堂问题" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "二级分类" }));
-    fireEvent.click(screen.getByRole("option", { name: "教学问题" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "三级分类" }));
+    await openSelect(await screen.findByRole("combobox", { name: "一级分类" }));
+    await selectOption(screen.getByRole("option", { name: "课堂问题" }));
+    await openSelect(screen.getByRole("combobox", { name: "二级分类" }));
+    await selectOption(screen.getByRole("option", { name: "教学问题" }));
+    await openSelect(screen.getByRole("combobox", { name: "三级分类" }));
     expect(screen.queryByRole("option", { name: "用错教材" })).toBeNull();
-    fireEvent.click(screen.getByRole("option", { name: "缺乏互动" }));
-    fireEvent.click(screen.getByRole("button", { name: "添加分类" }));
+    await selectOption(screen.getByRole("option", { name: "缺乏互动" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "添加分类" })); });
     expect(screen.getByText("课堂问题 / 教学问题 / 缺乏互动")).toBeTruthy();
-    fireEvent.click(screen.getByRole("combobox", { name: "一级分类" }));
+    await openSelect(screen.getByRole("combobox", { name: "一级分类" }));
     expect(screen.queryByRole("option", { name: "老师相关" })).toBeNull();
   });
 });
@@ -596,15 +651,15 @@ describe("反馈分类与录入联动", () => {
 describe("反馈分类单项维护与调整归属", () => {
   it("新增一级分类只填写一个名称", async () => {
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
-    fireEvent.click(screen.getByRole("button", { name: "新增一级分类" }));
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "新增一级分类" })); });
     const dialog = await screen.findByRole("dialog", { name: "新增一级分类" });
     expect(within(dialog).getByText("无上级（一级分类）")).toBeTruthy();
-    fireEvent.change(
+    await testAct(async () => { fireEvent.change(
       within(dialog).getByRole("textbox", { name: "一级分类名称" }),
       { target: { value: "服务问题" } },
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    ); });
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "保存" })); });
     expect(
       await screen.findByRole("button", { name: "编辑一级分类 服务问题" }),
     ).toBeTruthy();
@@ -612,25 +667,25 @@ describe("反馈分类单项维护与调整归属", () => {
   it("编辑上级只改当前名称，确认下级影响后保存", async () => {
     const history = demoRepository.read().feedback;
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
-    fireEvent.click(
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
+    await testAct(async () => { fireEvent.click(
       screen.getByRole("button", { name: "编辑二级分类 教学问题" }),
-    );
+    ); });
     const dialog = await screen.findByRole("dialog", { name: "编辑二级分类" });
     expect(within(dialog).getByText("老师相关")).toBeTruthy();
     expect(
       within(dialog).queryByRole("textbox", { name: "一级分类名称" }),
     ).toBeNull();
-    fireEvent.change(
+    await testAct(async () => { fireEvent.change(
       within(dialog).getByRole("textbox", { name: "二级分类名称" }),
       { target: { value: "课堂教学" } },
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    ); });
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "保存" })); });
     const confirm = await screen.findByRole("dialog", {
       name: "确认修改上级分类名称",
     });
     expect(within(confirm).getByText(/其下 2 个分类/)).toBeTruthy();
-    fireEvent.click(within(confirm).getByRole("button", { name: "确认保存" }));
+    await testAct(async () => { fireEvent.click(within(confirm).getByRole("button", { name: "确认保存" })); });
     expect(
       await screen.findByRole("treeitem", { name: "课堂教学" }),
     ).toBeTruthy();
@@ -639,20 +694,18 @@ describe("反馈分类单项维护与调整归属", () => {
   it("更多菜单支持调整归属，预览路径后移动，历史反馈不变", async () => {
     const history = demoRepository.read().feedback;
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
     const row = categoryRow("缺乏互动");
     if (!row) throw new Error("缺少分类行");
-    fireEvent.click(within(row).getByRole("button", { name: "更多" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "调整归属" }));
+    await testAct(async () => { fireEvent.click(within(row).getByRole("button", { name: "更多" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "调整归属" })); });
     const dialog = await screen.findByRole("dialog", { name: "调整分类归属" });
-    fireEvent.click(
-      within(dialog).getByRole("combobox", { name: "所属二级分类" }),
-    );
-    fireEvent.click(screen.getByRole("option", { name: "设备网络" }));
+    await openSelect(within(dialog).getByRole("combobox", { name: "所属二级分类" }));
+    await selectOption(screen.getByRole("option", { name: "设备网络" }));
     expect(
       within(dialog).getByText("老师相关 › 设备网络 › 缺乏互动"),
     ).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认调整" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "确认调整" })); });
     expect(
       await screen.findByRole("treeitem", { name: "缺乏互动" }),
     ).toBeTruthy();
@@ -660,29 +713,21 @@ describe("反馈分类单项维护与调整归属", () => {
   });
   it("移动时排除会超过三级的目标，取消修改保护输入", async () => {
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
     const row = categoryRow("教学问题");
-    fireEvent.click(within(row).getByRole("button", { name: "更多" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "调整归属" }));
+    await testAct(async () => { fireEvent.click(within(row).getByRole("button", { name: "更多" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "调整归属" })); });
     const dialog = await screen.findByRole("dialog", { name: "调整分类归属" });
-    fireEvent.click(
-      within(dialog).getByRole("combobox", { name: "所属二级分类" }),
-    );
+    await openSelect(within(dialog).getByRole("combobox", { name: "所属二级分类" }));
     expect(screen.queryByRole("option", { name: "设备网络" })).toBeNull();
-    fireEvent.click(
-      screen.getByRole("option", { name: "无二级上级（作为二级分类）" }),
-    );
-    fireEvent.click(
-      within(dialog).getByRole("combobox", { name: "所属一级分类" }),
-    );
-    fireEvent.click(
-      screen.getByRole("option", { name: "无上级（作为一级分类）" }),
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    await selectOption(screen.getByRole("option", { name: "无二级上级（作为二级分类）" }));
+    await openSelect(within(dialog).getByRole("combobox", { name: "所属一级分类" }));
+    await selectOption(screen.getByRole("option", { name: "无上级（作为一级分类）" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "取消" })); });
     const discard = await screen.findByRole("dialog", {
       name: "有未保存的修改",
     });
-    fireEvent.click(within(discard).getByRole("button", { name: "继续编辑" }));
+    await testAct(async () => { fireEvent.click(within(discard).getByRole("button", { name: "继续编辑" })); });
     expect(within(dialog).getByText("教学问题")).toBeTruthy();
   });
 });
@@ -690,12 +735,12 @@ describe("反馈分类单项维护与调整归属", () => {
 describe("反馈分类树交互", () => {
   it("支持展开收起，搜索自动展开父级并显示匹配节点", async () => {
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
-    fireEvent.click(screen.getByRole("button", { name: "收起老师相关" }));
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "收起老师相关" })); });
     expect(screen.queryByRole("treeitem", { name: "缺乏互动" })).toBeNull();
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索名称" }), {
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "搜索名称" }), {
       target: { value: "互动" },
-    });
+    }); });
     expect(
       screen
         .getByRole("treeitem", { name: "老师相关" })
@@ -703,10 +748,10 @@ describe("反馈分类树交互", () => {
     ).toBe("true");
     expect(screen.getByRole("treeitem", { name: "缺乏互动" })).toBeTruthy();
     expect(screen.queryByRole("treeitem", { name: "设备网络" })).toBeNull();
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索名称" }), {
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "搜索名称" }), {
       target: { value: "" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "全部展开" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "全部展开" })); });
     expect(screen.getByRole("treeitem", { name: "用错教材" })).toBeTruthy();
     expect(
       within(categoryRow("用错教材")).queryByRole("button", { name: /添加/ }),
@@ -725,20 +770,20 @@ describe("反馈分类树交互", () => {
       },
     });
     mount("/settings?tab=basics");
-    fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
-    fireEvent.click(
+    { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
+    await testAct(async () => { fireEvent.click(
       within(categoryRow("可删除分类")).getByRole("button", { name: "更多" }),
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "删除分类" }));
+    ); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "删除分类" })); });
     let dialog = await screen.findByRole("dialog", { name: "删除反馈分类" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "取消" })); });
     expect(screen.getByRole("treeitem", { name: "可删除分类" })).toBeTruthy();
-    fireEvent.click(
+    await testAct(async () => { fireEvent.click(
       within(categoryRow("可删除分类")).getByRole("button", { name: "更多" }),
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "删除分类" }));
+    ); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "删除分类" })); });
     dialog = await screen.findByRole("dialog", { name: "删除反馈分类" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" }));
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" })); });
     await waitFor(() =>
       expect(screen.queryByRole("treeitem", { name: "可删除分类" })).toBeNull(),
     );
@@ -747,11 +792,11 @@ describe("反馈分类树交互", () => {
     "%s 有下级或被使用，删除入口展示原因并禁止提交",
     async (name) => {
       mount("/settings?tab=basics");
-      fireEvent.click(await screen.findByRole("tab", { name: "反馈分类" }));
-      fireEvent.click(
+      { const target = await screen.findByRole("tab", { name: "反馈分类" }); await testAct(async () => { fireEvent.click(target); }); }
+      await testAct(async () => { fireEvent.click(
         within(categoryRow(name)).getByRole("button", { name: "更多" }),
-      );
-      fireEvent.click(screen.getByRole("menuitem", { name: "删除分类" }));
+      ); });
+      await testAct(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "删除分类" })); });
       const dialog = await screen.findByRole("dialog", {
         name: "删除反馈分类",
       });
@@ -799,62 +844,188 @@ describe("业务规则轻量展示", () => {
 it("新建账号设置密码，编辑不回显，独立重置可生效", async () => {
  vi.stubGlobal("crypto", webcrypto);
  mount("/settings?tab=accounts");
- fireEvent.click(await screen.findByRole("button", {name:"新建账号"}));
+ { const target = await screen.findByRole("button", {name:"新建账号"}); await testAct(async () => { fireEvent.click(target); }); }
  const form=within(screen.getByRole("dialog", {name:"新建团队账号"}));
- fireEvent.change(form.getByLabelText("姓名"),{target:{value:"密码测试"}});
- fireEvent.change(form.getByLabelText("登录手机号"),{target:{value:"13812345678"}});
+
+ await openSelect(form.getByRole("combobox", {name:"所属队伍"}));
+ await selectOption(screen.getByRole("option", {name:"A队"}));
+ await openSelect(form.getByRole("combobox", {name:"队内组别"}));
+ await selectOption(screen.getByRole("option", {name:"二组"}));
+ await testAct(async () => { fireEvent.change(form.getByLabelText("姓名"),{target:{value:"密码测试"}}); });
+ await testAct(async () => { fireEvent.change(form.getByLabelText("登录账号"),{target:{value:"13812345678"}}); });
  expect(form.getByRole("button",{name:"保存账号"}).hasAttribute("disabled")).toBe(true);
- fireEvent.change(form.getByLabelText("初始密码"),{target:{value:"Initial123"}});
- fireEvent.change(form.getByLabelText("确认密码"),{target:{value:"Initial124"}});
+ await testAct(async () => { fireEvent.change(form.getByLabelText("初始密码"),{target:{value:"Initial123!"}}); });
+ await testAct(async () => { fireEvent.change(form.getByLabelText("确认密码"),{target:{value:"Initial124!"}}); });
  expect(form.getByText("两次输入的密码不一致")).toBeTruthy();
- fireEvent.change(form.getByLabelText("确认密码"),{target:{value:"Initial123"}});
- fireEvent.click(form.getByRole("button",{name:"保存账号"}));
+ await testAct(async () => { fireEvent.change(form.getByLabelText("确认密码"),{target:{value:"Initial123!"}}); });
+ await testAct(async () => { fireEvent.click(form.getByRole("button",{name:"保存账号"})); });
  await waitFor(()=>expect(screen.queryByRole("dialog",{name:"新建团队账号"})).toBeNull());
  const record=demoRepository.read().accounts.find(a=>a.name==="密码测试")!;
- expect(JSON.stringify(record)).not.toContain("Initial123");
+ expect(JSON.stringify(record)).not.toContain("Initial123!");
  const row=screen.getByText("密码测试").closest("tr")!;
- fireEvent.click(within(row).getByRole("button",{name:"编辑"}));
+ await testAct(async () => { fireEvent.click(within(row).getByRole("button",{name:"编辑"})); });
  const edit=within(screen.getByRole("dialog",{name:"编辑团队账号"}));
  expect(edit.queryByLabelText("初始密码")).toBeNull();
- fireEvent.click(edit.getByRole("button",{name:"取消"}));
- fireEvent.click(within(row).getByRole("button",{name:"重置密码"}));
+ await testAct(async () => { fireEvent.click(edit.getByRole("button",{name:"取消"})); });
+ await testAct(async () => { fireEvent.click(within(row).getByRole("button",{name:"重置密码"})); });
  const reset=within(screen.getByRole("dialog",{name:"重置 密码测试 的密码"}));
- fireEvent.change(reset.getByLabelText("新密码"),{target:{value:"Reset1234"}});
- fireEvent.change(reset.getByLabelText("确认新密码"),{target:{value:"Reset1234"}});
- fireEvent.click(reset.getByRole("button",{name:"确认重置"}));
+ await testAct(async () => { fireEvent.change(reset.getByLabelText("新密码"),{target:{value:"Reset1234!"}}); });
+ await testAct(async () => { fireEvent.change(reset.getByLabelText("确认新密码"),{target:{value:"Reset1234!"}}); });
+ await testAct(async () => { fireEvent.click(reset.getByRole("button",{name:"确认重置"})); });
  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
- await expect(changeDemoPassword(record.id,"Initial123","Another123")).rejects.toThrow();
- await changeDemoPassword(record.id,"Reset1234","Another123");
+ await expect(changeDemoPassword(record.id,"Initial123!","Another123!")).rejects.toThrow();
+ await changeDemoPassword(record.id,"Reset1234!","Another123!");
 });
 
 it("个人菜单修改密码校验当前密码并更新演示会话", async () => {
  vi.stubGlobal("crypto", webcrypto);
  mount("/settings?tab=accounts");
- fireEvent.click(await screen.findByRole("button",{name:/Rita.*教务运营/}));
- fireEvent.click(screen.getByRole("button",{name:"修改密码"}));
+ { const target = await screen.findByRole("button",{name:/Rita.*超级管理员/}); await testAct(async () => { fireEvent.click(target); }); }
+ await testAct(async () => { fireEvent.click(screen.getByRole("button",{name:"修改密码"})); });
  const form=within(screen.getByRole("dialog",{name:"修改密码"}));
- fireEvent.change(form.getByLabelText("当前密码"),{target:{value:"Wrong123"}});
- fireEvent.change(form.getByLabelText("新密码"),{target:{value:"Personal123"}});
- fireEvent.change(form.getByLabelText("确认新密码"),{target:{value:"Personal123"}});
- fireEvent.click(form.getByRole("button",{name:"确认修改"}));
+ await testAct(async () => { fireEvent.change(form.getByLabelText("当前密码"),{target:{value:"Wrong123"}}); });
+ await testAct(async () => { fireEvent.change(form.getByLabelText("新密码"),{target:{value:"Personal123!"}}); });
+ await testAct(async () => { fireEvent.change(form.getByLabelText("确认新密码"),{target:{value:"Personal123!"}}); });
+ await testAct(async () => { fireEvent.click(form.getByRole("button",{name:"确认修改"})); });
  expect(await form.findByText("当前密码不正确")).toBeTruthy();
- fireEvent.change(form.getByLabelText("当前密码"),{target:{value:"Demo12345"}});
- fireEvent.click(form.getByRole("button",{name:"确认修改"}));
+ await testAct(async () => { fireEvent.change(form.getByLabelText("当前密码"),{target:{value:"Demo12345"}}); });
+ await testAct(async () => { fireEvent.click(form.getByRole("button",{name:"确认修改"})); });
  await waitFor(()=>expect(screen.queryByRole("dialog",{name:"修改密码"})).toBeNull());
  const record=demoRepository.read().accounts.find(a=>a.name==="Rita")!;
- await changeDemoPassword(record.id,"Personal123","Demo12345");
+ await changeDemoPassword(record.id,"Personal123!","Another123!");
 });
 
-it("项目编辑后列表和已保存资料均显示所属渠道和月应上课数", async () => {
+it("项目编辑可关联多个合作渠道并保存月应上课数", async () => {
   mount("/settings?tab=org");
+  fireEvent.click(await screen.findByRole("tab", {name:"项目"}));
   const row = (await screen.findByText("K12", {exact:true})).closest("tr")!;
-  fireEvent.click(within(row).getByRole("button", {name:"编辑"}));
+  await testAct(async () => { fireEvent.click(within(row).getByRole("button", {name:"编辑"})); });
   const dialog = await screen.findByRole("dialog", {name:"编辑项目"});
-  fireEvent.click(within(dialog).getByRole("combobox", {name:/所属渠道/}));
-  fireEvent.click(screen.getByRole("option", {name:"许老师"}));
-  fireEvent.change(within(dialog).getByRole("spinbutton", {name:/月应上课数/}), {target:{value:"12"}});
-  fireEvent.click(within(dialog).getByRole("button",{name:"保存"}));
-  await within(row).findByRole("cell", {name:"许老师"});
+  const channels = within(dialog).getAllByRole("checkbox").filter(input => input !== within(dialog).getByRole("checkbox", {name:"启用"}));
+  for (const input of channels) if ((input as HTMLInputElement).checked) await testAct(async () => { fireEvent.click(input); });
+  await testAct(async () => { fireEvent.click(within(dialog).getByRole("checkbox", {name:"许老师"})); fireEvent.click(within(dialog).getByRole("checkbox", {name:"ToC"})); });
+  await testAct(async () => { fireEvent.change(within(dialog).getByRole("spinbutton", {name:/月应上课数/}), {target:{value:"12"}}); });
+  await testAct(async () => { fireEvent.click(within(dialog).getByRole("button",{name:"保存"})); });
+  await within(row).findByRole("cell", {name:"许老师、ToC"});
   expect(within(row).getByRole("cell", {name:"12"})).toBeTruthy();
-  expect(demoRepository.read().catalog.find(p => p.id === "pr0")).toMatchObject({parentId:"ch0",monthlyLessons:12});
+  expect(demoRepository.read().catalog.find(p => p.id === "pr0")).toMatchObject({channelIds:["ch0","ch1"],monthlyLessons:12});
+});
+
+async function openSelect(trigger: HTMLElement) {
+  await testAct(async () => { trigger.focus(); fireEvent.click(trigger); });
+}
+async function selectOption(option: HTMLElement) {
+  const trigger = screen.getByRole("combobox", { expanded: true });
+  await testAct(async () => { fireEvent.click(option); });
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+}
+
+it("新增渠道可选择合作项目，重新编辑回显并可取消配对", async () => {
+  mount("/settings?tab=org");
+  fireEvent.click(await screen.findByRole("button", {name:"新建渠道"}));
+  let dialog = await screen.findByRole("dialog", {name:"新增渠道"});
+  fireEvent.change(within(dialog).getByRole("textbox", {name:/名称/}), {target:{value:"双向配对渠道"}});
+  fireEvent.click(within(dialog).getByRole("checkbox", {name:"K12"}));
+  fireEvent.click(within(dialog).getByRole("checkbox", {name:"14"}));
+  fireEvent.click(within(dialog).getByRole("button", {name:"保存"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
+  const channel = demoRepository.read().catalog.find(c=>c.name==="双向配对渠道")!;
+  expect(demoRepository.read().catalog.filter(p=>p.channelIds?.includes(channel.id)).map(p=>p.id)).toEqual(["pr0","pr1"]);
+  const row = screen.getByText("双向配对渠道", {exact:true}).closest("tr")!;
+  fireEvent.click(within(row).getByRole("button", {name:"编辑"}));
+  dialog = await screen.findByRole("dialog", {name:"编辑渠道"});
+  expect((within(dialog).getByRole("checkbox", {name:"K12"}) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(within(dialog).getByRole("checkbox", {name:"K12"}));
+  fireEvent.click(within(dialog).getByRole("button", {name:"保存"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
+  expect(demoRepository.read().catalog.filter(p=>p.channelIds?.includes(channel.id)).map(p=>p.id)).toEqual(["pr1"]);
+});
+
+
+it("渠道和项目分 Tab 展示各自字段，新建类型跟随当前 Tab", async () => {
+  mount("/settings?tab=org");
+  await screen.findByRole("button", {name:"新建渠道"});
+  expect(screen.getByRole("columnheader", {name:"合作项目"})).toBeTruthy();
+  expect(screen.queryByRole("columnheader", {name:"月应上课数"})).toBeNull();
+  expect(screen.queryByRole("columnheader", {name:"类型"})).toBeNull();
+  fireEvent.click(screen.getByRole("tab", {name:"项目"}));
+  expect(screen.getByRole("columnheader", {name:"合作渠道"})).toBeTruthy();
+  expect(screen.getByRole("columnheader", {name:"月应上课数"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", {name:"新建项目"}));
+  const dialog = await screen.findByRole("dialog", {name:"新增项目"});
+  expect(within(dialog).getByRole("textbox", {name:/名称/})).toBeTruthy();
+  expect(within(dialog).getByRole("spinbutton", {name:/月应上课数/})).toBeTruthy();
+});
+
+it("无可选队伍时禁用队伍和组别，点击不会展开数据范围", async () => {
+  for (const team of demoRepository.read().catalog.filter(c=>c.type==="队伍")) {
+    demoRepository.execute({type:"catalog.save",entry:{...team,enabled:false}});
+  }
+  mount("/settings?tab=accounts");
+  fireEvent.click(await screen.findByRole("button", {name:"新建账号"}));
+  const dialog = await screen.findByRole("dialog");
+  const team = within(dialog).getByRole("combobox", {name:"所属队伍"});
+  expect(team.hasAttribute("disabled")).toBe(true);
+  expect(within(dialog).getByRole("combobox", {name:"队内组别"}).hasAttribute("disabled")).toBe(true);
+  expect(within(dialog).getByText(/暂无可选队伍/)).toBeTruthy();
+  fireEvent.click(team);
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(within(dialog).getByRole("combobox", {name:"数据范围"}).getAttribute("aria-expanded")).toBe("false");
+});
+
+it.each([false, true])("队伍与组别无数据或无搜索结果时显示统一空状态（搜索：%s）", async (searchOnly) => {
+  if (!searchOnly) {
+    const data = demoRepository.read();
+    data.catalog = data.catalog.filter(c => c.type !== "队伍" && c.type !== "组别");
+  }
+  mount("/settings?tab=basics");
+  fireEvent.click(await screen.findByRole("tab", {name:"队伍与组别"}));
+  if (searchOnly) fireEvent.change(screen.getByPlaceholderText("搜索名称"), {target:{value:"不存在的队伍名称"}});
+  const empty = await screen.findByText("没有符合条件的资料");
+  expect(empty.closest(".empty-state")).toBeTruthy();
+  expect(empty.closest(".empty-state")!.querySelector("button")).toBeNull();
+  expect(screen.queryByRole("button", {name:"编辑队伍"})).toBeNull();
+});
+
+it("普通登录账号可保存，密码不一致显示字段错误且修正后解除禁用", async () => {
+  vi.stubGlobal("crypto", webcrypto);
+  mount("/settings?tab=accounts");
+  fireEvent.click(await screen.findByRole("button", {name:"新建账号"}));
+  const form = within(await screen.findByRole("dialog", {name:"新建团队账号"}));
+
+ await openSelect(form.getByRole("combobox", {name:"所属队伍"}));
+ await selectOption(screen.getByRole("option", {name:"A队"}));
+ await openSelect(form.getByRole("combobox", {name:"队内组别"}));
+ await selectOption(screen.getByRole("option", {name:"二组"}));
+  fireEvent.change(form.getByRole("textbox", {name:"姓名"}), {target:{value:"普通账号验证"}});
+  fireEvent.change(form.getByRole("textbox", {name:"登录账号"}), {target:{value:"rita.test"}});
+  fireEvent.change(form.getByLabelText("初始密码"), {target:{value:"Valid123!"}});
+  fireEvent.change(form.getByLabelText("确认密码"), {target:{value:"Different123!"}});
+  expect(form.getByText("两次输入的密码不一致").classList.contains("danger")).toBe(true);
+  expect(form.getByLabelText("确认密码").getAttribute("aria-invalid")).toBe("true");
+  const save = form.getByRole("button", {name:"保存账号"});
+  expect(save.hasAttribute("disabled")).toBe(true);
+  fireEvent.change(form.getByLabelText("确认密码"), {target:{value:"Valid123!"}});
+  expect(form.queryByText("两次输入的密码不一致")).toBeNull();
+  expect(save.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(save);
+  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
+  expect(demoRepository.read().accounts.some(a=>a.phone==="rita.test")).toBe(true);
+});
+
+it("普通账号可选择全部本队本组，管理员使用全部", async () => {
+ mount("/settings?tab=accounts");
+ fireEvent.click(await screen.findByRole("button", {name:"新建账号"}));
+ const form=within(screen.getByRole("dialog", {name:"新建团队账号"}));
+ await openSelect(form.getByRole("combobox", {name:"数据范围"}));
+ expect(screen.getAllByRole("option").map(o=>o.textContent)).toEqual(["全部", "本组", "本队"]);
+ await selectOption(screen.getByRole("option", {name:"本队"}));
+ await openSelect(form.getByRole("combobox", {name:"角色"}));
+ await selectOption(screen.getByRole("option", {name:"超级管理员"}));
+ await openSelect(form.getByRole("combobox", {name:"数据范围"}));
+ expect(screen.getAllByRole("option").map(o=>o.textContent)).toEqual(["全部"]);
+ await selectOption(screen.getByRole("option", {name:"全部"}));
+ await openSelect(form.getByRole("combobox", {name:"角色"}));
+ await selectOption(screen.getByRole("option", {name:"教务"}));
+ expect(form.getByRole("combobox", {name:"数据范围"}).textContent).toBe("本组");
 });

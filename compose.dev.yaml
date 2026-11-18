@@ -1,0 +1,19 @@
+services:
+  database:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: crazytalk
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: crazytalk_dev
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - crazytalk_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crazytalk -d crazytalk_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  crazytalk_dev:

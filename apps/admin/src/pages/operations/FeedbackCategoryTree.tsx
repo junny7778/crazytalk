@@ -7,7 +7,7 @@ import {
   Pencil,
   Plus,
 } from "lucide-react";
-import { Badge, Button } from "@crazytalk/ui";
+import { Badge, Button, EmptyState } from "@crazytalk/ui";
 import { feedbackCategoryPath, type CatalogEntry } from "@crazytalk/shared";
 import CategoryActionsMenu from "./CategoryActionsMenu";
 
@@ -41,6 +41,10 @@ export default function FeedbackCategoryTree({
     )
       path.forEach((item) => visible.add(item.id));
   }
+  if (!visible.size) {
+    return <EmptyState title="没有符合条件的资料" />;
+  }
+
   const toggle = (id: string) =>
     setCollapsed((current) => {
       const next = new Set(current);
@@ -188,13 +192,6 @@ export default function FeedbackCategoryTree({
           .filter((item) => !item.parentId && visible.has(item.id))
           .map((item) => renderNode(item, 1))}
       </ul>
-      {!visible.size && (
-        <p className="settings-category-tree-empty">
-          {keyword
-            ? "没有匹配的分类，请调整搜索条件。"
-            : "暂无反馈分类，请新增一级分类。"}
-        </p>
-      )}
     </div>
   );
 }

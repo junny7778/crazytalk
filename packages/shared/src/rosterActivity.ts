@@ -108,6 +108,8 @@ export function withRosterActivity(state: DemoState): DemoState {
         if (lesson) break;
       }
       if (!lesson) continue;
+      const packages = state.orders?.filter(order => order.studentIds.includes(student.id));
+      if (packages?.length === 1) lesson.orderId = packages[0].id;
       lessons.push(lesson);
       if (i !== 4 && i !== 5) continue;
       const teacher = teachers.find((t) => t.id === lesson.teacherId)!;
@@ -144,6 +146,52 @@ export function withRosterActivity(state: DemoState): DemoState {
     revision: state.revision + 1,
     lessons,
     feedback,
+    importedBatches: [...(state.importedBatches ?? []), batch],
+  };
+}
+
+export function withTeacherNoShowSamples(state: DemoState): DemoState {
+  const batch = "teacher-no-show-samples-20261116-v2";
+  if (state.importedBatches?.includes(batch)) return state;
+
+  const note = "开课满 10 分钟，老师仍未到堂，待核实。";
+  if (state.importedBatches?.includes("teacher-no-show-samples-20261116")) {
+    const lessons = state.lessons.map(lesson => {
+      if (!/^demo-teacher-no-show-[123]$/.test(lesson.id)) return lesson;
+      const previous = lesson.attendanceMessages?.老师;
+      const at = new Date(Date.parse(`${lesson.date}T${lesson.time}:00+08:00`) + 10 * 60_000).toISOString();
+      return {
+        ...lesson,
+        attendanceMessages: { ...lesson.attendanceMessages, 老师: at },
+        attendanceUpdates: lesson.attendanceUpdates?.老师 === previous
+          ? { ...lesson.attendanceUpdates, 老师: at } : lesson.attendanceUpdates,
+        note: /^模拟考勤：开课 (11|15|20) 分钟时老师仍未到堂，待核实。$/.test(lesson.note) ? note : lesson.note,
+      };
+    });
+    return { ...state, lessons, revision: state.revision + 1, importedBatches: [...state.importedBatches, batch] };
+  }
+
+  const students = state.students.filter(s => s.status === "在读").slice(0, 3);
+  const teachers = state.teachers.filter(t => t.status === "在职");
+  const date = "2026-11-16";
+  const samples = students.map((student, i): Lesson => {
+    const start = (14 + i) * 60;
+    const time = clock(start);
+    const at = new Date(`${date}T${clock(start + 10)}:00+08:00`).toISOString();
+    return {
+      id: `demo-teacher-no-show-${i + 1}`,
+      studentId: student.id, teacherId: teachers[i].id, date, time,
+      kind: "临时课", duration: 25, confirmedUnits: 1, status: "待确认",
+      attendance: "正常", studentIn: time, studentOut: clock(start + 25),
+      teacherIn: "", teacherOut: "", attendanceMessages: { 老师: at },
+      attendanceUpdates: { 老师: at }, deducted: false,
+      material: student.material, sync: "已同步", syncReason: "",
+      note,
+      conflict: false, leaveFlag: false,
+    };
+  });
+  return {
+    ...state, revision: state.revision + 1, lessons: [...state.lessons, ...samples],
     importedBatches: [...(state.importedBatches ?? []), batch],
   };
 }

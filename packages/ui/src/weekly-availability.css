@@ -80,7 +80,7 @@
 }
 .weekly-availability-add:focus-visible,
 .weekly-availability-remove:focus-visible {
-  outline: 2px solid var(--ct-brand-700);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -142,10 +142,10 @@
 .weekly-availability-weekdays button[aria-pressed="true"] {
   background: var(--ct-brand-700);
   color: white;
-  border-color: var(--ct-brand-700);
+  border-color: transparent;
 }
 .weekly-availability-weekdays button:focus-visible {
-  outline: 2px solid var(--ct-brand-500);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: 3px;
 }
 .weekly-availability-weekdays button:disabled {

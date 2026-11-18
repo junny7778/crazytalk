@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -51,9 +52,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function choose(label: string, value: string) {
-  fireEvent.click(screen.getByRole("combobox", { name: label }));
-  fireEvent.click(screen.getByRole("option", { name: value }));
+async function choose(label: string, value: string) {
+  await testAct(async () => { fireEvent.click(screen.getByRole("combobox", { name: label })); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: value })); });
 }
 
 describe("反馈详情交互专项", () => {
@@ -72,31 +73,31 @@ describe("反馈详情交互专项", () => {
       },
     });
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: "关联课程" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "关联课程" })); });
     expect(screen.getByRole("dialog", { name: "关联课程" })).toBeTruthy();
-    choose(
+    await choose(
       "选择课程",
       `${lesson.date} ${lesson.time} · ${lesson.material || "未填写教材"}`,
     );
-    fireEvent.click(screen.getByRole("button", { name: "保存关联" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存关联" })); });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(demoRepository.read().feedback[0].lessonId).toBe(lesson.id);
     expect(demoRepository.read().feedback[0].content).toBe(record.content);
-    fireEvent.click(screen.getByRole("button", { name: "查看课程" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "查看课程" })); });
     expect(screen.getByRole("dialog", { name: "关联课程详情" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    fireEvent.click(screen.getByRole("button", { name: "更换关联" }));
-    choose("选择课程", "不关联具体课程");
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "关闭" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "更换关联" })); });
+    await choose("选择课程", "不关联具体课程");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
     expect(demoRepository.read().feedback[0].lessonId).toBe(lesson.id);
-    fireEvent.click(screen.getByRole("button", { name: "更换关联" }));
-    choose("选择课程", "不关联具体课程");
-    fireEvent.click(screen.getByRole("button", { name: "保存关联" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "更换关联" })); });
+    await choose("选择课程", "不关联具体课程");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存关联" })); });
     await waitFor(() =>
       expect(demoRepository.read().feedback[0].lessonId).toBe(""),
     );
   });
-  it("同老师历史只展示其他记录，空状态不可展开", () => {
+  it("同老师历史只展示其他记录，空状态不可展开", async () => {
     const state = demoRepository.read();
     const record = state.feedback[0];
     demoRepository.execute({
@@ -105,7 +106,7 @@ describe("反馈详情交互专项", () => {
       feedback: { ...record, teacherId: state.feedback[1].teacherId },
     });
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: /其他反馈（/ }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /其他反馈（/ })); });
     const drawer = screen.getByRole("dialog", { name: "同老师的其他反馈" });
     expect(within(drawer).queryByText(record.content)).toBeNull();
     expect(within(drawer).getByText(state.feedback[1].content)).toBeTruthy();
@@ -120,17 +121,17 @@ describe("反馈详情交互专项", () => {
     ["更新客服处理", "客服备注"],
     ["更新 TM 判定", "TM判定说明"],
     ["添加跟进", "追加跟进内容"],
-  ])("%s 在弹窗填写，关闭丢弃草稿", (button, field) => {
+  ])("%s 在弹窗填写，关闭丢弃草稿", async (button, field) => {
     const record = demoRepository.read().feedback[0];
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: button }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: button })); });
     const dialog = screen.getByRole("dialog", { name: button });
     const input = within(dialog).getByRole("textbox", { name: field });
     const original = input.getAttribute("value") || input.textContent || "";
-    fireEvent.change(input, { target: { value: "弹窗未保存内容" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "关闭" }));
+    await testAct(async () => { fireEvent.change(input, { target: { value: "弹窗未保存内容" } }); });
+    await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "关闭" })); });
     expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: button }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: button })); });
     expect(
       (
         within(screen.getByRole("dialog", { name: button })).getByRole(
@@ -158,24 +159,24 @@ describe("反馈详情交互专项", () => {
   it("客服取消丢弃草稿，保存后展示结果且收起", async () => {
     const record = demoRepository.read().feedback[0];
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: "更新客服处理" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "客服备注" }), {
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "更新客服处理" })); });
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "客服备注" }), {
       target: { value: "未保存草稿" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "取消客服编辑" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消客服编辑" })); });
     expect(demoRepository.read().feedback[0].processNote).toBe(
       record.processNote,
     );
-    fireEvent.click(screen.getByRole("button", { name: "更新客服处理" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "更新客服处理" })); });
     expect(
       (screen.getByRole("textbox", { name: "客服备注" }) as HTMLTextAreaElement)
         .value,
     ).toBe(record.processNote);
-    choose("客服处理进度", "处理中");
-    fireEvent.change(screen.getByRole("textbox", { name: "客服备注" }), {
+    await choose("客服处理进度", "处理中");
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "客服备注" }), {
       target: { value: "已联系家长" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存客服处理" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存客服处理" })); });
     await waitFor(() =>
       expect(screen.queryByRole("textbox", { name: "客服备注" })).toBeNull(),
     );
@@ -185,31 +186,31 @@ describe("反馈详情交互专项", () => {
   it("TM独立保存不自动完成反馈，跟进可取消和追加", async () => {
     const record = demoRepository.read().feedback[0];
     mount(`/feedback/${record.id}`);
-    fireEvent.click(screen.getByRole("button", { name: "更新 TM 判定" }));
-    choose("TM处理结果", "处理成功");
-    fireEvent.click(screen.getByRole("button", { name: "取消 TM 编辑" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "更新 TM 判定" })); });
+    await choose("TM处理结果", "处理成功");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消 TM 编辑" })); });
     expect(demoRepository.read().feedback[0].tmResult).toBe(record.tmResult);
-    fireEvent.click(screen.getByRole("button", { name: "更新 TM 判定" }));
-    choose("TM处理结果", "处理成功");
-    fireEvent.click(screen.getByRole("button", { name: "保存 TM 判定" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "更新 TM 判定" })); });
+    await choose("TM处理结果", "处理成功");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存 TM 判定" })); });
     await waitFor(() =>
       expect(screen.queryByRole("combobox", { name: "TM处理结果" })).toBeNull(),
     );
     expect(demoRepository.read().feedback[0].tmResult).toBe("处理成功");
     expect(demoRepository.read().feedback[0].status).toBe(record.status);
-    fireEvent.click(screen.getByRole("button", { name: "添加跟进" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "添加跟进" })); });
     expect(
       screen.getByRole("button", { name: "保存跟进" }).hasAttribute("disabled"),
     ).toBe(true);
-    fireEvent.change(screen.getByRole("textbox", { name: "追加跟进内容" }), {
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "追加跟进内容" }), {
       target: { value: "取消的记录" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "取消添加" }));
-    fireEvent.click(screen.getByRole("button", { name: "添加跟进" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "追加跟进内容" }), {
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消添加" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "添加跟进" })); });
+    await testAct(async () => { fireEvent.change(screen.getByRole("textbox", { name: "追加跟进内容" }), {
       target: { value: "再次沟通确认" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存跟进" }));
+    }); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存跟进" })); });
     await waitFor(() =>
       expect(
         screen.queryByRole("textbox", { name: "追加跟进内容" }),
@@ -240,10 +241,10 @@ it("列表的三项操作在原行办理并写入同一条反馈", async () => {
     ["TM 判定", "TM判定说明", "保存 TM 判定"],
     ["添加跟进", "追加跟进内容", "保存跟进"],
   ]) {
-    fireEvent.click(within(row).getByRole("button", {name: button}));
+    await testAct(async () => { fireEvent.click(within(row).getByRole("button", {name: button})); });
     const dialog = within(screen.getByRole("dialog"));
-    fireEvent.change(dialog.getByRole("textbox", {name: field}), {target: {value: field}});
-    fireEvent.click(dialog.getByRole("button", {name: save}));
+    await testAct(async () => { fireEvent.change(dialog.getByRole("textbox", {name: field}), {target: {value: field}}); });
+    await testAct(async () => { fireEvent.click(dialog.getByRole("button", {name: save})); });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   }
   const record = demoRepository.read().feedback.find(item => item.id === id)!;
@@ -267,14 +268,14 @@ it("先按待办优先级排序再分页，状态筛选保留搜索条件，办�
   const records = () => screen.getAllByRole("row").slice(1);
   expect(screen.getByRole("combobox", {name: "反馈状态"}).textContent).toContain("全部反馈状态");
   expect(records().slice(0, 3).map(row => row.querySelector(".feedback-content-preview")?.textContent)).toEqual(["筛选样例27","筛选样例25","筛选样例26"]);
-  fireEvent.click(screen.getByRole("button", {name: "下一页"}));
-  choose("反馈状态", "未完成");
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", {name: "下一页"})); });
+  await choose("反馈状态", "未完成");
   expect(records()).toHaveLength(3);
-  fireEvent.click(within(records()[0]).getByRole("button", {name: "客服处理"}));
-  choose("客服处理进度", "已完成");
-  fireEvent.click(screen.getByRole("button", {name: "保存客服处理"}));
+  await testAct(async () => { fireEvent.click(within(records()[0]).getByRole("button", {name: "客服处理"})); });
+  await choose("客服处理进度", "已完成");
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", {name: "保存客服处理"})); });
   await waitFor(() => expect(records()).toHaveLength(2));
-  choose("反馈状态", "已完成");
+  await choose("反馈状态", "已完成");
   expect(screen.getByText("共 26 条反馈")).toBeTruthy();
 });
 

@@ -36,7 +36,11 @@ function fixture() {
   }).data;
   data = transition(data, {
     type: "student.create",
-    student: { ...emptyStudentProfile(), name: "已是八位ID" },
+    student: {
+      ...emptyStudentProfile(),
+      chineseName: "已是八位ID",
+      name: "已是八位ID",
+    },
   }).data;
   data.events.push({
     id: "student-link",

@@ -1,0 +1,157 @@
+.business-login {
+  --business-login-intro-inset: clamp(32px, 4.75vw, 72px);
+  display: grid;
+  grid-template-columns: 45fr 55fr;
+  min-height: 100dvh;
+  background: var(--ct-white);
+}
+
+.business-login__brand {
+  grid-area: 1 / 1;
+  align-self: start;
+  justify-self: start;
+  z-index: 1;
+  /* The 188px logo image contains 25px of transparent space on the left. */
+  margin-left: calc(var(--business-login-intro-inset) - 25px);
+}
+
+.business-login__brand img {
+  display: block;
+}
+
+.business-login__intro {
+  grid-area: 1 / 1;
+  display: grid;
+  align-items: center;
+  padding: 152px var(--business-login-intro-inset) 56px;
+  background: var(--ct-brand-50);
+}
+
+.business-login__intro > div {
+  width: min(100%, 520px);
+}
+
+.business-login__intro h2 {
+  font-size: clamp(24px, 2.35vw, 36px);
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.business-login__intro p,
+.business-login__subtitle {
+  margin-top: 8px;
+  font-size: 16px;
+  color: var(--ct-gray-500);
+}
+
+.business-login__intro img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 32px;
+  mask-image: linear-gradient(to right, transparent, black 9px, black calc(100% - 9px), transparent),
+    linear-gradient(to bottom, transparent, black 9px, black calc(100% - 9px), transparent);
+  mask-composite: intersect;
+}
+
+.business-login__panel {
+  grid-area: 1 / 2;
+  display: grid;
+  padding: 40px clamp(32px, 5vw, 80px);
+}
+
+.business-login__content {
+  align-self: center;
+  justify-self: center;
+  width: min(100%, 368px);
+}
+
+.business-login__content h1 {
+  font-size: 30px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.business-login form {
+  display: grid;
+  gap: 18px;
+  margin-top: 32px;
+}
+
+.business-login .field {
+  font-size: 14px;
+}
+
+.business-login__password {
+  position: relative;
+}
+
+.business-login__password input {
+  padding-right: 48px;
+}
+
+.business-login__password button {
+  position: absolute;
+  inset: 4px 4px 4px auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ct-gray-500);
+}
+
+.business-login__password button:hover {
+  background: var(--ct-gray-50);
+  color: var(--ct-gray-900);
+}
+
+.business-login__submit.btn {
+  margin-top: 6px;
+  min-height: 48px;
+  border-radius: 8px;
+}
+
+.business-login__error {
+  color: var(--ct-danger);
+}
+
+#business-login-hint {
+  margin-top: 16px;
+  color: var(--ct-gray-500);
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .business-login {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .business-login__brand {
+    justify-self: center;
+    margin: 0;
+  }
+
+  .business-login__brand img {
+    width: 156px;
+    height: 156px;
+    margin: -12px 0 -16px;
+  }
+
+  .business-login__panel {
+    grid-area: 2 / 1;
+    padding: 16px 24px 28px;
+  }
+
+  .business-login__intro {
+    grid-area: 3 / 1;
+    padding: 32px 24px;
+  }
+
+  .business-login__intro img {
+    margin-top: 20px;
+  }
+}

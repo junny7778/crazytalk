@@ -21,6 +21,7 @@ function fixture() {
     { day: 3, start: "18:00", end: "21:00" },
   ];
   const student = data.students[3];
+  data.classInAccounts = [{id:"login",phone:"13900001234",uid:"101",studentIds:[student.id]}];
   student.status = "待排课";
   const intent: ScheduleIntent = {
     mode: "fixed",

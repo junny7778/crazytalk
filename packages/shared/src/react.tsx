@@ -1,3 +1,9 @@
+import { businessMode } from "./businessClient";
+import { useBusiness } from "./businessReact";
+export { BusinessProvider, type BusinessLoginProps } from "./businessReact";
+export { businessRequest, businessMode, businessHeaders, businessAccountId } from "./businessClient";
+import { sharedBalanceGroup } from "./packageBalances";
+import { withScopedReservations } from "./scheduleCredits";
 import { studentInScope, scopeLabel } from "./organization";
 import {
   createContext,
@@ -57,7 +63,13 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     </AccessContext.Provider>
   );
 }
-export function useDemo() {
+function useBusinessDemo() {
+  const business = useBusiness();
+  if (!business) throw new Error("业务页面缺少登录上下文");
+  return { data: business.data, act: business.act, can: (permission: string) => business.identity.roleId === "admin" || !!business.data.roles.find(r => r.id === business.identity.roleId)?.permissions.includes(permission), roleId: business.identity.roleId, accountId: business.identity.accountId, teacherId: business.identity.teacherId, preview: false, scope: "已授权", setRole: () => {}, reset: () => {} };
+ }
+export const useDemo = businessMode() ? useBusinessDemo : useLocalDemo;
+function useLocalDemo() {
   const access = useContext(AccessContext);
   const queryClient = useQueryClient();
   const { data = demoRepository.read() } = useQuery({
@@ -82,6 +94,11 @@ export function useDemo() {
       if(command.type==="feedback.create" || command.type==="feedback.edit")within(command.feedback.studentId);
       if(command.type==="report.correct")within(data.reports.find(r=>r.id===command.id)?.studentId);
       if(command.type==="student.import")for(const profile of command.students)if(profile.importStudentId)within(profile.importStudentId);
+      if (command.type === "student.bindClassIn") sharedBalanceGroup(data, command.id).members.forEach(within);
+      if (command.type === "order.join") {
+        const group = sharedBalanceGroup(data, command.studentId, command.orderId);
+        if (group.members.some(id => !ids.has(id))) throw new Error("请由可查看全部共用学员的教务确认共享");
+      }
       if(command.type==="order.buy" && command.studentIds.some(id=>!ids.has(id)))throw new Error("订单含超出授权范围的学员");
       if ("studentId" in command && command.studentId && !ids.has(command.studentId)) throw new Error("学员不在当前数据范围内");
       if ("id" in command && command.type.startsWith("student.") && !ids.has(command.id)) throw new Error("学员不在当前数据范围内");
@@ -90,6 +107,8 @@ export function useDemo() {
       const existing=data.teachers.find(t=>t.id===command.teacher.id);
       if(existing?.tmAccountId!==activeAccount.id || command.teacher.tmAccountId!==activeAccount.id)throw new Error("只能编辑本人负责的老师");
     }
+    if (command.type === "order.join" && command.bindAccountId && !can("classin_account.link"))
+      throw new Error("你没有关联 ClassIn 账号的权限");
     assertFeedbackCommandAccess(command, can);
     assertStudentCommandAccess(command, can);
     if (command.type === "teacher.save" && !can("availability.edit")) {
@@ -124,7 +143,7 @@ export function useDemo() {
     queryClient.setQueryData(["demo"], demoRepository.read());
     return result;
   }
-  const scope = access.accountId ? activeAccount?.scope || "账号已停用" : role?.scope || "全部";
+  const scope = (access.roleId === "admin" && (!access.accountId || activeAccount)) || activeAccount?.scope === "全部" ? "全部" : activeAccount?.scope === "本队" ? "本队" : "本组";
   const scopedStudents =
     scope === "全部"
       ? data.students
@@ -136,7 +155,7 @@ export function useDemo() {
       : {
           ...data,
           students: scopedStudents,
-          orders:data.orders?.filter(o=>o.studentIds.some(id=>ids.has(id))).map(o=>({...o,studentIds:o.studentIds.filter(id=>ids.has(id))})),
+          orders:data.orders?.filter(o=>o.studentIds.some(id=>ids.has(id))).map(o=>({...o,memberCount:o.studentIds.length,studentIds:o.studentIds.filter(id=>ids.has(id))})),
           classInAccounts:data.classInAccounts?.filter(a=>a.studentIds.some(id=>ids.has(id))).map(a=>({...a,studentIds:a.studentIds.filter(id=>ids.has(id))})),
           lessons: data.lessons.filter((l) => ids.has(l.studentId)),
           feedback: data.feedback.filter((f) => ids.has(f.studentId)),
@@ -161,7 +180,8 @@ export function useDemo() {
     leaves:scopedData.leaves.filter(l=>managedTeacherIds.has(l.teacherId))
   } : scopedData;
   return {
-    data: visible,
+    teacherId: undefined,
+    data: withScopedReservations(data, visible),
     act,
     can,
     ...access,
@@ -187,6 +207,7 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "slot.lock":"schedule.create", "slot.release":"schedule.create",
   "pay.terms":"pay_rate.edit","pay.freeze":"payroll.confirm",
   "survey.issue":"student.edit",
+  "order.join": "credit.add",
   "order.buy": "credit.add",
   "credit.add": "credit.add",
   "credit.deduct": "credit.add",
@@ -226,7 +247,6 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "catalog.save": "basics.manage",
   "feedback-category.delete": "basics.manage",
   "rules.save": "rule.manage",
-  "connection.save": "classin.manage",
 };
 
 export function assertFeedbackCommandAccess(

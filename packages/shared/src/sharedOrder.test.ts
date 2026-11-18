@@ -2,8 +2,17 @@ import { expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
 import { getScheduleCredits } from "./scheduleCredits";
+function newFamily() {
+  const data = createSeed();
+  const [a, b] = data.students.slice(0, 2).map((student, i) => ({
+    ...student, id: String(90000001 + i), balance: 0,
+  }));
+  data.students.unshift(a, b);
+  data.classInAccounts = [{id:"family-login",phone:"13900001234",uid:"101",studentIds:[a.id,b.id]}];
+  return data;
+}
 it("兄妹共用一笔订单。排课占用、取消释放、实际消耗和更正均原路核算", () => {
-  let d = createSeed();
+  let d = newFamily();
   const [a, b] = d.students;
   const buy = {
     type: "order.buy" as const,
@@ -17,7 +26,7 @@ it("兄妹共用一笔订单。排课占用、取消释放、实际消耗和更�
   };
   d = transition(d, buy).data;
   d = transition(d, buy).data;
-  expect(d.orders).toHaveLength(1);
+  expect(d.orders!.filter(o => o.studentIds.includes(a.id))).toHaveLength(1);
   const l = {
     ...d.lessons[0],
     id: "test",
@@ -39,7 +48,53 @@ it("兄妹共用一笔订单。排课占用、取消释放、实际消耗和更�
     decision: "扣课",
     reason: "确认完课",
   }).data;
-  expect(d.orders![0].balance).toBe(143);
+  expect(d.orders!.find(o => o.id === buy.id)!.balance).toBe(143);
   expect(d.credits[0].orderId).toBe("o1");
-  expect(d.students[0].balance).toBe(a.balance);
+  expect(d.students[0].balance).toBe(143);
+});
+
+it("后加入的学员共享原订单余量，重复加入不会新增流水或重复分配", () => {
+  let data = newFamily();
+  const [a, b] = data.students;
+  data = transition(data, { type: "order.buy", id: "family", studentId: a.id,
+    studentIds: [a.id], units: 72, date: "2026-10-31", kind: "新购", note: "" }).data;
+  data = transition(data, { type: "credit.deduct", studentId: a.id, units: 2, reason: "纠正" }).data;
+  const credits = data.credits;
+  const join = { type: "order.join" as const, orderId: "family", studentId: b.id };
+  data = transition(transition(data, join).data, join).data;
+  expect(data.orders!.filter(o => o.studentIds.includes(b.id))).toHaveLength(1);
+  expect(data.orders!.find(o => o.id === "family")).toMatchObject({ studentIds: [a.id, b.id], balance: 70 });
+  expect(data.credits).toEqual(credits);
+  expect(getScheduleCredits(data, b.id, 1, 1).available).toBe(70);
+});
+
+it("后续续费及补赠进入同一套餐，购买保留当时成员快照，重复续费不会重复入账", () => {
+  let data = newFamily();
+  const [a, b] = data.students;
+  data = transition(data, { type: "order.buy", id: "family", studentId: a.id, studentIds: [a.id],
+    units: 72, date: "2026-10-31", kind: "新购", note: "" }).data;
+  data = transition(data, { type: "order.join", orderId: "family", studentId: b.id }).data;
+  const renewal = { type: "credit.add" as const, kind: "续费", studentId: b.id, units: 72,
+    note: "", purchaseId: "renewal-2" };
+  data = transition(transition(data, renewal).data, renewal).data;
+  expect(data.credits.filter(c => c.purchaseId === "renewal-2")).toHaveLength(1);
+  expect(data.credits[0]).toMatchObject({ orderId: "family", purchaseStudentIds: [a.id,b.id] });
+  expect(data.credits.find(c => c.purchaseId === "family")!.purchaseStudentIds).toEqual([a.id]);
+  for (const kind of ["补偿", "赠送"])
+    data = transition(data, { type: "credit.add", kind, studentId: a.id, units: 1, note: "服务跟进" }).data;
+  expect(data.students.slice(0, 2).map(s => s.balance)).toEqual([146,146]);
+  expect(data.orders!.find(o => o.id === "family")!.balance).toBe(146);
+});
+
+it("多套课包时手动加减必须指定，不能改动其他学员的套餐", () => {
+  let data = newFamily();
+  const [a, b] = data.students;
+  for (const key of ["first", "second"])
+    data = transition(data, { type: "order.buy", id: key, studentId: a.id, studentIds: [a.id],
+      units: 72, date: "2026-10-31", kind: "新购", note: "" }).data;
+  const adjust = { type: "credit.deduct" as const, studentId: a.id, units: 1, reason: "重复登记" };
+  expect(() => transition(data, adjust)).toThrow("请选择");
+  expect(() => transition(data, { ...adjust, studentId: b.id, orderId: "first" })).toThrow("不属于");
+  data = transition(data, { ...adjust, orderId: "second" }).data;
+  expect(data.orders!.filter(o => o.studentIds.includes(a.id)).map(o => o.balance)).toEqual([72, 71]);
 });

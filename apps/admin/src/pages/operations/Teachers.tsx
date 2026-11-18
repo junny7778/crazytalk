@@ -6,7 +6,7 @@ import { formatStudentProgress } from "@crazytalk/shared";
 import TeacherSchedule from "../../components/TeacherSchedule";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../../components/DataTransferButton";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   Link,
   useNavigate,
@@ -20,9 +20,17 @@ import {
   ArrowLeft,
   ArrowRight,
   Plus,
+  X,
   AlertTriangle,
 } from "lucide-react";
-import { useDemo } from "@crazytalk/shared/react";
+import TeacherClassInRegistration from "../../components/TeacherClassInRegistration";
+import {
+  isDemoTeacherMedia,
+  removeDemoTeacherMedia,
+  storeDemoTeacherMedia,
+  useTeacherMediaSource,
+} from "../../lib/demoTeacherMedia";
+import { businessMode, useDemo } from "@crazytalk/shared/react";
 import {
   DEMO_TODAY,
   addDays,
@@ -53,6 +61,22 @@ import "./operations.css";
 const defaultPhotos = [1, 2, 3, 4].map(
   (number) => `/avatars/avatar-${number}.webp`,
 );
+const teacherMedia = {
+  photos: { types: ["image/png", "image/jpeg", "image/webp"], error: "请选择 PNG、JPG 或 WebP 图片" },
+  introVideo: { types: ["video/mp4", "video/webm"], error: "请选择 MP4 或 WebM 视频" },
+};
+const teacherMediaSources = (teacher?: Teacher | null) =>
+  [...(teacher?.photos ?? []), teacher?.introVideo ?? ""];
+const isUploadedVideo = (source = "") =>
+  /^(?:data:video\/|blob:|\/api\/files\/)/.test(source) || isDemoTeacherMedia(source);
+
+function TeacherMediaPreview({ source, alt, width }: { source: string; alt?: string; width?: number }) {
+  const url = useTeacherMediaSource(source);
+  if (!url) return null;
+  return alt
+    ? <img src={url} alt={alt} width={width} />
+    : <video src={url} aria-label="介绍视频预览" width={width} controls preload="metadata" />;
+}
 const trainingStatuses = ["未登记", "未完成", "已完成", "不适用"] as const;
 const trainingFields = [
   { key: "newTutorTraining", label: "New Tutor Training" },
@@ -69,7 +93,7 @@ function TeacherPhoto({
   return teacher.photo ? (
     <img
       src={teacher.photo}
-      alt={`${teacher.name}的照片`}
+      alt={`${teacher.name}的头像`}
       style={{
         width: size,
         height: size,
@@ -112,10 +136,73 @@ export default function Teachers() {
   const q = params.get("q") || "";
   const teacher = data.teachers.find((t) => t.id === id);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const displayPhotosInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const draftMedia = useRef(new Map<string, File>());
   const [photoError, setPhotoError] = useState("");
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const [mediaLoading, setMediaLoading] = useState(false);
   const [trainingOnly, setTrainingOnly] = useState(false);
   const [edit, setEdit] = useState<Teacher | null>(null);
+  const editId = edit?.id;
+  useEffect(() => {
+    setPhotoError("");
+    setMediaError("");
+  }, [editId]);
+  const photos = edit?.photos;
+  const introVideo = edit?.introVideo;
+  useEffect(() => {
+    for (const url of draftMedia.current.keys()) {
+      if (url === introVideo || photos?.includes(url)) continue;
+      URL.revokeObjectURL(url);
+      draftMedia.current.delete(url);
+    }
+  }, [photos, introVideo]);
+  useEffect(() => {
+    const files = draftMedia.current;
+    return () => {
+      for (const url of files.keys()) URL.revokeObjectURL(url);
+      files.clear();
+    };
+  }, []);
+
+  async function readTeacherMedia(event: ChangeEvent<HTMLInputElement>, kind: keyof typeof teacherMedia) {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (!files.length) return;
+    const { types, error } = teacherMedia[kind];
+    if (files.some((file) => !types.includes(file.type))) {
+      setMediaError(error);
+      return;
+    }
+    setMediaError("");
+    setMediaLoading(true);
+    try {
+      const media = businessMode()
+        ? await Promise.all(files.map((file) => new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          })))
+        : files.map((file) => {
+            const url = URL.createObjectURL(file);
+            draftMedia.current.set(url, file);
+            return url;
+          });
+      setEdit((current) => {
+        if (!current || current.id !== editId) return current;
+        return kind === "photos"
+          ? { ...current, photos: [...(current.photos ?? []), ...media] }
+          : { ...current, introVideo: media[0] };
+      });
+    } catch {
+      setMediaError(kind === "photos" ? "展示照片读取失败，请重新选择" : "介绍视频读取失败，请重新选择");
+    } finally {
+      setMediaLoading(false);
+    }
+  }
   const certificateOptions = ["TEFL", "TESOL", "CELTA"];
   const certificates = [...new Set((edit?.certificates || "").split(/[、,，;；\n]/).map((value) => value.trim()).filter(Boolean))];
   const otherCertificates = certificates.filter((value) => !certificateOptions.includes(value.toUpperCase()));
@@ -333,13 +420,40 @@ export default function Teachers() {
     ? affectedLessons(availabilityCandidate)
     : [];
   const pendingAffected = pendingTeacher ? affectedLessons(pendingTeacher) : [];
-  function persistTeacher(candidate: Teacher) {
-    run({ type: "teacher.save", teacher: candidate }, () => {
+  async function persistTeacher(candidate: Teacher) {
+    const onSaved = () => {
       setAvailabilityDraft(null);
       setPendingTeacher(null);
       setEdit(null);
       setTrainingOnly(false);
-    });
+    };
+    if (businessMode()) {
+      await run({ type: "teacher.save", teacher: candidate }, onSaved);
+      return;
+    }
+    const selected = [...draftMedia.current].filter(([url]) => teacherMediaSources(candidate).includes(url));
+    let refs: string[] = [];
+    setMediaLoading(true);
+    try {
+      refs = selected.length ? await storeDemoTeacherMedia(selected.map(([, file]) => file)) : [];
+      const byUrl = new Map(selected.map(([url], index) => [url, refs[index]]));
+      const teacher = {
+        ...candidate,
+        photos: candidate.photos?.map((source) => byUrl.get(source) ?? source),
+        introVideo: candidate.introVideo ? byUrl.get(candidate.introVideo) ?? candidate.introVideo : candidate.introVideo,
+      };
+      const previousMedia = teacherMediaSources(data.teachers.find((item) => item.id === teacher.id));
+      const remainingMedia = teacherMediaSources(teacher);
+      const saved = await run({ type: "teacher.save", teacher }, onSaved);
+      const removed = saved
+        ? previousMedia.filter((source) => isDemoTeacherMedia(source) && !remainingMedia.includes(source))
+        : refs;
+      void removeDemoTeacherMedia(removed).catch(() => {});
+    } catch {
+      setMediaError("无法保存媒体文件，请检查浏览器存储空间后重试");
+    } finally {
+      setMediaLoading(false);
+    }
   }
   function saveTeacher(candidate: Teacher) {
     if (affectedLessons(candidate).length) setPendingTeacher(candidate);
@@ -405,7 +519,12 @@ export default function Teachers() {
                 )}
               </div>
             </div>
-            <div className="teacher-profile-media">{teacher.photos?.map((photo,i)=><img key={i} width={120} src={photo} alt={teacher.name+" 展示照片 "+(i+1)}/>)}{teacher.introVideo && <video width={240} controls src={teacher.introVideo}/>}</div>
+            <div className="teacher-profile-media">
+              {teacher.photos?.map((photo, i) => (
+                <TeacherMediaPreview key={i} width={120} source={photo} alt={teacher.name + " 展示照片 " + (i + 1)} />
+              ))}
+              {teacher.introVideo && <TeacherMediaPreview width={240} source={teacher.introVideo} />}
+            </div>
             <dl className="teacher-profile-grid" aria-label="老师基本资料">
               <div>
                 <dt>负责 TM</dt><dd>{data.accounts.find(a => a.id === teacher.tmAccountId)?.name || "待分配"}</dd>
@@ -811,16 +930,6 @@ export default function Teachers() {
             {!filtered.length && (
               <EmptyState
                 title="没有符合条件的老师"
-                action={
-                  <Button
-                    onClick={() => {
-                      setSo("全部 SO");
-                      setParams({});
-                    }}
-                  >
-                    清除筛选
-                  </Button>
-                }
               />
             )}
           </Panel>
@@ -853,8 +962,10 @@ export default function Teachers() {
             </Button>
             <Button
               variant="primary"
+              data-diagnostic-action="save-teacher"
               disabled={
                 photoLoading ||
+                mediaLoading ||
                 Boolean(
                   edit?.quizScore != null &&
                     (!Number.isFinite(edit.quizScore) ||
@@ -934,29 +1045,14 @@ export default function Teachers() {
                         ))}
                     </Select>
                   </Field>
-                  <Field label="展示照片"><input className="media-file-field" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={async e=>{
-                    const files=Array.from(e.currentTarget.files || []);
-                    try {const images=await Promise.all(files.map(file=>new Promise<string>((resolve,reject)=>{
-                      if(!["image/png","image/jpeg","image/webp"].includes(file.type))return reject(new Error("请选择图片"));
-                      const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(file);
-                    })));setEdit(current=>current && ({...current,photos:[...(current.photos||[]),...images]}));}catch(error){setPhotoError(String(error));}
-                  }}/></Field>
-                  <div className="teacher-profile-media">{edit.photos?.map((photo,i)=><button key={i} aria-label={`移除展示照片 ${i+1}`} onClick={()=>setEdit({...edit,photos:edit.photos?.filter((_,j)=>j!==i)})}><img src={photo} alt={`展示照片 ${i+1}`} width={64}/></button>)}</div>
-                  <Field label="上传介绍视频"><input className="media-file-field" type="file" accept="video/mp4,video/webm" onChange={e=>{
-                    const file=e.target.files?.[0];if(!file)return;
-                    if(!["video/mp4","video/webm"].includes(file.type)){setPhotoError("请选择 MP4 或 WebM 视频");return;}
-                    const reader=new FileReader();reader.onload=()=>setEdit(current=>current && ({...current,introVideo:String(reader.result)}));reader.onerror=()=>setPhotoError("读取视频失败");reader.readAsDataURL(file);
-                  }}/></Field>
-                  {edit.introVideo?.startsWith("data:video") ? <div><video width={240} controls src={edit.introVideo}/><Button onClick={()=>setEdit({...edit,introVideo:""})}>移除介绍视频</Button></div> :
-                  <Field label="介绍视频链接"><input type="url" placeholder="https://" value={edit.introVideo || ""} onChange={e=>setEdit({...edit,introVideo:e.target.value})}/></Field>}
-                  <Field label="照片">
+                  <Field label="头像">
                     <div className="teacher-photo-picker">
                       <div className="teacher-photo-upload">
                         <TeacherPhoto teacher={edit} size={72} />
                         <div className="teacher-photo-upload-content">
                           <strong>
                             {edit.photo && !defaultPhotos.includes(edit.photo)
-                              ? "自定义照片"
+                              ? "自定义头像"
                               : "默认头像"}
                           </strong>
                           <small>支持 PNG、JPG、WebP，大小不超过 1 MB</small>
@@ -970,8 +1066,8 @@ export default function Teachers() {
                               ? "正在读取…"
                               : edit.photo &&
                                   !defaultPhotos.includes(edit.photo)
-                                ? "更换照片"
-                                : "上传照片"}
+                                ? "更换头像"
+                                : "上传头像"}
                           </Button>
                         </div>
                       </div>
@@ -1015,7 +1111,7 @@ export default function Teachers() {
                         type="file"
                         hidden
                         accept="image/png,image/jpeg,image/webp"
-                        aria-label="上传老师照片"
+                        aria-label="上传老师头像"
                         disabled={photoLoading}
                         onChange={(event) => {
                           const file = event.target.files?.[0];
@@ -1048,7 +1144,7 @@ export default function Teachers() {
                           };
                           reader.onerror = () => {
                             setPhotoLoading(false);
-                            setPhotoError("照片读取失败，请重新选择");
+                            setPhotoError("头像读取失败，请重新选择");
                           };
                           reader.readAsDataURL(file);
                         }}
@@ -1072,6 +1168,89 @@ export default function Teachers() {
                       )}
                     </div>
                   </Field>
+                  <Field label="展示照片">
+                    <div className="teacher-media-row">
+                      <input
+                        ref={displayPhotosInputRef}
+                        type="file"
+                        aria-label="选择展示照片"
+                        hidden
+                        multiple
+                        accept={teacherMedia.photos.types.join(",")}
+                        disabled={mediaLoading}
+                        onChange={(event) => void readTeacherMedia(event, "photos")}
+                      />
+                      <button
+                        type="button"
+                        className="teacher-media-upload"
+                        disabled={mediaLoading}
+                        onClick={() => displayPhotosInputRef.current?.click()}
+                      >
+                        <Plus size={20} aria-hidden="true" />
+                        添加照片
+                      </button>
+                      {edit.photos?.map((photo, index) => (
+                        <div className="teacher-media-preview" key={index}>
+                          <TeacherMediaPreview source={photo} alt={`展示照片 ${index + 1}`} />
+                          <button
+                            type="button"
+                            className="teacher-media-remove"
+                            aria-label={`移除展示照片 ${index + 1}`}
+                            onClick={() => setEdit({ ...edit, photos: edit.photos?.filter((_, i) => i !== index) })}
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label="介绍视频">
+                    <div className="teacher-media-row">
+                      <input
+                        ref={videoInputRef}
+                        type="file"
+                        aria-label="选择介绍视频"
+                        hidden
+                        accept={teacherMedia.introVideo.types.join(",")}
+                        disabled={mediaLoading}
+                        onChange={(event) => void readTeacherMedia(event, "introVideo")}
+                      />
+                      <button
+                        type="button"
+                        className="teacher-media-upload"
+                        disabled={mediaLoading}
+                        onClick={() => videoInputRef.current?.click()}
+                      >
+                        <Plus size={20} aria-hidden="true" />
+                        {isUploadedVideo(edit.introVideo) ? "更换视频" : "添加视频"}
+                      </button>
+                      {edit.introVideo && isUploadedVideo(edit.introVideo) && (
+                        <div className="teacher-media-preview teacher-media-preview-video">
+                          <TeacherMediaPreview source={edit.introVideo} />
+                          <button
+                            type="button"
+                            className="teacher-media-remove"
+                            aria-label="移除介绍视频"
+                            onClick={() => setEdit({ ...edit, introVideo: "" })}
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </Field>
+                  {mediaError && <p className="teacher-photo-error" role="alert">{mediaError}</p>}
+                  {!isUploadedVideo(edit.introVideo) && (
+                    <Field label="介绍视频链接">
+                      <input
+                        type="url"
+                        placeholder="https://"
+                        value={edit.introVideo || ""}
+                        disabled={mediaLoading}
+                        onChange={(event) => setEdit({ ...edit, introVideo: event.target.value })}
+                      />
+                    </Field>
+                  )}
                   <Field label="开课日期">
                     <DatePicker
                       placeholder="开课日期"
@@ -1109,10 +1288,11 @@ export default function Teachers() {
                     <input
                       value={edit.phone}
                       onChange={(e) =>
-                        setEdit({ ...edit, phone: e.target.value })
+                        setEdit({ ...edit, phone: e.target.value, classInUid: undefined })
                       }
                     />
                   </Field>
+                  {businessMode() && data.teachers.some(t => t.id === edit.id) && <TeacherClassInRegistration phone={edit.phone} uid={edit.classInUid} onRegistered={uid => setEdit(current => current ? { ...current, classInUid: uid } : current)} />}
                   <Field label="能教的类别" required>
                     <div className="row wrap">
                       {["少儿", "成人", "商务", "雅思", "零基础", "托福"].map(
@@ -1365,9 +1545,9 @@ export default function Teachers() {
             <Button
               variant="primary"
               disabled={!reason.trim() || end < start}
-              onClick={() =>
+              onClick={async () =>
                 teacher &&
-                run(
+                await run(
                   {
                     type: "teacher.leave",
                     teacherId: teacher.id,
@@ -1433,9 +1613,9 @@ export default function Teachers() {
             <Button
               variant="danger-solid"
               disabled={confirmName !== teacher?.name || !reason.trim()}
-              onClick={() =>
+              onClick={async () =>
                 teacher &&
-                run(
+                await run(
                   {
                     type: "teacher.offboard",
                     teacherId: teacher.id,

@@ -1,3 +1,4 @@
+import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { useSurveyPrefill } from "./lib/surveyPrefill";
 import AccountPasswordModal from "./components/AccountPasswordModal";
 import { hasSyncIssue, syncManagementPath } from "./lib/lessonSync";
@@ -101,6 +102,7 @@ function Loading() {
 }
 export default function App() {
   const { data, can, act, roleId, accountId, setRole, preview, reset, scope } = useDemo();
+  const roleName = data.roles.find((role) => role.id === roleId)?.name;
   const navigate = useNavigate();
   const location = useLocation();
   useSurveyPrefill(data.students, can("student.edit") && !preview && !location.pathname.startsWith("/teacher"), act);
@@ -204,9 +206,6 @@ export default function App() {
       <EmptyState
         title="这个页面不在你的工作权限内"
         description="可以返回你有权限的页面，或请管理员调整角色。"
-        action={
-          <Button onClick={() => navigate(first)}>返回我的工作页面</Button>
-        }
       />
     );
   return (
@@ -359,19 +358,19 @@ export default function App() {
                 className="user-button"
                 onClick={() => setUserMenu(!userMenu)}
               >
-                <Avatar name="Rita" size={42} />
+                <Avatar name={businessMode() ? data.accounts.find(a => a.id === accountId)?.name || "" : "Rita"} size={42} />
                 <span>
                   {preview
-                    ? data.roles.find((r) => r.id === roleId)?.name
+                    ? roleName
                     : data.accounts.find(a => a.id === accountId)?.name || "Rita"}
-                  <small>{preview ? "角色预览" : "教务运营"}</small>
+                  <small>{preview ? "角色预览" : roleName}</small>
                 </span>
                 <ChevronDown size={12} />
               </button>
               {userMenu && (
                 <div className="dropdown user-dropdown">
                   <button onClick={() => { setUserMenu(false); setPasswordOpen(true); }}>修改密码</button>
-                  <small>演示身份</small>
+                  {!businessMode() && <><small>切换角色</small>
                   {data.roles.map((r) => (
                     <button
                       key={r.id}
@@ -401,7 +400,7 @@ export default function App() {
                     }}
                   >
                     <RotateCcw size={14} />
-                    恢复演示数据
+                    恢复初始数据
                   </button>
                   <button
                     onClick={() =>
@@ -409,8 +408,9 @@ export default function App() {
                     }
                   >
                     <Smartphone size={14} />
-                    老师端演示
-                  </button>
+                    打开老师端
+                  </button></>}
+                  {businessMode() && <button onClick={async () => { await businessRequest("/session", "DELETE"); window.location.reload(); }}>退出登录</button>}
                 </div>
               )}
             </div>
@@ -425,7 +425,7 @@ export default function App() {
             </Button>
           </div>
         )}
-        {scope !== "全部" && !preview && (
+        {!businessMode() && scope !== "全部" && !preview && (
           <div className="scope-bar">
             当前负责范围：{scope}
             <Button size="xs" variant="ghost" onClick={() => setRole("admin")}>
@@ -499,17 +499,11 @@ export default function App() {
                 element={
                   <EmptyState
                     title="这个页面不存在"
-                    action={
-                      <Button onClick={() => navigate(first)}>返回首页</Button>
-                    }
                   />
                 }
               />
             </Routes>
           </Suspense>
-          <footer className="app-footer">
-            <span>演示数据 · 2026 年 10 月</span>
-          </footer>
         </main>
       </div>
       <Modal
@@ -650,8 +644,8 @@ export default function App() {
       <Modal
         open={resetOpen}
         onClose={() => setResetOpen(false)}
-        title="恢复初始演示数据"
-        description="本浏览器中的演示操作会被清除，恢复为最初的学员、课程和反馈。"
+        title="恢复初始数据"
+        description="学员、课程和反馈将恢复到初始状态。"
         footer={
           <>
             <Button onClick={() => setResetOpen(false)}>取消</Button>
@@ -660,7 +654,7 @@ export default function App() {
               onClick={() => {
                 reset();
                 setResetOpen(false);
-                toast("演示数据已恢复");
+                toast("已恢复初始数据");
               }}
             >
               恢复初始数据
@@ -668,7 +662,7 @@ export default function App() {
           </>
         }
       >
-        <p>正式业务数据不会受到影响。本地演示中新增的记录将清除。</p>
+        <p>恢复后，本浏览器中的新增记录和修改会被清除。</p>
       </Modal>
     </div>
   );

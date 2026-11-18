@@ -102,7 +102,7 @@ export default function StudentImport({
       const bytes = new TextEncoder().encode(JSON.stringify([mode,rows]));
       const hash = await crypto.subtle.digest("SHA-256", bytes);
       const batchId = Array.from(new Uint8Array(hash), n => n.toString(16).padStart(2, "0")).join("");
-      const result = act({ type: "student.import", students: rows, mode, batchId });
+      const result = await act({ type: "student.import", students: rows, mode, batchId });
       toast(result.message);
       close();
     } catch (reason) {

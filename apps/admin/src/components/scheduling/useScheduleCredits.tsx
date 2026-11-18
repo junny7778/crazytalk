@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getScheduleCredits, scheduleUnits } from "@crazytalk/shared";
+import { getScheduleCredits, scheduleUnits, schedulingAccountIssue } from "@crazytalk/shared";
 import { useDemo } from "@crazytalk/shared/react";
 import { Button, Field } from "@crazytalk/ui";
 
@@ -21,6 +21,7 @@ export function useScheduleCredits(
     manual.trim() ? Number(manual) : undefined,
   );
   const summary = getScheduleCredits(data, studentId, count, units ?? NaN);
+  if (studentId) summary.error = schedulingAccountIssue(data, studentId) || summary.error;
   const unknown = data.lessons.filter(
     (l) =>
       l.studentId === studentId &&
@@ -81,9 +82,9 @@ export function useScheduleCredits(
               !Number.isFinite(Number(legacy[lesson.id])) ||
               Number(legacy[lesson.id]) <= 0
             }
-            onClick={() => {
+            onClick={async () => {
               try {
-                act({
+                await act({
                   type: "lesson.plannedUnits.update",
                   id: lesson.id,
                   plannedUnits: Number(legacy[lesson.id]),

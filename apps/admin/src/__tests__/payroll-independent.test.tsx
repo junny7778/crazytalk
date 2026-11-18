@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { beforeEach, afterEach, it, expect } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
@@ -34,11 +35,11 @@ it("all payroll sources reconcile and confirmed -> paid remains frozen after ext
 
 it("admin Erika empty detail explicitly identifies historical balance and reconciles total", async () => {
   render(<QueryClientProvider client={new QueryClient()}><DemoProvider><ToastProvider><MemoryRouter><Payroll /></MemoryRouter></ToastProvider></DemoProvider></QueryClientProvider>);
-  fireEvent.click(await screen.findByText("T. Erika"));
+  { const target = await screen.findByText("T. Erika"); await testAct(async () => { fireEvent.click(target); }); }
   const dialog=screen.getByRole("dialog");
   expect(within(dialog).getByText("课酬来源")).toBeTruthy();
   expect(within(dialog).getByText(/暂无可追溯的计薪课程明细/)).toBeTruthy();
-  expect(within(dialog).getByText(/演示期初课酬/)).toBeTruthy();
+  expect(within(dialog).getByText("按汇总金额扣除可追溯课酬后计入期初。")).toBeTruthy();
   expect(within(dialog).getByRole("heading",{name:/应发/}).textContent).toContain("29,250");
 });
 
@@ -47,12 +48,12 @@ it("teacher missing payroll month renders unconfirmed state without throwing", (
   expect(screen.getByText(zh.notConfirmed)).toBeTruthy();
 });
 
-it("teacher confirmed payroll uses snapshot amount despite different current rate", () => {
+it("teacher confirmed payroll uses snapshot amount despite different current rate", async () => {
   const data=createSeed();
   const p=data.payroll.find(p=>p.status==="已确认")!;
   const pay=payrollBreakdown(data,p.id);
   render(<PayContent pay={pay} payroll={p} t={key=>zh[key]} findStudent={()=>undefined} onFeedback={()=>{}} />);
-  fireEvent.click(screen.getByText(zh.payDetails));
+  await testAct(async () => { fireEvent.click(screen.getByText(zh.payDetails)); });
   expect(screen.getByText(zh.noPayLessons)).toBeTruthy();
   expect(screen.getByText(zh.openingPay)).toBeTruthy();
   expect(document.body.textContent).not.toContain("99,999");

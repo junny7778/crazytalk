@@ -101,12 +101,15 @@ export function StudentLessonDrawer({
       ? undefined
       : Number(units)
     : 0;
+  const currentBalance = lesson.orderId
+    ? data.orders?.find(pack => pack.id === lesson.orderId)?.balance
+    : student?.balanceKnown ? student.balance : undefined;
   const previewBalance =
-    student?.balanceKnown &&
+    currentBalance !== undefined &&
     beforeDeducted !== undefined &&
     newDeducted !== undefined &&
     Number.isFinite(newDeducted)
-      ? Math.round((student.balance + beforeDeducted - newDeducted) * 1e8) / 1e8
+      ? Math.round((currentBalance + beforeDeducted - newDeducted) * 1e8) / 1e8
       : undefined;
   const pending = lesson.status === "待确认";
   const editableFacts = lesson.status === "已完成" || lesson.status === "缺席";
@@ -156,7 +159,7 @@ export function StudentLessonDrawer({
     setAttendance(lesson.attendance);
     setResult(lesson.status === "缺席" ? "缺席" : "已完成");
   }
-  function save() {
+  async function save() {
     if (!lesson || !editing || saving) return;
     if (editing === "report") {
       if (!report) return;
@@ -167,7 +170,7 @@ export function StudentLessonDrawer({
       setError("");
       setSaving(true);
       try {
-        act({
+        await act({
           type: "report.correct",
           id: report.id,
           material: reportMaterial,
@@ -203,11 +206,11 @@ export function StudentLessonDrawer({
     try {
       if (editing === "cancel") {
         if (!canChange) throw new Error("这节课当前无法取消");
-        act({ type: "lesson.cancel", id: lesson.id, reason, responsibility,kind:cancelKind,waived });
+        await act({ type: "lesson.cancel", id: lesson.id, reason, responsibility,kind:cancelKind,waived });
         toast(`${student?.name} ${lesson.date} ${lesson.time} 的课程已取消`);
         if (cancelDirectly) onClose();
       } else if (pending) {
-        act({
+        await act({
           type: "lesson.resolve",
           ids: [lesson.id],
           decision: deduct
@@ -220,7 +223,7 @@ export function StudentLessonDrawer({
         });
         toast("课程结果已确认");
       } else {
-        act({
+        await act({
           type: "lesson.correct",
           id: lesson.id,
           deduct,
@@ -446,7 +449,7 @@ export function StudentLessonDrawer({
                 原结果：{lessonCharge(lesson)}
                 {previewBalance === undefined
                   ? "；余额尚无法核算"
-                  : `；确认后余额 ${previewBalance} 课时（当前 ${student?.balance}）`}
+                  : `；确认后余额 ${previewBalance} 课时（当前 ${currentBalance}）`}
               </p>
               <Field label={pending ? "确认说明" : "更正原因"} required>
                 <textarea

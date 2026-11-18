@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -63,14 +64,14 @@ function mount(child: React.ReactNode) {
     </QueryClientProvider>,
   );
 }
-function change(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+async function change(label: string, value: string) {
+  await testAct(async () => { fireEvent.change(screen.getByLabelText(label, { exact: true }), {
     target: { value },
-  });
+  }); });
 }
-function choose(label: string, value: string) {
-  fireEvent.click(screen.getByRole("combobox", { name: label }));
-  fireEvent.click(screen.getByRole("option", { name: value }));
+async function choose(label: string, value: string) {
+  await testAct(async () => { fireEvent.click(screen.getByRole("combobox", { name: label })); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: value })); });
 }
 beforeEach(() => {
   localStorage.clear();
@@ -105,12 +106,12 @@ describe("学员资料与历史分离 V4", () => {
     ])
       expect(screen.queryByLabelText(label, { exact: true })).toBeNull();
     expect(screen.queryByRole("button", { name: "添加月份" })).toBeNull();
-    change("学生名字", "新资料建档");
-    choose(
+    await change("学生中文名", "新资料建档");
+    await choose(
       "上课老师",
       `${demoRepository.read().teachers.find((item) => item.status === "在职")?.name} · ${demoRepository.read().teachers.find((item) => item.status === "在职")?.so}`,
     );
-    fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存学员资料" })); });
     await waitFor(() =>
       expect(
         demoRepository
@@ -122,18 +123,18 @@ describe("学员资料与历史分离 V4", () => {
   it("只保存变动资料，不用打开时的旧进度覆盖后续业务更新", async () => {
     const student = structuredClone(demoRepository.read().students[0]);
     mount(<StudentProfileEditor student={student} onClose={() => {}} />);
-    change("学生群名", "仅编辑群名");
+    await change("学生中文名", "仅编辑群名");
     demoRepository.execute({
       type: "student.edit",
       id: student.id,
       patch: { material: "最新教材", unit: "p.99" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存学员资料" })); });
     await waitFor(() =>
       expect(
         demoRepository.read().students.find((item) => item.id === student.id),
       ).toMatchObject({
-        groupName: "仅编辑群名",
+        chineseName: "仅编辑群名",
         material: "最新教材",
         unit: "p.99",
       }),
@@ -172,28 +173,28 @@ describe("学员资料与历史分离 V4", () => {
   it("相同资料被其他操作更改时，保存提示冲突并保留新值", async () => {
     const student = structuredClone(demoRepository.read().students[0]);
     mount(<StudentProfileEditor student={student} onClose={() => {}} />);
-    change("学生名字", "我的编辑");
+    await change("学生中文名", "我的编辑");
     demoRepository.execute({
       type: "student.details.update",
       id: student.id,
-      patch: { name: "他人已修改" },
-      expected: { name: student.name },
+      patch: { chineseName: "他人已修改" },
+      expected: { chineseName: student.chineseName },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存学员资料" })); });
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(
       demoRepository.read().students.find((item) => item.id === student.id)
-        ?.name,
+        ?.chineseName,
     ).toBe("他人已修改");
   });
   it("历史更正须说明原因，原月度/历史原文保留，未填写日期不假设统计起点", async () => {
     const student = structuredClone(demoRepository.read().students[0]);
     mount(<StudentHistoryEditor student={student} onClose={() => {}} />);
-    change("投诉记录（次数）", "2");
-    fireEvent.click(screen.getByRole("button", { name: "保存历史资料" }));
+    await change("投诉记录（次数）", "2");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存历史资料" })); });
     expect(await screen.findByText("请填写本次补录或更正原因")).toBeTruthy();
-    change("补录／更正原因", "核对旧表");
-    fireEvent.click(screen.getByRole("button", { name: "保存历史资料" }));
+    await change("补录／更正原因", "核对旧表");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存历史资料" })); });
     await waitFor(() =>
       expect(
         demoRepository.read().students.find((item) => item.id === student.id),
@@ -220,15 +221,34 @@ describe("学员资料与历史分离 V4", () => {
         onClose={close}
       />,
     );
-    change("投诉记录（次数）", "4");
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await change("投诉记录（次数）", "4");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
     expect(
       screen.getByRole("dialog", { name: "放弃未保存的内容？" }),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "继续填写" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "继续填写" })); });
     expect(
       (screen.getByLabelText("投诉记录（次数）") as HTMLInputElement).value,
     ).toBe("4");
     expect(close).not.toHaveBeenCalled();
   });
+});
+
+it("受限编辑读取脱敏手机号，修改姓名不覆盖真实手机号", async () => {
+  const original = structuredClone(demoRepository.read().students[0]);
+  demoRepository.read().roles.push({ id: "masked-editor", name: "脱敏编辑", description: "专项验证", permissions: ["student.view", "student.edit"], scope: "全部" });
+  function RestrictedEditor() {
+    const { roleId, setRole } = useDemo();
+    return roleId === "masked-editor"
+      ? <StudentProfileEditor student={{ ...original, phone: original.phone ? `****${original.phone.slice(-4)}` : "" }} onClose={() => {}} />
+      : <button onClick={() => setRole("masked-editor")}>切换受限身份</button>;
+  }
+  mount(<RestrictedEditor />);
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "切换受限身份" })); });
+  const phone = screen.getByLabelText("手机号码") as HTMLInputElement;
+  expect(phone.disabled).toBe(true);
+  expect(phone.value).toBe(original.phone ? `****${original.phone.slice(-4)}` : "");
+  await testAct(async () => { fireEvent.change(screen.getByLabelText("学生中文名"), { target: { value: "脱敏资料编辑验证" } }); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存学员资料" })); });
+  expect(demoRepository.read().students.find(student => student.id === original.id)).toMatchObject({ chineseName: "脱敏资料编辑验证", phone: original.phone });
 });

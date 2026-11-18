@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -35,7 +36,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
     }] })).toThrow(/换老师/);
     expect(demoRepository.read()).toEqual(snapshot);
     mount(<Students />, `/students?q=${encodeURIComponent(student.name)}`);
-    const row = screen.getByRole("link", { name: student.name }).closest("tr")!;
+    const row = screen.getAllByRole("link", { name: student.name }).find(link => link.getAttribute("href") === `/students/${student.id}`)!.closest("tr")!;
     expect(within(row).getByRole("cell", { name: student.teacherName })).toBeTruthy();
   });
 
@@ -55,7 +56,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
   });
 
   it("新建档案初始余额和总课时为零", () => {
-    const after = transition(createSeed(), { type: "student.create", student: { ...emptyStudentProfile(), name: "余额未知的新学生" } }).data;
+    const after = transition(createSeed(), { type: "student.create", student: { ...emptyStudentProfile(), chineseName: "余额未知的新学生" } }).data;
     expect(after.students[0].balanceKnown).toBe(true);
     expect(after.students[0].totalUnits).toBe(0);
     expect(after.students[0]).not.toHaveProperty("code");
@@ -101,7 +102,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
     const ended = transition(before, { type: "student.lifecycle", studentId: student.id, status: "结课", reason: "服务已结束" }).data;
     const after = transition(ended, { type: "credit.add", studentId: student.id, units: 1, kind, date: "2026-10-01", note: "补记历史业务" }).data;
     expect(after.students[0]).toMatchObject({ status: "结课", orderStatus: "结课", balance: student.balance + 1 });
-    expect(after.students[0].renewalStatus).toBe(kind === "续费" ? "是" : student.renewalStatus);
+    expect(after.students[0].renewalStatus).toBe(student.renewalStatus);
     const resumed = transition(after, { type: "student.lifecycle", studentId: student.id, status: "在读", reason: "确认恢复教学服务" }).data;
     expect(resumed.students[0]).toMatchObject({ status: "在读", orderStatus: "正常", balance: student.balance + 1 });
   });
@@ -116,14 +117,14 @@ describe("独立需求验收：学生档案与老师结课", () => {
     demoRepository.refresh();
     mount(<TeacherApp />);
     const today = screen.getByRole("heading", { name: "今日课程" }).closest("section")!;
-    fireEvent.click(today.querySelector(".teacher-lesson-row")!);
+    await testAct(async () => { fireEvent.click(today.querySelector(".teacher-lesson-row")!); });
     expect(screen.getByRole("button", { name: "结课" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "结课" }));
-    fireEvent.change(screen.getByLabelText("教材", { exact: true }), { target: { value: "验收新教材" } });
-    fireEvent.change(screen.getByLabelText("页码", { exact: true }), { target: { value: "17" } });
-    fireEvent.change(screen.getByLabelText(/教材结束页截图/), {target:{files:[new File(["png"],"page.png",{type:"image/png"})]}});
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "结课" })); });
+    await testAct(async () => { fireEvent.change(screen.getByLabelText("教材", { exact: true }), { target: { value: "验收新教材" } }); });
+    await testAct(async () => { fireEvent.change(screen.getByLabelText("页码", { exact: true }), { target: { value: "17" } }); });
+    await testAct(async () => { fireEvent.change(screen.getByLabelText(/教材结束页截图/), {target:{files:[new File(["png"],"page.png",{type:"image/png"})]}}); });
     await screen.findByAltText("结束页");
-    fireEvent.click(screen.getByRole("button", { name: "提交结课" }));
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "提交结课" })); });
     const saved = demoRepository.read();
     expect(saved.reports).toHaveLength(1);
     expect(saved.reports[0]).toMatchObject({ material: "验收新教材", comment: "", rating: 0 });
@@ -149,7 +150,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
     }
   });
 
-  it("55分钟未核实课程详情不按分钟自动声称已知课时数", () => {
+  it("55分钟未核实课程详情不按分钟自动声称已知课时数", async () => {
     const fixture = createSeed();
     const lesson = fixture.lessons.find(l => l.teacherId === "t1")!;
     fixture.lessons = [{ ...lesson, id: "review-55", date: DEMO_TODAY, time: "17:00", duration: 55, status: "未开始", deducted: false }];
@@ -157,7 +158,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
     localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(fixture));
     demoRepository.refresh();
     const { container } = mount(<Schedule />, `/schedule?date=${DEMO_TODAY}`);
-    fireEvent.click(container.querySelector(".schedule-lesson")!);
+    await testAct(async () => { fireEvent.click(container.querySelector(".schedule-lesson")!); });
     const detail = screen.getByRole("dialog");
     expect(detail.textContent).toContain("55 分钟");
     expect(detail.textContent).not.toMatch(/55 分钟.*2 课时/);

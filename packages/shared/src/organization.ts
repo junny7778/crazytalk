@@ -1,27 +1,16 @@
 import type { Account, CatalogEntry, DemoState, Student } from "./model";
 
-export function projectLabel(catalog: CatalogEntry[], project: CatalogEntry) {
-  const channel = catalog.find(
-    (item) => item.id === project.parentId && item.type === "渠道",
-  );
-  return [channel?.name || "渠道待补录", project.name].join(" / ");
-}
-
-export function scopeLabel(catalog: CatalogEntry[], scope: string) {
-  const project = catalog.find(
-    (p) => p.type === "项目" && scope === "project:" + p.id,
-  );
-  return project ? projectLabel(catalog, project) : scope;
+export function scopeLabel(_catalog: CatalogEntry[], scope: string) {
+  return scope;
 }
 
 export function studentInScope(
   data: DemoState,
-  student: Student,
+  student: Pick<Student, "owner" | "project" | "channel" | "roster">,
   scope: string,
   account?: Account,
 ) {
-  if (scope === "全部") return true;
-  if (scope === "本人负责") return student.owner === (account?.name || "Rita");
+  if (account?.roleId === "admin" || scope === "全部") return true;
   if (scope === "本组" || scope === "本队") {
     const owner = studentOrganization(data.accounts,student.owner,student.roster);
     if (!owner || !account) return false;
@@ -32,34 +21,24 @@ export function studentInScope(
           owner.group === account.group
       : !!account.team && owner.team === account.team;
   }
-  if (scope.startsWith("project:")) {
-    const project = data.catalog.find(
-      (item) => item.type === "项目" && "project:" + item.id === scope,
-    );
-    const channel = data.catalog.find(
-      (item) => item.type === "渠道" && item.id === project?.parentId,
-    );
-    return (
-      !!channel &&
-      project?.name === student.project &&
-      channel.name === student.channel
-    );
-  }
-  return student.project === scope || student.channel === scope;
+  return false;
 }
 
 export function assignSampleTeams(data: DemoState) {
-  const batch = "sample-teams-v1";
+  const batch = "sample-teams-v2";
   if (data.importedBatches?.includes(batch)) return false;
   for (const [id, name, team, group] of [
     ["u2", "Rita", "A队", "二组"],
     ["u3", "Roma", "B队", "一组"],
+    ["u4", "Tina", "A队", "二组"],
   ]) {
-    const account = data.accounts.find(a => a.id === id && a.name === name && a.roleId === "ops");
+    const account = data.accounts.find(a => a.id === id && a.name === name);
     if (!account || (account.team && account.team !== team)) continue;
     account.team ||= team;
     account.group ||= group;
   }
+  for (const account of data.accounts) account.scope = account.roleId === "admin" || account.scope === "全部" ? "全部" : account.scope === "本队" ? "本队" : "本组";
+  for (const role of data.roles) role.scope = role.id === "admin" ? "全部" : "本组";
   (data.importedBatches ??= []).push(batch);
   return true;
 }
@@ -82,4 +61,34 @@ export function organizationView(data: DemoState, params: URLSearchParams) {
   const teacherIds = new Set([...students, ...lessons].map(item => item.teacherId));
   return {...data, students, lessons, feedback: data.feedback.filter(f => ids.has(f.studentId)),
     teachers: data.teachers.filter(t => teacherIds.has(t.id))};
+}
+
+export function migrateTeamCatalog(data: DemoState) {
+  const batch = "team-catalog-v1";
+  if (data.importedBatches?.includes(batch)) return false;
+  for (const account of data.accounts) {
+    if (!account.team) continue;
+    let team = data.catalog.find(c => c.type === "队伍" && c.name === account.team);
+    if (!team) {
+      team = { id: "team:" + account.team, type: "队伍", name: account.team, detail: "", enabled: true };
+      data.catalog.push(team);
+    }
+    if (account.group && !data.catalog.some(c => c.type === "组别" && c.parentId === team.id && c.name === account.group))
+      data.catalog.push({ id: "group:" + JSON.stringify([account.team, account.group]), type: "组别", parentId: team.id, name: account.group, detail: "", enabled: true });
+  }
+  (data.importedBatches ??= []).push(batch);
+  return true;
+}
+
+
+export function migrateProjectChannels(data: DemoState) {
+  let changed = false;
+  for (const project of data.catalog.filter(c => c.type === "项目" && !c.channelIds)) {
+    project.channelIds = project.parentId ? [project.parentId] : data.catalog
+      .filter(c => c.type === "渠道" && data.students.some(s => s.project === project.name && s.channel === c.name)).map(c => c.id);
+    project.scopeChannelId = project.parentId;
+    delete project.parentId;
+    changed = true;
+  }
+  return changed;
 }

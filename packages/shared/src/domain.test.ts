@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { createSeed } from "./seed";
+import { createSeed as originalSeed } from "./seed";
 import { transition, payrollTotal, isAvailable } from "./domain";
 import { demoRepository } from "./repository";
 import type { Command, DemoState } from "./model";
 
+function createSeed() {
+  const state = originalSeed();
+  state.classInAccounts = state.students.map((student, index) => ({
+    id: "account-" + student.id,
+    phone: student.phone,
+    uid: String(20000 + index),
+    studentIds: [student.id],
+  }));
+  return state;
+}
 function normalPending(data: DemoState) {
   const lesson = data.lessons.find(
     (item) => item.status === "待确认" && item.attendance === "正常",
@@ -38,13 +48,15 @@ describe("运营业务闭环", () => {
       type: "student.create",
       student: {
         ...student,
-        name: "Demo pupil",
+        name: "测试学员",
+        chineseName: "测试学员",
+        englishName: "Demo pupil",
         phone: "13812345678",
         status: "待排课",
         teacherId: "",
       },
     }).data;
-    const created = data.students.find((s) => s.name === "Demo pupil");
+    const created = data.students.find((s) => s.chineseName === "测试学员");
     expect(created).toBeDefined();
     if (!created) throw new Error("Creation did not return a student");
     expect(created).toMatchObject({ balanceKnown: true, balance: 0 });
@@ -55,8 +67,16 @@ describe("运营业务闭环", () => {
       kind: "新购",
       note: "",
     }).data;
+    data = transition(data, {
+      type: "student.bindClassIn",
+      id: created.id,
+      phone: "13812345678",
+      uid: "29999",
+    }).data;
     data = transition(data, schedule(created.id)).data;
-    expect(data.students.find((s) => s.id === created.id)?.status).toBe("待排课");
+    expect(data.students.find((s) => s.id === created.id)?.status).toBe(
+      "待排课",
+    );
     const lesson = data.lessons.find((l) => l.studentId === created.id);
     if (!lesson) throw new Error("Scheduling did not create a lesson");
     lesson.status = "待确认";
@@ -150,7 +170,12 @@ describe("运营业务闭环", () => {
 
   it("老师未完成培训、少儿授课限制和关闭时间均阻断排课", () => {
     const data = createSeed();
-    expect(() => transition(data, schedule("s4", "t8"))).toThrow("培训");
+    expect(() =>
+      transition(data, {
+        ...schedule("s4", "t8"),
+        confirmedTeacher: true,
+      } as Command),
+    ).toThrow("培训");
     expect(() => transition(data, schedule("s4", "t7"))).toThrow("少儿");
     expect(isAvailable(data, "t1", "2026-11-20", "09:00", 25, "s4")).toContain(
       "不在老师的可上课时间内",

@@ -1,10 +1,13 @@
+import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { formatMaterialProgress } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
 import StudentProfileEditor from "./StudentProfileEditor";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { refundMembers } from "../../../../packages/shared/src/businessEffects";
 import { useDemo } from "@crazytalk/shared/react";
 import {
+  sharedBalanceGroup, sharedClassIn,
   type Student,
   type Command,
   DEMO_TODAY,
@@ -61,22 +64,41 @@ export function StudentActionModal({
   const { data, act, can } = useDemo();
   const toast = useToast();
   const navigate = useNavigate();
+  const [sharedOrderId, setSharedOrderId] = useState("");
+  const [kind, setKind] = useState("新购");
+  const isPurchase = kind === "新购" || kind === "续费";
+  const joining = action === "credit" && kind === "共享已有课时";
+  const memberOrders = (data.orders ?? []).filter(order => order.studentIds.includes(student.id));
+  function memberName(id: string) {
+    const name = data.students.find(s => s.id === id)?.name ?? id;
+    return data.students.filter(s => s.name === name).length > 1 ? `${name}（${id}）` : name;
+  }
+  const linkedAccount = data.classInAccounts?.find(account => account.studentIds.includes(student.id));
+  const sharingIssue = linkedAccount && !linkedAccount.uid ? "请先核实已关联的 ClassIn UID" : "";
+  const availableOrders = joining && !sharingIssue ? (data.orders ?? []).flatMap(order => {
+    if (memberOrders.length <= 1 && order.studentIds.includes(student.id)) return [];
+    const group = sharedBalanceGroup(data, student.id, order.id);
+    const binding = sharedClassIn(data, group.members);
+    if (binding.issue || group.sources.some(pack => (pack.memberCount ?? pack.studentIds.length) > pack.studentIds.length)) return [];
+    if (binding.account && binding.unbound.length && !can("classin_account.link")) return [];
+    return [{ order, group, ...binding }];
+  }) : [];
+  const selected = availableOrders.find(item => item.order.id === sharedOrderId);
+  const group = selected?.group;
+  const needsBinding = !!selected?.account && !!selected.unbound.length;
+  const sharingLabel = "共享课时余额";
   const isCredit = action === "credit" || action === "compensate";
   const [stars,setStars]=useState(0),[visitStage,setVisitStage]=useState("首三节"),[visitEvidence,setVisitEvidence]=useState("");
   const [units, setUnits] = useState(72);
-  const [memberQuery,setMemberQuery]=useState("");
-  const [members,setMembers] = useState<string[]>([]);
-  const [benefitOrder,setBenefitOrder]=useState("");
   const orderKey = useRef("");
 
-  const [kind, setKind] = useState("续费");
   const [businessDate, setBusinessDate] = useState(DEMO_TODAY);
   const [feedbackId, setFeedbackId] = useState("");
   const [referrerId, setReferrerId] = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(addDays(DEMO_TODAY, 2));
   const [time, setTime] = useState("18:00");
-  const [teacherId, setTeacher] = useState(student.teacherId || "t1");
+  const [teacherId, setTeacher] = useState(student.teacherId || (businessMode() ? data.teachers[0]?.id || "" : "t1"));
   const [lessonId, setLesson] = useState("");
   const [ack, setAck] = useState(false);
   const [error, setError] = useState("");
@@ -104,9 +126,10 @@ export function StudentActionModal({
   useEffect(() => {
     setError("");
     setVisitAttempted(false);
-    setBenefitOrder("");setStars(0);setVisitEvidence("");setVisitStage("首三节");
+    setSharedOrderId("");
+    setStars(0);setVisitEvidence("");setVisitStage("首三节");
     setUnits(action === "compensate" ? 1 : 72);
-    setMemberQuery(""); setMembers([student.id]); orderKey.current=crypto.randomUUID();
+    orderKey.current=crypto.randomUUID();
     setNote("");
     setAck(false);
     const nextFeedbackId = data.feedback.some(
@@ -114,7 +137,7 @@ export function StudentActionModal({
     )
       ? initialFeedbackId || ""
       : "";
-    const nextKind = action === "compensate" ? "补偿" : "续费";
+    const nextKind = action === "compensate" ? "补偿" : "新购";
     setFeedbackId(nextFeedbackId);
     setKind(nextKind);
     setReferrerId("");
@@ -130,13 +153,13 @@ export function StudentActionModal({
     const nextTeacher =
       action === "reschedule" && selected
         ? selected.teacherId
-        : student.teacherId || "t1";
+        : student.teacherId || (businessMode() ? data.teachers[0]?.id || "" : "t1");
     setLesson(selected?.id || "");
     setDate(nextDate);
     setTime(nextTime);
     setTeacher(nextTeacher);
     initialValues.current = JSON.stringify({
-      members:[student.id], stars:0,visitStage:"首三节",visitEvidence:"",
+      stars:0,visitStage:"首三节",visitEvidence:"",
       units: action === "compensate" ? 1 : 72,
       kind: nextKind,
       businessDate: DEMO_TODAY,
@@ -205,7 +228,7 @@ export function StudentActionModal({
     if (action === "credit") {onClose();return;}
     const changed =
       JSON.stringify({
-        members, stars,visitStage,visitEvidence,
+        stars,visitStage,visitEvidence,
         units,
         kind,
         businessDate,
@@ -234,7 +257,7 @@ export function StudentActionModal({
     edit: "编辑学员资料",
     referral: "登记转介绍关系",
   };
-  function submit() {
+  async function submit() {
     if (!action || submitLock.current) return;
     if (action === "visit" && (!stars || !note.trim())) {
       setVisitAttempted(true);
@@ -256,14 +279,20 @@ export function StudentActionModal({
       switch (action) {
         case "credit":
         case "compensate":
-          if (["新购","续费","充值"].includes(kind)) {
-            if (units !== 72 && units !== 144) throw new Error("请选择 72 或 144 节套餐");
-            cmd = {type:"order.buy",id:orderKey.current,studentId:student.id,studentIds:members,units,date:businessDate,kind,note};
+          if (joining) {
+            cmd = { type: "order.join", orderId: sharedOrderId, studentId: student.id,
+              bindAccountId: needsBinding ? selected?.account.id : undefined };
+            break;
+          }
+          if (isPurchase) {
+            if (units !== 72 && units !== 144) throw new Error("请选择购买课时");
+            cmd = memberOrders.length
+              ? { type: "credit.add", purchaseId: orderKey.current, studentId: student.id, units, kind, date: businessDate, note }
+              : { type: "order.buy", id: orderKey.current, studentId: student.id, studentIds: [student.id], units, kind, date: businessDate, note };
             break;
           }
           cmd = {
             type: "credit.add",
-            orderId:benefitOrder || undefined,
             studentId: student.id,
             units,
             kind,
@@ -321,7 +350,7 @@ export function StudentActionModal({
             reason: note,
           };
       }
-      const r = act(cmd);
+      const r = await act(cmd);
       toast(action === "visit" ? `已为 ${student.name} 添加回访` : r.message);
       onClose();
     } catch (e) {
@@ -367,7 +396,7 @@ export function StudentActionModal({
       onClose={requestClose}
       title={action ? titles[action] : ""}
       description={
-        action === "visit"
+        action === "visit" || isCredit
           ? undefined
           : `${student.name}${student.groupName ? ` · ${student.groupName}` : ""}`
       }
@@ -378,7 +407,7 @@ export function StudentActionModal({
           </Button>
           <Button
             disabled={
-              submitting ||
+              submitting || (joining && !group) || (isCredit && !joining && memberOrders.length > 1) ||
               hasConflicts ||
               (action === "reschedule" && !chosenLesson)
             }
@@ -386,53 +415,55 @@ export function StudentActionModal({
             onClick={submit}
           >
             确认
-            {isCredit
+            {joining ? (needsBinding ? "绑定并共享" : "共享") : isCredit
               ? `加 ${units} 课时`
               : action === "退费"
-                ? "停用服务（模拟）"
+                ? "停用服务"
                 : "保存"}
           </Button>
         </>
       }
     >
-      <div className="stack">
+      <div className={isCredit ? "stack student-credit-form" : "stack"}>
         {action === "visit" && <p>学员姓名：{student.name}</p>}
-        {isCredit && (
+        {action === "credit" && <Field label="加课时方式">
+          <div className="row wrap">
+            {["新购", "续费", "共享已有课时",
+              ...(can("credit.compensate") ? ["补偿", "赠送"] : [])].map(t =>
+                <Button key={t} size="sm" variant={kind === t ? "primary" : "secondary"}
+                  onClick={() => { setKind(t); setUnits(["补偿","赠送"].includes(t) ? 1 : 72); setError(""); }}>
+                  {t}
+                </Button>)}
+          </div>
+        </Field>}
+        {isCredit && memberOrders.length > 1 && <p>该学员有多份历史余额，请先在「共享已有课时」中核对成员并确认合并。</p>}
+        {joining && sharingIssue && <p role="status">{sharingIssue}。</p>}
+        {joining && !sharingIssue && <Field label={sharingLabel} required>
+          <Select aria-label={sharingLabel} value={sharedOrderId} onValueChange={setSharedOrderId}>
+            <option value="">{availableOrders.length ? "选择共用学员" : "暂无可共享的余额"}</option>
+            {availableOrders.map(({order, account}) => <option key={order.id} value={order.id}>
+              {!linkedAccount && account && account.phone + " · "}{order.studentIds.map(memberName).join("、")} · 剩余 {order.balance} 课时 · {order.memberCount ?? order.studentIds.length} 人使用
+            </option>)}
+          </Select>
+        </Field>}
+        {group && <div className="shared-credit-preview" aria-live="polite">
+          {needsBinding && <p>确认后将把{selected?.unbound.map(memberName).join("、")}绑定到 ClassIn 账号 {selected?.account.phone}，并与以下学员共享课时。</p>}
+          {!selected?.account && <p>共用学员均未绑定 ClassIn，可以先共享课时。排课前须为全部共用学员绑定同一账号。</p>}
+          <strong>共享后余额 {group.balance} 课时</strong>
+          {group.sources.length > 1 && <p>余额来源：{group.sources.map(pack => pack.studentIds.map(memberName).join("、") + " " + pack.balance + " 课时").join(" + ")}</p>}
+          <p>共用学员：{group.members.map(memberName).join("、")}</p>
+          <p>后续购课、补偿和赠送的课时也由以上学员共用。</p>
+        </div>}
+        {isCredit && !joining && (
           <>
             {["结课", "停课"].includes(student.status) && (
               <p className="muted">
                 本次仅登记课时，服务状态保持不变；重新上课请办理复课。
               </p>
             )}
-            <Field label="类型">
-              <div className="row wrap">
-                {[
-                  "续费",
-                  "新购",
-                  "充值",
-                  ...(can("credit.compensate") ? ["补偿", "赠送"] : []),
-                ].map((t) => (
-                  <Button
-                    key={t}
-                    size="sm"
-                    variant={kind === t ? "primary" : "secondary"}
-                    onClick={() => {setKind(t); setUnits(["补偿","赠送"].includes(t)?1:72);}}
-                  >
-                    {t}
-                  </Button>
-                ))}
-              </div>
-            </Field>
-            {["新购","续费","充值"].includes(kind) ? <>
-              <Field label="课时套餐"><Select value={String(units)} onValueChange={value => setUnits(Number(value))}><option value="72">72 课时</option><option value="144">144 课时</option></Select></Field>
-              <fieldset className="order-member-picker"><legend>共用本订单余额的学员</legend>
-                <div className="order-member-tools"><input type="search" aria-label="搜索共用学员" placeholder="搜索姓名或学员 ID" value={memberQuery} onChange={e=>setMemberQuery(e.target.value)}/><small>已选 {members.length} 位</small></div>
-                <div className="order-member-list">{data.students.filter(s=>s.status!=="退费" && (s.name+" "+s.id).toLowerCase().includes(memberQuery.trim().toLowerCase())).map(s=><label key={s.id}>
-                  <input type="checkbox" checked={members.includes(s.id)} disabled={s.id===student.id} onChange={e=>setMembers(e.target.checked?[...members,s.id]:members.filter(id=>id!==s.id))}/><span>{s.name}</span><small>{s.id}</small></label>)}
-                  {!data.students.some(s=>s.status!=="退费" && (s.name+" "+s.id).toLowerCase().includes(memberQuery.trim().toLowerCase())) && <p className="muted">没有匹配的学员</p>}</div></fieldset>
-            </> : <Field label="课时数" required><input aria-label="课时数" type="number" min="0" step="any" value={units} onChange={e=>setUnits(Number(e.target.value))}/></Field>}
-            {["补偿","赠送"].includes(kind) && !!data.orders?.some(o=>o.studentIds.includes(student.id)) && <Field label="课时入账归属"><Select value={benefitOrder} onValueChange={setBenefitOrder}>
-              <option value="">学员个人余额</option>{data.orders.filter(o=>o.studentIds.includes(student.id)).map(o=><option key={o.id} value={o.id}>{o.date} · {o.units} 节套餐 · {o.id.slice(0,8)}</option>)}</Select></Field>}
+            {isPurchase ? <Field label="购买课时"><Select value={String(units)} onValueChange={value => setUnits(Number(value))}><option value="72">72 课时</option><option value="144">144 课时</option></Select></Field>
+              : <Field label="课时数" required><input aria-label="课时数" type="number" min="0" step="any" value={units} onChange={e=>setUnits(Number(e.target.value))}/></Field>}
+            {memberOrders.length === 1 && <div className="inset">当前剩余 {student.balance} 课时 · {memberOrders[0].studentIds.map(memberName).join("、")}</div>}
             {kind === "补偿" && (
               <Field
                 label="关联反馈"
@@ -461,7 +492,7 @@ export function StudentActionModal({
             )}
           </>
         )}
-        {(isCredit || action === "referral") && (
+        {(!joining && isCredit || action === "referral") && (
           <Field label="业务日期" required>
             <DatePicker
               placeholder="业务日期"
@@ -674,7 +705,7 @@ export function StudentActionModal({
           <Field label="星级评价" required error={visitAttempted && !stars ? "请选择星级" : undefined}><Select value={String(stars)} onValueChange={v=>setStars(Number(v))}><option value="0">请选择星级</option>{[1,2,3,4,5].map(n=><option key={n} value={String(n)}>{n} 星</option>)}</Select></Field>
           </div>{[1,2,5].includes(stars) && <Field label="反馈截图"><input className="media-file-field" type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>setVisitEvidence(String(r.result));r.readAsDataURL(f);}}}/></Field>}
         </>}
-        {
+        {!joining &&
           <Field
             label={action === "visit" ? "回访内容" : "备注 / 原因"}
             error={action === "visit" && visitAttempted && !note.trim() ? "请填写回访内容" : undefined}
@@ -708,10 +739,11 @@ export function StudentActionModal({
               <ul>
                 {action === "退费" ? (
                   <>
-                    <li>订单状态更新为退款，保留历史记录和账面课时余额</li>
-                    <li>取消后续 {future.length} 节未开始课程</li>
+                    <li>{businessMode() ? "账号共享课时清零，所有关联学员停止排课，保留账号及历史记录" : "订单状态更新为退款，保留历史记录和账面课时余额"}</li>
+                    <li>{businessMode() ? "取消该账号所有关联学员由本系统安排的未来未开始课程，并同步 ClassIn" : `取消后续 ${future.length} 节未开始课程`}</li>
+                    {businessMode() && <li>关联学员：{[...refundMembers(data, student.id)].map(memberName).join("、")}</li>}
                     <li>停用处理结果可在服务跟进的对应退费记录中查看</li>
-                    <li>本次仅登记服务状态，不执行资金退款</li>
+                    <li>{businessMode() ? "本次清零课时并登记服务停用，不执行资金支付退款" : "本次仅登记服务状态，不执行资金退款"}</li>
                   </>
                 ) : action === "停课" || action === "结课" ? (
                   <>

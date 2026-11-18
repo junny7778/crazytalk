@@ -1,3 +1,4 @@
+import { packagePurchases } from "./packagePurchases";
 import type { DemoState, Student } from "./model";
 import { personAttendance } from "./lessonAttendance";
 export function projectMetrics(
@@ -13,7 +14,7 @@ export function projectMetrics(
       p.type === "项目" &&
       p.name === student.project &&
       data.catalog.some(
-        (c) => c.id === p.parentId && c.name === student.channel,
+        (c) => [...(p.channelIds || []), ...(p.historicalChannelIds || [])].includes(c.id) && c.name === student.channel,
       ),
   );
   const applicable = project?.targetHistory
@@ -49,14 +50,20 @@ export function projectMetrics(
 
 export function purchasedDelivery(data: DemoState, students: Student[], month: string) {
   const ids = new Set(students.map(s => s.id));
-  const orders = (data.orders ?? []).filter(o =>
-    o.date.slice(0, 7) <= month && !["补偿", "赠送"].includes(o.kind) && o.studentIds.some(id => ids.has(id)));
+  const orders = (data.orders ?? []).filter(o => o.studentIds.some(id => ids.has(id)));
   const ordersById = new Map(orders.map(o => [o.id, o]));
-  const purchased = orders.reduce((sum, o) => sum + o.units, 0);
+  const purchases = packagePurchases(data).filter(p =>
+    ordersById.has(p.packageId) && p.date.slice(0, 7) <= month);
+  const purchased = purchases.reduce((sum, purchase) => sum + purchase.units, 0);
+  const firstPurchase = new Map<string, string>();
+  for (const purchase of purchases) {
+    if (purchase.date < (firstPurchase.get(purchase.packageId) ?? "9999"))
+      firstPurchase.set(purchase.packageId, purchase.date);
+  }
   const lessons = [];
   for (const lesson of data.lessons) {
     const order = lesson.orderId && ordersById.get(lesson.orderId);
-    if (!order || !order.studentIds.includes(lesson.studentId) || lesson.date < order.date ||
+    if (!order || !order.studentIds.includes(lesson.studentId) || lesson.date < (firstPurchase.get(order.id) ?? "9999") ||
       lesson.date.slice(0, 7) > month || lesson.status !== "已完成") continue;
     const attended = (["老师", "学员"] as const).every(person =>
       personAttendance(lesson, person).some(tag => ["正常", "迟到", "早退"].includes(tag)));

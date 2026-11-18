@@ -6,6 +6,7 @@ import { createSeed } from "./seed";
 const profile = (name: string) => ({
   ...emptyStudentProfile(),
   name,
+  chineseName: name,
   groupName: `${name}学习群`,
 });
 
@@ -55,7 +56,13 @@ describe("八位数字学员ID", () => {
     }).data;
     const updated = transition(credited, {
       type: "student.import",
-      students: [{ ...profile("导入甲"), material: "新教材" }],
+      students: [
+        {
+          ...profile("导入甲"),
+          importStudentId: learner.id,
+          material: "新教材",
+        },
+      ],
       mode: "update",
     }).data;
     const restored = stateSchema.parse(JSON.parse(JSON.stringify(updated)));

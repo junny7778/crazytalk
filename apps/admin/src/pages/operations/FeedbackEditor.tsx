@@ -1,3 +1,4 @@
+import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { DatePicker } from "@crazytalk/ui";
 import { useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
@@ -184,7 +185,7 @@ export default function FeedbackEditor({
       setDiscard(true);
     } else onClose();
   }
-  function save() {
+  async function save() {
     setError("");
     if (
       !draft.studentId ||
@@ -199,7 +200,7 @@ export default function FeedbackEditor({
       setError("请填写反馈内容或至少添加一个问题分类");
       return;
     }
-    run(
+    await run(
       record
         ? { type: "feedback.edit", id: record.id, feedback: draft }
         : { type: "feedback.create", feedback: draft },
@@ -249,8 +250,7 @@ export default function FeedbackEditor({
                   onChange={(owner) => patch({ owner })}
                   options={[
                     ...data.students.map((item) => item.owner),
-                    "Rita",
-                    "Roma",
+                    ...(businessMode() ? data.accounts.map(a => a.name) : ["Rita", "Roma"]),
                   ]}
                   placeholder="选择教务"
                 />

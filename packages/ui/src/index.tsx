@@ -1,5 +1,6 @@
 import { Select } from "./Select";
 import { DatePicker } from "./DatePicker";
+export { LoadingFailureScreen, LoadingScreen } from "./LoadingScreen";
 export { DatePicker } from "./DatePicker";
 export type { DatePickerProps } from "./DatePicker";
 export { Select } from "./Select";
@@ -63,18 +64,23 @@ export function Panel({
   children,
   className = "",
   title,
+  description,
   action,
 }: {
   children: ReactNode;
   className?: string;
   title?: string;
+  description?: string;
   action?: ReactNode;
 }) {
   return (
     <section className={`panel ${className}`}>
       {title && (
         <div className="panel-heading">
-          <h2>{title}</h2>
+          <div>
+            <h2>{title}</h2>
+            {description && <p className="panel-description">{description}</p>}
+          </div>
           {action}
         </div>
       )}
@@ -377,19 +383,20 @@ type Toast = {
   id: number;
   message: string;
   tone: "success" | "error" | "info";
-  undo?: () => void;
+  undo?: () => void | Promise<void>;
+  undoing?: boolean;
 };
 const ToastContext = createContext<
   (
     message: string,
-    options?: { tone?: Toast["tone"]; undo?: () => void },
+    options?: { tone?: Toast["tone"]; undo?: () => void | Promise<void> },
   ) => void
 >(() => {});
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Toast[]>([]);
   function show(
     message: string,
-    options?: { tone?: Toast["tone"]; undo?: () => void },
+    options?: { tone?: Toast["tone"]; undo?: () => void | Promise<void> },
   ) {
     const id = Date.now() + Math.random();
     setItems((s) => [
@@ -415,9 +422,29 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <span>{item.message}</span>
             {item.undo && (
               <button
-                onClick={() => {
-                  item.undo?.();
-                  setItems((s) => s.filter((t) => t.id !== item.id));
+                disabled={item.undoing}
+                onClick={async () => {
+                  setItems((s) =>
+                    s.map((t) =>
+                      t.id === item.id ? { ...t, undoing: true } : t,
+                    ),
+                  );
+                  try {
+                    await item.undo?.();
+                    setItems((s) => s.filter((t) => t.id !== item.id));
+                  } catch (error) {
+                    setItems((s) =>
+                      s.map((t) =>
+                        t.id === item.id ? { ...t, undoing: false } : t,
+                      ),
+                    );
+                    show(
+                      error instanceof Error
+                        ? error.message
+                        : "撤销失败，请重试",
+                      { tone: "error" },
+                    );
+                  }
                 }}
               >
                 撤销

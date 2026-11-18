@@ -334,9 +334,9 @@ export default function StudentTasks({
               <Button onClick={() => setAdding(false)}>取消</Button>
               <Button
                 variant="primary"
-                onClick={() =>
-                  run(() => {
-                    act({
+                onClick={async () =>
+                  await run(async () => {
+                    await act({
                       type: "task.add",
                       studentId: student.id,
                       title,
@@ -401,10 +401,10 @@ export default function StudentTasks({
               <Button
                 variant="primary"
                 disabled={saving}
-                onClick={() => {
+                onClick={async () => {
                   setSaving(true);
-                  run(() => {
-                    act({ type: "task.complete", id: selected.id, result });
+                  await run(async () => {
+                    await act({ type: "task.complete", id: selected.id, result });
                     setCompleting(null);
                     toast("待办已完成，可在已完成事项中查看");
                   });

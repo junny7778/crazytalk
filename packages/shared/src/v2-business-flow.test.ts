@@ -7,8 +7,11 @@ import { projectMetrics } from "./projectMetrics";
 import type { Command, PayTerms } from "./model";
 function scenario() {
   let data = createSeed();
-  const [a, b] = data.students,
-    t = data.teachers[0];
+  const [a, b] = data.students.slice(0, 2).map((student, i) => ({
+    ...student, id: String(90000001 + i), balance: 0,
+  }));
+  data.students.push(a, b);
+  const t = data.teachers[0];
   t.availability = Array.from({ length: 7 }, (_, day) => ({
     day,
     start: "08:00",
@@ -98,7 +101,7 @@ describe("新版跨模块业务验收", () => {
       units: 1,
       note: "课中问题",
     });
-    expect(s.data.orders![0].balance).toBe(145);
+    expect(s.data.orders!.find(order => order.id === "family-order")!.balance).toBe(145);
     expect(s.data.credits[0]).toMatchObject({
       studentId: s.b.id,
       orderId: "family-order",
@@ -124,7 +127,7 @@ describe("新版跨模块业务验收", () => {
       reason: "二十分钟前取消",
       cancelledAt: "2026-11-24T08:40:00+08:00",
     });
-    expect(s.data.orders![0].balance).toBe(142);
+    expect(s.data.orders!.find(order => order.id === "family-order")!.balance).toBe(142);
     const terms: PayTerms = {
       teacherId: s.t.id,
       month: "2026-11",

@@ -90,10 +90,11 @@ export function getStudentSummary(
   const currentTeacher = data.teachers.find(
     (item) => item.name === currentTeacherName,
   );
+  const packageIds = new Set(data.orders?.filter(pack => pack.studentIds.includes(studentId)).map(pack => pack.id));
   const purchase = data.credits
     .filter(
       (item) =>
-        item.studentId === studentId &&
+        (item.studentId === studentId || (item.orderId && packageIds.has(item.orderId))) &&
         ["充值", "购课", "新购", "续费"].includes(item.type),
     )
     .sort((a, b) => b.date.localeCompare(a.date));

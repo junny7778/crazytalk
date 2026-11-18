@@ -43,3 +43,13 @@ it("共用套餐按订单累计交付，缺席扣课不增加交付", () => {
   expect(purchasedDelivery(d,[a],"2026-09")).toMatchObject({purchased:72,delivered:2});
   expect(purchasedDelivery(d,[a],"2026-08")).toMatchObject({purchased:0,delivered:0});
 });
+
+it("只有续费流水的旧采购订单仍计入首次购课，期初余额本身不算新购买", () => {
+  const data = createSeed();
+  const [a] = data.students;
+  const original = { id: "old", studentIds: [a.id], units: 72, balance: 140, date: "2026-09-01", kind: "新购", channel: "", project: "" };
+  data.orders = [original, { ...original, id: "opening", kind: "期初余额", units: 17, balance: 17 }];
+  data.credits = [{ id: "transaction", purchaseId: "renewal", studentId: a.id, orderId: "old", date: "2026-10-01", type: "续费", units: 72, balance: 140, note: "", operator: "教务" }];
+  expect(purchasedDelivery(data, [a], "2026-09").purchased).toBe(72);
+  expect(purchasedDelivery(data, [a], "2026-10").purchased).toBe(144);
+});

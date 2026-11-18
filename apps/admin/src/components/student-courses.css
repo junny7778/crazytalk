@@ -137,9 +137,8 @@
   overflow: hidden;
   font: inherit;
 }
-.sc-calendar-lesson:hover,
 .sc-calendar-lesson:focus-visible {
-  outline: 2px solid var(--ct-brand-700);
+  outline: 2px solid var(--ct-gray-500);
   outline-offset: 1px;
 }
 .sc-calendar-lesson strong,
@@ -421,8 +420,4 @@
   border-color: var(--ct-gray-200);
   border-left-color: var(--ct-gray-500);
   color: var(--ct-gray-700);
-}
-.sc-calendar-lesson:hover,
-.sc-calendar-lesson:focus-visible {
-  outline-color: currentColor;
 }

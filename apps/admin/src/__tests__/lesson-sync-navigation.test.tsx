@@ -1,3 +1,4 @@
+import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { transferableAbortController } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -66,8 +67,15 @@ function mount(path = "/settings?tab=classin") {
   return router;
 }
 async function becomeReader() {
-  fireEvent.click(await screen.findByRole("button", { name: "Rita 教务运营" }));
-  fireEvent.click(screen.getByRole("button", { name: "同步查看员" }));
+  {
+    const target = await screen.findByRole("button", { name: "Rita 超级管理员" });
+    await testAct(async () => {
+      fireEvent.click(target);
+    });
+  }
+  await testAct(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "同步查看员" }));
+  });
 }
 beforeEach(() => {
   localStorage.clear();
@@ -101,30 +109,40 @@ describe("统一同步入口", () => {
     const router = mount("/lessons?tab=all&view=unsynced");
     expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull();
     expect(screen.queryByText("课程取消尚未同步到 ClassIn")).toBeNull();
-    fireEvent.click(
-      (await screen.findAllByRole("link", { name: "同步异常" }))[0],
-    );
+    const syncLink = (
+      await screen.findAllByRole("link", { name: "同步异常" })
+    )[0];
+    await testAct(async () => {
+      fireEvent.click(syncLink);
+    });
     expect(router.state.location.pathname).toBe("/settings");
     expect(router.state.location.search).toContain("tab=classin&lesson=");
     expect(
       await screen.findByRole("heading", { name: "ClassIn 同步管理" }),
     ).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "重新同步" })).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "查看全部同步异常" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "查看全部同步异常" }));
+    });
     expect(screen.getAllByRole("button", { name: "重新同步" })).toHaveLength(2);
   });
   it("重试集中处理，成功后移除任务", async () => {
     fixture();
     mount();
-    fireEvent.click(
-      (await screen.findAllByRole("button", { name: "重新同步" }))[0],
-    );
+    const retry = (
+      await screen.findAllByRole("button", { name: "重新同步" })
+    )[0];
+    await testAct(async () => {
+      fireEvent.click(retry);
+    });
     await waitFor(() =>
       expect(screen.getAllByRole("button", { name: "重新同步" })).toHaveLength(
         1,
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "重新同步" }));
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "重新同步" }));
+    });
     expect(await screen.findByText("暂无同步异常")).toBeTruthy();
     expect(
       demoRepository.read().lessons.filter((l) => l.sync === "未同步"),
@@ -135,7 +153,9 @@ describe("统一同步入口", () => {
     const router = mount("/");
     const card = await screen.findByRole("article", { name: "同步异常" });
     expect(within(card).getByText(/有 2 节课程/)).toBeTruthy();
-    fireEvent.click(within(card).getByRole("button"));
+    await testAct(async () => {
+      fireEvent.click(within(card).getByRole("button"));
+    });
     expect(router.state.location.pathname + router.state.location.search).toBe(
       "/settings?tab=classin",
     );

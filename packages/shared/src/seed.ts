@@ -80,7 +80,7 @@ export function createSeed(): DemoState {
     accent: ["B+", "A", "B+", "B", "A", "B+", "B", "A"][i],
     level: i % 3 ? "B" : "A",
     categories: i === 6 ? ["成人", "商务"] : ["少儿", "成人", "雅思"],
-    status: i === 7 ? "培训中" : "在职",
+    status: "在职",
     trained: i !== 7,
     needConfirm: i === 1,
     phone: `1390000120${i}`,

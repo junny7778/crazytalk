@@ -689,3 +689,13 @@ it("业务版新建老师不显示ClassIn绑定，详情编辑仍可绑定", asy
   expect(edit.getByLabelText("ClassIn 新账号初始密码")).toBeTruthy();
   expect(edit.getByRole("button", {name:"注册/获取老师 UID"})).toBeTruthy();
 });
+
+it("新建老师默认在职，任职状态仅含在职和已离职", async () => {
+  mount("/teachers");
+  fireEvent.click(await screen.findByRole("button", {name:/新建老师/}));
+  const form=within(screen.getByRole("dialog", {name:"新建老师"}));
+  const status=form.getByRole("combobox", {name:"在职状态"});
+  expect(status.textContent).toBe("在职");
+  fireEvent.click(status);
+  expect((await screen.findAllByRole("option")).map(option=>option.textContent)).toEqual(["在职", "已离职"]);
+});

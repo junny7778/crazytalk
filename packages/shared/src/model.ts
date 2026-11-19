@@ -250,7 +250,10 @@ export const teacherSchema = z.preprocess(
     accent: z.string(),
     level: z.string(),
     categories: z.array(z.string()),
-    status: z.enum(["在职", "培训中", "请假中", "已离职"]),
+    status: z.preprocess(
+      value => value === "培训中" || value === "请假中" ? "在职" : value,
+      z.enum(["在职", "已离职"]),
+    ),
     trained: z.boolean(),
     photos:z.array(z.string()).optional(), introVideo:z.string().optional(),
     photo: z.string().optional(),

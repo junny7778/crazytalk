@@ -296,3 +296,15 @@ describe("教师可用时间与临时排课", () => {
     ).toHaveLength(data.students.length);
   });
 });
+
+it("旧培训中和请假中资料归为在职，培训标记与请假记录保留", () => {
+ const data=createSeed(), teacher=data.teachers[0];
+ for (const status of ["培训中", "请假中"]) {
+   const parsed=teacherSchema.parse({...teacher,status,trained:false});
+   expect(parsed.status).toBe("在职");
+   expect(parsed.trained).toBe(false);
+ }
+ expect(teacherSchema.parse({...teacher,status:"已离职"}).status).toBe("已离职");
+ expect(stateSchema.parse(data).leaves).toEqual(data.leaves);
+ expect(data.teachers.every(t=>t.status==="在职" || t.status==="已离职")).toBe(true);
+});

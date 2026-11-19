@@ -117,7 +117,7 @@ export default function Teachers() {
     params.get("status") ??
     (legacyView === "可排课"
       ? "在职"
-      : ["在职", "培训中", "请假中", "已离职"].includes(legacyView)
+      : ["在职", "已离职"].includes(legacyView)
         ? legacyView
         : "");
   const training =
@@ -381,7 +381,7 @@ export default function Teachers() {
     accent: "B+",
     level: "B",
     categories: ["少儿"],
-    status: "培训中",
+    status: "在职",
     trained: false,
     needConfirm: false,
     phone: "",
@@ -819,7 +819,7 @@ export default function Teachers() {
                 }}
               >
                 <option value="">全部任职状态</option>
-                {["在职", "培训中", "请假中", "已离职"].map((value) => (
+                {["在职", "已离职"].map((value) => (
                   <option key={value} value={value}>
                     {value}
                   </option>
@@ -1265,19 +1265,19 @@ export default function Teachers() {
                     <Select
                       value={edit.status}
                       disabled={
-                        edit.status === "请假中" || edit.status === "已离职"
+                        edit.status === "已离职"
                       }
                       onValueChange={(value) => {
-                        const status = (["在职", "培训中"] as const).find(
+                        const status = (["在职"] as const).find(
                           (item) => item === value,
                         );
                         if (status) setEdit({ ...edit, status });
                       }}
                     >
-                      {["在职", "培训中", "请假中", "已离职"].map((status) => (
+                      {["在职", "已离职"].map((status) => (
                         <option
                           key={status}
-                          disabled={status === "请假中" || status === "已离职"}
+                          disabled={status === "已离职"}
                         >
                           {status}
                         </option>

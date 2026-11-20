@@ -14,7 +14,7 @@ it("慢热学员匹配鼓励型老师，锁定后其他学员不能占位", () =
       personality: "慢热",
       interests: "汽车",
     }),
-  ).toEqual(expect.arrayContaining(["擅长鼓励", "会引导", "会简笔画"]));
+  ).toEqual(expect.arrayContaining(["擅长鼓励", "会引导", "会画画"]));
   t.trained = true;
   t.availability = [{ day: 1, start: "08:00", end: "22:00" }];
   t.availabilityFrom = "";

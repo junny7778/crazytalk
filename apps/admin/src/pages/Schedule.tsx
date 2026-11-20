@@ -2,14 +2,12 @@ import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import CourseSyncLink from "../components/CourseSyncLink";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../components/DataTransferButton";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Download,
-  Image,
   Plus,
   X,
   AlertCircle,
@@ -99,7 +97,7 @@ export default function Schedule() {
   const [selected, setSelected] = useState<Slot[]>([]);
   const [generatedPlan, setGeneratedPlan] = useState(false);
   const [lessonId, setLessonId] = useState<string | null>(null);
-  const [modal, setModal] = useState<"schedule" | "reschedule" | "free" | null>(
+  const [modal, setModal] = useState<"schedule" | "reschedule" | null>(
     null,
   );
   const [kind, setKind] = useState<"固定课" | "临时课">("固定课");
@@ -112,7 +110,6 @@ export default function Schedule() {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [calendarNode, setCalendarNode] = useState<HTMLDivElement | null>(null);
-  const freeRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (routeStudentId) {
       setStudent(routeStudentId);
@@ -179,9 +176,10 @@ export default function Schedule() {
   const pending = data.students.filter(
     (s) =>
       !["停课", "结课", "退费"].includes(s.status) &&
-      (s.scheduleIntent
-        ? !getStudentScheduleProgress(data, s.id, s.scheduleIntent).complete
-        : s.status === "待排课"),
+      (data.tasks.some(task => task.studentId === s.id && task.rebooking && task.status === "待处理") ||
+        (s.scheduleIntent
+          ? !getStudentScheduleProgress(data, s.id, s.scheduleIntent).complete
+          : s.status === "待排课")),
   );
   const filtered = visibleTeachers;
   const found = panel === "pending" && Boolean(recommendedTeacher);
@@ -302,7 +300,10 @@ export default function Schedule() {
   useEffect(() => {
     setRescheduleConfirmed(false);
   }, [rescheduleTeacher, rescheduleDate, rescheduleTime]);
+  const [actionBusy, setActionBusy] = useState(false);
   async function run(command: Command, onSuccess?: () => void) {
+    if (actionBusy) return;
+    setActionBusy(true);
     try {
       const result = await act(command);
       toast(result.message, { undo: result.undo });
@@ -312,7 +313,7 @@ export default function Schedule() {
       toast(e instanceof Error ? e.message : "暂时没能保存，请重试", {
         tone: "error",
       });
-    }
+    } finally { setActionBusy(false); }
   }
   async function exportSchedule() {
     setBusy(true);
@@ -369,28 +370,6 @@ export default function Schedule() {
     a.download = name;
     a.click();
     URL.revokeObjectURL(url);
-  }
-  async function exportImage(copy = false) {
-    if (!freeRef.current) return;
-    setBusy(true);
-    try {
-      const { toBlob } = await import("html-to-image");
-      const blob = await toBlob(freeRef.current, { pixelRatio: 2 });
-      if (!blob) throw Error();
-      if (copy && navigator.clipboard && typeof ClipboardItem !== "undefined") {
-        await navigator.clipboard.write([
-          new ClipboardItem({ "image/png": blob }),
-        ]);
-        toast("空档图已复制，可以发给家长了");
-      } else {
-        saveBlob(blob, `${teacher.name}-可上课时间.png`);
-        toast("空档图已保存");
-      }
-    } catch {
-      toast("暂时无法复制，请使用“保存图片”", { tone: "error" });
-    } finally {
-      setBusy(false);
-    }
   }
   const slots = Array.from({ length: 32 }, (_, i) => clock(480 + i * 30));
   const ScheduleOverlay = panel === "pending" ? Drawer : Modal;
@@ -818,18 +797,6 @@ export default function Schedule() {
                 安排课程
               </Button>
             )}
-            {panel === "teachers" && (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setModal("free");
-                  setError("");
-                }}
-              >
-                <Image size={15} />
-                生成空档图
-              </Button>
-            )}
             {can("schedule.export") && (
               <DataTransferButton
                 direction="export"
@@ -917,6 +884,7 @@ export default function Schedule() {
                       {s.name}
                       {s.groupName ? ` · ${s.groupName}` : ""}
                     </strong>
+                    {data.tasks.filter(task => task.studentId === s.id && task.rebooking && task.status === "待处理").map(task => <small key={task.id}>{task.title}</small>)}
                     <small>
                       {s.project} ·{" "}
                       {s.age === null ? "年龄未填写" : `${s.age} 岁`} ·{" "}
@@ -1092,6 +1060,7 @@ export default function Schedule() {
             kind={kind}
             duration={duration}
             generated={generatedPlan}
+            recommended={generatedPlan && !!recommendedTeacher}
             onComplete={(id, count, teachers, date) => {
               navigateView("week", date);
               setModal(null);
@@ -1227,8 +1196,8 @@ export default function Schedule() {
               <dd>{profileTeacher.level || "未填写"}</dd>
               <dt>授课类型</dt>
               <dd>{profileTeacher.categories.join(" / ") || "未填写"}</dd>
-              <dt>老师介绍</dt>
-              <dd>{profileTeacher.bio || "未填写"}</dd>
+              <dt>教师寄语与教学特色</dt>
+              <dd>{profileTeacher.teachingPhilosophy || "未填写"}</dd>
               <dt>常规可用时间</dt>
               <dd>{availabilitySummary(profileTeacher)}</dd>
               <dt>排课要求</dt>
@@ -1348,8 +1317,10 @@ export default function Schedule() {
             <Button onClick={() => setModal(null)}>取消</Button>
             <Button
               variant="primary"
+              loading={actionBusy}
               disabled={
                 preview ||
+                actionBusy ||
                 !rescheduleDate ||
                 !rescheduleTime ||
                 !rescheduleTeacher ||
@@ -1377,7 +1348,7 @@ export default function Schedule() {
                   );
               }}
             >
-              确认调整
+              {actionBusy ? "正在改期" : "确认调整"}
             </Button>
           </>
         }
@@ -1405,6 +1376,7 @@ export default function Schedule() {
           <Field label="老师">
             <Select
               value={rescheduleTeacher}
+              disabled
               onValueChange={(value) => setRescheduleTeacher(value)}
             >
               {data.teachers
@@ -1416,6 +1388,7 @@ export default function Schedule() {
                 ))}
             </Select>
           </Field>
+          <small>如需换老师，请到学员档案办理换师，取消原预约后重新排课。</small>
           <Field label="调整原因">
             <input
               value={reason}
@@ -1455,77 +1428,6 @@ export default function Schedule() {
               {error}
             </p>
           )}
-        </div>
-      </Modal>
-      <Modal
-        open={modal === "free"}
-        onClose={() => setModal(null)}
-        title="生成老师空档图"
-        description="只展示老师介绍与可上课时间，不包含其他学员信息。"
-        width={720}
-        footer={
-          <>
-            <Button onClick={() => setModal(null)}>关闭</Button>
-            <Button onClick={() => exportImage(false)} loading={busy}>
-              <Download size={16} />
-              保存图片
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => exportImage(true)}
-              loading={busy}
-            >
-              复制图片
-            </Button>
-          </>
-        }
-      >
-        <div className="free-preview" ref={freeRef}>
-          <div className="free-brand">
-            Crazy Talk <span>找到喜欢的老师，开启新的学习旅程</span>
-          </div>
-          <div className="row gap-16">
-            <Avatar name={teacher.name} size={56} />
-            <div>
-              <h2>{teacher.name}</h2>
-              <p>
-                {teacher.so} · 口音 {teacher.accent} ·{" "}
-                {teacher.categories.join(" / ")}
-              </p>
-            </div>
-          </div>
-          <p className="free-bio">{teacher.bio}</p>
-          <h3>
-            {formatDate(weekStart)} — {formatDate(addDays(weekStart, 6))}{" "}
-            可上课时间
-          </h3>
-          <div className="free-days">
-            {Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map(
-              (date) => (
-                <div key={date}>
-                  <strong>{weekdays[dayOf(date)]}</strong>
-                  <small>{formatDate(date)}</small>
-                  {slots
-                    .filter(
-                      (time) =>
-                        date >= DEMO_TODAY &&
-                        isFree(
-                          teacher,
-                          { date, time },
-                          25,
-                          undefined,
-                          false,
-                          false,
-                        ),
-                    )
-                    .map((time) => (
-                      <span key={time}>{time}</span>
-                    ))}
-                </div>
-              ),
-            )}
-          </div>
-          <small>具体安排请联系教务确认</small>
         </div>
       </Modal>
     </div>

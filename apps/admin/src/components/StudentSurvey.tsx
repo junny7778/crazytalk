@@ -1,5 +1,5 @@
 import { businessHeaders, businessMode } from "@crazytalk/shared/react";
-import { demoRepository, matchingSurveyAnswers, matchingSurveyQuestions, recommendedTags } from "@crazytalk/shared";
+import { demoRepository, matchingSurveyAnswers, matchingSurveyQuestions, studentMatchProfile, teacherTagName } from "@crazytalk/shared";
 import { useEffect, useState } from "react";
 import { BookOpenText, Check } from "lucide-react";
 import { useParams } from "react-router-dom";
@@ -21,7 +21,7 @@ function answerRows(original: NonNullable<Student["surveyOriginal"]>): [string, 
 }
 
 export function SurveyLink({ student }: { student: Student }) {
-  const { act, can } = useDemo(),
+  const { act, can, data } = useDemo(),
     [error, setError] = useState("");
   const toast = useToast();
   const previous = !!student.surveyOriginal && !student.surveySubmittedAt;
@@ -141,16 +141,16 @@ export function SurveyLink({ student }: { student: Student }) {
               </div>
             ))}
           </dl>
-          <div className="profile-related">
-            <span>推荐老师标签</span>
-            {recommendedTags(student).map((tag) => (
-              <Badge key={tag} tone="neutral">
-                {tag}
-              </Badge>
-            ))}
-          </div>
+
         </section>
       )}
+      <section aria-label="匹配画像" className="stack profile-survey-details">
+        <h3>匹配画像</h3>
+        {studentMatchProfile(student).sources.map(source => <div key={source.label}>
+          <strong>{source.label}</strong><div className="row wrap">{source.tags.map(id => <Badge key={id} tone="neutral">{teacherTagName(data.catalog,id)}</Badge>)}</div>
+        </div>)}
+        {studentMatchProfile(student).missingInfo.length > 0 && <p className="muted">未填写：{studentMatchProfile(student).missingInfo.join("、")}。缺失信息不作推测。</p>}
+      </section>
       {error && <p role="alert">{error}</p>}
     </Panel>
   );

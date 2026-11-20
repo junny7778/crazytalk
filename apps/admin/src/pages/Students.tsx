@@ -385,8 +385,8 @@ export default function Students() {
         cell: ({ row }) =>
           row.original.balanceKnown ? `${row.original.balance} 课时` : "未核实",
       },
-      { id:"team", header:"所属队伍", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster).team },
-      { id:"group", header:"所属组别", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster).group },
+      { id:"team", header:"所属队伍", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster,s.ownerAccountId).team },
+      { id:"group", header:"所属组别", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster,s.ownerAccountId).group },
       { accessorKey: "owner", header: "负责教务" },
       {
         id: "unit",

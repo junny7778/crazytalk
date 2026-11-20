@@ -22,7 +22,7 @@ it("共享成员可以查看另一位成员的套餐流水，但不能查看无�
   });
   const id = demoRepository
     .read()
-    .credits.find((entry) => entry.orderId === "family")!.id;
+    .credits.find((entry) => entry.purchaseId === "family")!.id;
   const client = new QueryClient();
   const props = {
     target: { kind: "credit" as const, id },

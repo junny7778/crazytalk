@@ -38,14 +38,7 @@ function mount(path = "/schedule?teacher=t1&date=2026-11-20") {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
-  demoRepository.read().classInAccounts = [
-    {
-      id: "verified-test-account",
-      phone: "13800000000",
-      uid: "123456",
-      studentIds: demoRepository.read().students.map((student) => student.id),
-    },
-  ];
+  demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
   const fixture = demoRepository.read();
   fixture.students[2].name = "排课测试学员";
   fixture.students[2].chineseName = "排课测试学员";

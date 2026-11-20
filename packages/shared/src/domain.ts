@@ -1,4 +1,9 @@
-import { sharedClassIn, schedulingAccountIssue, mergeBalanceSources, sharedBalanceGroup, createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
+import { teacherOffboardImpact, refreshOffboardRebooking } from "./teacherOffboard";
+import { getStudentScheduleProgress } from "./scheduling";
+import { isUnstartedBooking, cancelForRebooking } from "./classInChanges";
+import { migrateStudentOwners } from "./organization";
+import { teacherFit } from "./teacherMatch";
+import { accountBalanceAlignmentIssue, accountBalanceReviewIssue, sharedClassIn, schedulingAccountIssue, mergeBalanceSources, sharedBalanceGroup, createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
 import { officePay } from "./officePay";
 import {payTermsSchema} from "./model";
 import {studentSurveyAnswers} from "./model";
@@ -104,12 +109,14 @@ export function isAvailable(
     !(lock.studentId===studentId && lock.teacherId===teacherId && lock.time===time && lock.duration===duration) &&
     start<minutes(lock.time)+lock.duration && minutes(lock.time)<start+duration)) reasons.push("时段已锁定");
   for (const l of data.lessons) {
-    if (l.id === ignoreId || l.status === "已取消" || l.date !== date) continue;
-    const a = minutes(l.time);
-    if (start < a + l.duration && a < start + duration) {
-      if (l.teacherId === teacherId) reasons.push("老师这个时间已经有课");
-      if (studentId && l.studentId === studentId)
-        reasons.push("学员这个时间已经有课");
+    if (l.id === ignoreId || (l.status === "已取消" && (!l.syncState || l.syncState === "completed"))) continue;
+    for (const slot of [l, ...(l.classInPreviousSlot ? [l.classInPreviousSlot] : [])]) {
+      if (slot.date !== date) continue;
+      const a = minutes(slot.time);
+      if (start < a + slot.duration && a < start + duration) {
+        if (slot.teacherId === teacherId) reasons.push("老师这个时间已经有课");
+        if (studentId && l.studentId === studentId) reasons.push("学员这个时间已经有课");
+      }
     }
   }
   return [...new Set(reasons)];
@@ -153,6 +160,7 @@ export function transition(
   initializePayroll(data);
   data.teachers = data.teachers.map((record) => teacherSchema.parse(record));
   data.students = data.students.map((record) => studentSchema.parse(record));
+  migrateStudentOwners(data);
   data.feedback = data.feedback.map((record) => feedbackSchema.parse(record));
   data.catalog = trackFeedbackCategoryUsage(data);
   data.tasks ??= [];
@@ -239,6 +247,7 @@ export function transition(
     sourceType: NonNullable<DemoState["tasks"][number]["sourceType"]>;
     sourceId?: string;
     lessonIds?: string[];
+    rebooking?: DemoState["tasks"][number]["rebooking"];
   }) {
     if (
       input.sourceId &&
@@ -266,6 +275,7 @@ export function transition(
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       lessonIds: input.lessonIds,
+      rebooking: input.rebooking,
     };
     data.tasks.unshift(task);
     return task;
@@ -402,6 +412,8 @@ export function transition(
   }
   function packageFor(s: Student, orderId?: string) {
     migratePackageBalances(data);
+    const alignmentIssue = accountBalanceAlignmentIssue(data, s.id);
+    if (alignmentIssue) throw new Error(alignmentIssue);
     const packages = (data.orders ?? []).filter(item => item.studentIds.includes(s.id));
     if (orderId) return required(packages.find(item => item.id === orderId), "学员不属于该套餐");
     if (packages.length > 1) throw new Error("请选择本次操作的套餐");
@@ -423,10 +435,13 @@ export function transition(
   ) {
     migratePackageBalances(data);
     const linkedLesson = metadata.lessonId ? lesson(metadata.lessonId) : undefined;
-    let order = packageFor(s, linkedLesson?.orderId ?? metadata.orderId);
+    let order = linkedLesson?.orderId ? required(data.orders?.find(o => o.id === linkedLesson.orderId), "原课程课时来源不存在") : packageFor(s, metadata.orderId);
     if (!order) {
       if (!s.balanceKnown) throw new Error("请先补录期初余额，再进行课时操作");
       order = createOpeningPackage(data, s, s.balance);
+      const account = data.classInAccounts?.find(account => account.studentIds.includes(s.id));
+      order.studentIds = account?.studentIds.slice() ?? [s.id];
+      order.classInAccountId = account?.id;
     }
     if (units < 0 && order.balance + units < -1e-8 && type !== "期初余额")
       throw new Error("套餐余额不足");
@@ -550,7 +565,6 @@ export function transition(
         .parse(command.patch);
       for (const key of Object.keys(patch) as (keyof typeof patch)[]) {
         if (
-          !(key in command.expected) ||
           JSON.stringify(existing[key]) !==
             JSON.stringify(command.expected[key])
         )
@@ -668,25 +682,47 @@ export function transition(
       break;
     }
     case "student.bindClassIn": {
-      student(command.id);
+      const learner = student(command.id);
       const phone = command.phone.trim(), uid = command.uid.trim();
-      if (!(/^1\d{10}$/.test(phone) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(phone))) throw new Error("请填写有效的 ClassIn 注册手机号或邮箱");
-      if (!/^[1-9]\d*$/.test(uid)) throw new Error("请先查询并核实 ClassIn UID，再绑定账号");
+      if (phone && !(/^1\d{10}$/.test(phone) || /^00\d{1,4}-\d+$/.test(phone) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(phone))) throw new Error("请填写有效的 ClassIn 注册手机号或邮箱");
+      if (!/^[1-9]\d*$/.test(uid)) throw new Error("请填写有效的 ClassIn UID，并核实账号归属");
       const accounts = data.classInAccounts ??= [];
-      let account = accounts.find(item => item.phone === phone);
-      if (uid && accounts.some(item => item.uid === uid && item.phone !== phone))
-        throw new Error("该 UID 已关联其他账号，请先核实换号情况");
+      let account = accounts.find(item => item.uid === uid) || (phone ? accounts.find(item => item.phone === phone) : undefined);
+
+      if (phone && accounts.some(item => item !== account && item.phone === phone)) throw new Error("账号对应的 UID 不一致，请先核实");
       if (account?.uid && uid && account.uid !== uid) throw new Error("账号对应的 UID 不一致，请先核实");
-      const { members } = sharedBalanceGroup(data, command.id);
-      if (members.length > 1) {
-        if (!(uid || account?.uid)) throw new Error("请先核实 UID，再绑定共用学员");
-        if (accounts.some(item => item.phone !== phone && item.studentIds.some(id => members.includes(id))))
-          throw new Error("学员已有共享余额，不能单独改绑到其他 ClassIn 账号");
+      const source = accounts.find(a => a.studentIds.includes(learner.id));
+      if (learner.classInChange) {
+        if (learner.classInChange.error && learner.classInChange.uid === uid) { delete learner.classInChange.error; message = "已恢复账号更换处理"; break; }
+        throw new Error("该学员正在更换账号，请先完成已有处理");
       }
+      if (source?.uid && source.uid !== uid) {
+        const issue = accountBalanceAlignmentIssue(data,learner.id) || (account?.studentIds[0] ? accountBalanceAlignmentIssue(data,account.studentIds[0]) : "");
+        if (issue) throw new Error(issue);
+        const lessonIds = cancelForRebooking(data, learner.id, "更换 ClassIn 账号，取消后重新排课");
+        learner.classInChange = {phase:"canceling",uid,phone,lessonIds,sourceUid:source.uid,operator:command.operator || "教务"};
+        event("更换 ClassIn 账号", `取消 ${lessonIds.length} 节原预约，确认取消后更换为 UID ${uid}；${source.studentIds.length > 1 ? "剩余课时留在原共享账号" : "剩余课时转入新账号"}`, learner.id);
+        message = "已提交账号更换，等待原预约取消确认";
+        break;
+      }
+      const { members } = sharedBalanceGroup(data, command.id);
+      migratePackageBalances(data);
+      const combinedMembers = [...new Set([...members, ...(account?.studentIds ?? [])])];
+      const balanceIssue = accountBalanceReviewIssue(data, combinedMembers);
+      if (balanceIssue) throw new Error(balanceIssue);
       if (!account) {account = {id:id(),phone,uid,studentIds:[]}; accounts.push(account);}
+      if (phone) account.phone = phone;
       if (uid) account.uid = uid;
       for (const item of accounts) item.studentIds = item.studentIds.filter(id => !members.includes(id));
       account.studentIds.push(...members);
+      migratePackageBalances(data);
+      const sources = (data.orders ?? []).filter(order => order.studentIds.some(id => account!.studentIds.includes(id)));
+      if (sources.some(order => order.studentIds.some(id => !account!.studentIds.includes(id)))) throw new Error("历史共享成员与账号不一致，请先核实历史余额");
+      if (sources.length) {
+        mergeBalanceSources(data, sources[0], sources, account.studentIds);
+        sources[0].classInAccountId = account.id;
+      }
+
       for (const id of members) event("ClassIn 账号", "更新学员账号绑定", id);
       break;
     }
@@ -841,6 +877,7 @@ export function transition(
       if (!command.reason.trim()) throw new Error("请填写期初余额的核对依据");
       learner.balanceKnown = true;
       const opening = createOpeningPackage(data, learner, 0);
+      opening.studentIds = data.classInAccounts?.find(account => account.studentIds.includes(learner.id))?.studentIds.slice() ?? [learner.id];
       opening.units = command.balance;
       const creditId = credit(
         learner,
@@ -977,11 +1014,9 @@ export function transition(
       const group = sharedBalanceGroup(data, member.id, order.id);
       const { account, issue, unbound } = sharedClassIn(data, group.members);
       if (issue) throw new Error(issue);
-      if (account && unbound.length) {
-        if (command.bindAccountId !== account.id) throw new Error("请确认将未绑定的学员关联到共用的 ClassIn 账号");
-        account.studentIds.push(...unbound);
-        for (const id of unbound) event("ClassIn 账号", "共享课时时关联 ClassIn 账号", id);
-      }
+      if (!account || unbound.length) throw new Error("请通过关联同一个 ClassIn 账号共享课时");
+      const reviewIssue = accountBalanceReviewIssue(data, group.members);
+      if (reviewIssue) throw new Error(reviewIssue);
       if (group.sources.length === 1 && order.studentIds.includes(member.id)) {
         message = "已共享这份课时余额";
         break;
@@ -994,12 +1029,14 @@ export function transition(
     case "order.buy": {
       migratePackageBalances(data);
       const buyer = student(command.studentId);
-      const members = [...new Set(command.studentIds)];
+      const alignmentIssue = accountBalanceAlignmentIssue(data, buyer.id);
+      if (alignmentIssue) throw new Error(alignmentIssue);
+      const members = [...new Set(data.classInAccounts?.find(account => account.studentIds.includes(buyer.id))?.studentIds ?? command.studentIds)];
       if (!command.id.trim() || !members.includes(buyer.id) || ![72,144].includes(command.units)) throw new Error("请选择学员和套餐");
       const date = businessDate(command.date);
       if (members.length > 1) {
         const { account, unbound, issue } = sharedClassIn(data, members);
-        if (account && unbound.length) throw new Error("请通过共享已有课时确认账号关联");
+        if (!account || unbound.length) throw new Error("请先关联同一个 ClassIn 账号，再共同购课");
         if (issue) throw new Error(issue);
       }
       for (const member of members) {
@@ -1010,6 +1047,8 @@ export function transition(
       if (orders.some(o => o.id === command.id) || data.credits.some(row => row.purchaseId === command.id)) { message = "订单已登记"; break; }
       orders.push({id:command.id,studentIds:members,units:command.units,balance:command.units,date,kind:command.kind,channel:buyer.channel,project:buyer.project});
       data.credits.unshift({id:id(),studentId:buyer.id,orderId:command.id,purchaseId:command.id,purchaseStudentIds:[...members],date,type:command.kind,units:command.units,balance:command.units,note:command.note,operator:command.operator || "教务",recordedAt});
+      const sources = orders.filter(order => order.studentIds.some(id => members.includes(id)));
+      if (sources.length > 1) mergeBalanceSources(data, sources[0], sources, members);
       event("套餐订单", `登记 ${command.units} 课时，${members.length} 位学员共用`, buyer.id);
       break;
     }
@@ -1229,6 +1268,7 @@ export function transition(
       );
       if (task.status === "已完成")
         throw new Error("这条待办已经完成，请勿重复提交");
+      if (task.rebooking) throw new Error("请先完成对应课程的重新安排，系统会自动完成此待办");
       task.status = "已完成";
       task.result = command.result?.trim() || "";
       task.completedAt = recordedAt;
@@ -1377,6 +1417,7 @@ export function transition(
       if (accountIssue) throw new Error(accountIssue);
       migratePackageBalances(data);
       const s = student(command.studentId);
+      if ((command.scheduleRevision ?? 0) !== (s.scheduleRevision ?? 0)) throw new Error("排课关系已变更，请重新生成课程计划");
       const flexible = command.schedulingMode === "flex";
       if (flexible && command.kind !== "临时课")
         throw new Error("灵活排课模式与课程类型不一致");
@@ -1401,6 +1442,10 @@ export function transition(
         throw new Error("选择的时间有重复");
       for (const [slotIndex,slot] of command.slots.entries()) {
         const t = teacher(slot.teacherId ?? command.teacherId);
+        if (command.selectionMode === "recommended") {
+          const blocked = teacherFit(data, s, t).blocked;
+          if (blocked.length) throw new Error(blocked[0]);
+        }
         if (
           !flexible &&
           s.age != null &&
@@ -1468,6 +1513,10 @@ export function transition(
             : {}),
         };
         data.lessons.push(made);
+        const replacement = data.tasks.filter(task => task.studentId === s.id)
+          .flatMap(task => task.rebooking?.slots ?? [])
+          .find(slot => slot.duration === made.duration && (!slot.lessonId || data.lessons.some(l => l.id === slot.lessonId && l.status === "已取消")));
+        if (replacement) replacement.lessonId = made.id;
         if(data.slotLocks)data.slotLocks=data.slotLocks.filter(lock=>!(lock.studentId===s.id && lock.teacherId===t.id && lock.date===slot.date && lock.time===slot.time));
       }
       if (command.kind === "固定课") {
@@ -1486,6 +1535,7 @@ export function transition(
     case "lesson.reschedule": {
       const l = lesson(command.id);
       if (l.status !== "未开始") throw new Error("只能调整尚未开始的课程");
+      if (command.teacherId !== l.teacherId) throw new Error("换老师需先取消原预约，再重新排课");
       const t = teacher(command.teacherId);
       const s = student(l.studentId);
       if (s.age != null && s.age < 16 && !t.categories.includes("少儿"))
@@ -1573,78 +1623,18 @@ export function transition(
     }
     case "lesson.changeTeacher": {
       const s = student(command.studentId);
-      if (["停课", "结课", "退费"].includes(s.status))
-        throw new Error("请先办理复课，再更换老师");
-      const t = teacher(command.teacherId);
-      if (s.age != null && s.age < 16 && !t.categories.includes("少儿"))
-        throw new Error("这位老师不接受少儿课程，请选择其他老师");
-      if (!isScheduleDate(command.from))
-        throw new Error("请选择有效的换师日期");
-      if (t.status === "已离职") throw new Error("老师已离职");
-      if (data.rules.trainingRequired && !t.trained)
-        throw new Error("老师尚未完成必修培训");
-      const future = data.lessons.filter(
-        (l) =>
-          l.studentId === s.id &&
-          l.date >= command.from &&
-          l.status === "未开始",
-      );
-      const outsideLessons = future.filter(
-        (l) => !isRegularTime(t, l.date, l.time, l.duration),
-      );
-      if (outsideLessons.some((l) => l.kind === "固定课"))
-        throw new Error(
-          "新老师的常规时间无法覆盖固定课，请先调整可用时间，或逐节安排临时代课",
-        );
-      if (future.length)
-        requireTeacherConfirmation(
-          t,
-          outsideLessons.length > 0,
-          command.confirmedTeacher,
-        );
-      for (const l of future) {
-        const reasons = isAvailable(
-          data,
-          t.id,
-          l.date,
-          l.time,
-          l.duration,
-          s.id,
-          l.id,
-          l.kind === "临时课" && command.confirmedTeacher === true,
-        );
-        if (reasons.length)
-          throw new Error(`${l.date} ${l.time}：${reasons[0]}`);
+      if (["停课", "结课", "退费"].includes(s.status)) throw new Error("请先办理复课，再更换老师");
+      const original = teacher(command.originalTeacherId);
+      if (s.classInChange) throw new Error("请先完成账号更换");
+      if (s.teacherId !== original.id && !data.lessons.some(l => l.studentId === s.id && l.teacherId === original.id && isUnstartedBooking(l)) && !data.slotLocks?.some(l => l.studentId === s.id && l.teacherId === original.id)) {
+        message = "该老师已没有需要取消的排课关系";
+        break;
       }
-      future.forEach((l) => {
-        l.teacherId = t.id;
-        l.conflict = false;
-        if (
-          command.confirmedTeacher &&
-          (t.needConfirm || !isRegularTime(t, l.date, l.time, l.duration))
-        )
-          l.confirmation = confirmation(command.confirmationNote);
-        else delete l.confirmation;
-        l.note = `更换老师：${command.reason}`;
-      });
-      s.teacherChanges.push({
-        id: id(),
-        date: command.from,
-        fromTeacher:
-          data.teachers.find((item) => item.id === s.teacherId)?.name ||
-          s.teacherName,
-        toTeacher: t.name,
-        reason: command.reason,
-      });
-      s.teacherId = t.id;
-      s.teacherName = t.name;
-      event(
-        "换老师",
-        `由 ${t.name} 接手 ${future.length} 节课，${command.reason}`,
-        s.id,
-        t.id,
-      );
-      message = `已更换老师，更新 ${future.length} 节课`;
+      const canceled = cancelForRebooking(data, s.id, `换老师，取消原预约：${command.reason}`, original.id);
+      if (s.teacherId === original.id) { s.teacherId = ""; s.teacherName = ""; }
+      s.teacherChanges.push({id:id(),date:DEMO_TODAY,fromTeacher:original.name,toTeacher:"待重新排课",reason:command.reason});
+      event("换老师", `结束与 ${original.name} 的排课关系，取消 ${canceled.length} 节未开始课程；${command.reason}`,s.id,original.id);
+      message = `已取消原老师 ${canceled.length} 节预约，取消确认后可重新选择老师和时间`;
       break;
     }
     case "lesson.resolve": {
@@ -2076,6 +2066,12 @@ export function transition(
       const scheduleError = availabilityError(parsedTeacher.data);
       if (scheduleError) throw new Error(scheduleError);
       const found = data.teachers.find((t) => t.id === command.teacher.id);
+      if (found?.classInUid && parsedTeacher.data.classInUid !== undefined && found.classInUid !== parsedTeacher.data.classInUid) throw new Error("老师 ClassIn 账号不能直接改绑，请先核实已有课程与班级");
+      for (const tag of parsedTeacher.data.tags) {
+        if (found?.tags.includes(tag)) continue;
+        if (!data.catalog.some(c=>c.type === "老师标签" && c.id === tag && c.enabled)) throw new Error("请选择标签库中启用的老师标签");
+      }
+      parsedTeacher.data.tags = [...new Set(parsedTeacher.data.tags)];
       const beforeSchedule = found
         ? JSON.stringify([
             found.availability,
@@ -2083,8 +2079,7 @@ export function transition(
             found.availabilitySource,
           ])
         : "";
-      if (found && found.phone !== parsedTeacher.data.phone && !parsedTeacher.data.classInUid)
-        delete found.classInUid;
+
       if (found) Object.assign(found, parsedTeacher.data);
       else data.teachers.push(parsedTeacher.data);
       for (const l of data.lessons.filter(
@@ -2143,22 +2138,32 @@ export function transition(
     }
     case "teacher.offboard": {
       const t = teacher(command.teacherId);
-      if (t.name !== command.confirmName)
-        throw new Error("请输入完整老师姓名确认");
-      const impacted = data.lessons.filter(
-        (item) =>
-          item.teacherId === t.id &&
-          item.date >= DEMO_TODAY &&
-          item.status === "未开始",
-      );
-      teacherTasks(t, impacted, "离职，需要重新安排", `offboard:${t.id}`);
+      if (t.status === "已离职") { message = "该老师已办理离职"; break; }
+      const impact = teacherOffboardImpact(data, t.id);
+      const related = data.students.filter(s => s.teacherId === t.id ||
+        impact.lessons.some(l => l.studentId === s.id) ||
+        data.slotLocks?.some(l => l.studentId === s.id && l.teacherId === t.id));
       t.status = "已离职";
-      impacted.forEach((item) => {
-        item.status = "已取消";
-        item.note = "老师离职，不扣学员课时";
-      });
+      for (const s of related) {
+        const courseIds = cancelForRebooking(data, s.id, "老师离职，不扣学员课时", t.id);
+        if (s.teacherId === t.id) { s.teacherId = ""; s.teacherName = ""; }
+        s.teacherChanges.push({id:id(),date:DEMO_TODAY,fromTeacher:t.name,toTeacher:"待重新排课",reason:command.reason});
+        if (["停课", "结课", "退费"].includes(s.status)) continue;
+        const hasOtherTeacher = Boolean(s.teacherId) || data.lessons.some(l =>
+          l.studentId === s.id && l.teacherId !== t.id && isUnstartedBooking(l)) ||
+          data.slotLocks?.some(l => l.studentId === s.id && l.teacherId !== t.id);
+        s.status = hasOtherTeacher ? "在读" : "待排课";
+        const canceled = impact.lessons.filter(l => l.studentId === s.id);
+        const progress = s.scheduleIntent ? getStudentScheduleProgress(data, s.id, s.scheduleIntent) : undefined;
+        const durations = canceled.length ? canceled.map(l => l.duration) :
+          Array.from({length: Math.max(1, progress ? progress.requiredCount - progress.scheduledCount : 1)}, () => s.scheduleIntent?.duration ?? 25);
+        addTask({studentId:s.id, title:`原老师 ${t.name} 已离职，需要重新安排老师`,
+          sourceType:"teacher", sourceId:`offboard:${t.id}`, lessonIds:courseIds,
+          note:`需要重新安排 ${durations.length} 节课，请通知相关学员。`,
+          rebooking:{slots:durations.map(duration => ({duration}))}});
+      }
       event("老师离职", command.reason, "", t.id);
-      message = "已办理离职，未来课程已取消";
+      message = related.length ? "已办理离职，相关教学安排已解除，待上课程已取消。" : "已办理离职。";
       break;
     }
     case "pay.terms": {
@@ -2264,15 +2269,21 @@ export function transition(
       )
         throw new Error("不能停用最后一个超级管理员");
       if (a && !command.account.enabled) {
-        const owned = data.students.filter((s) => s.owner === a.name);
+        const owned = data.students.filter((s) => s.ownerAccountId === a.id);
         const feedback = data.feedback.filter(
           (f) => f.owner === a.name && f.status !== "已完成",
         );
         if ((owned.length || feedback.length) && !command.handoverTo)
           throw new Error("请先选择接手人，转交负责的学员和反馈");
-        owned.forEach((s) => (s.owner = command.handoverTo || s.owner));
-        feedback.forEach((f) => (f.owner = command.handoverTo || f.owner));
+        const successor = data.accounts.find(account => account.id === command.handoverTo && account.enabled && account.id !== a.id && account.roleId === "ops");
+        if ((owned.length || feedback.length) && !successor) throw new Error("请选择启用的接手教务账号");
+        if (successor) {
+          owned.forEach(s => { s.owner = successor.name; s.ownerAccountId = successor.id; });
+          feedback.forEach(f => { f.owner = successor.name; });
+        }
       }
+      if (a && a.classInUid && command.account.classInUid !== a.classInUid) throw new Error("已关联的团队 ClassIn UID 不能直接更换，请先核实班级成员");
+      for (const learner of data.students.filter(s => s.ownerAccountId === command.account.id)) learner.owner = command.account.name;
       if (a) Object.assign(a, command.account);
       else data.accounts.push(command.account);
       event("管理账号", `更新账号 ${command.account.name}`);
@@ -2300,6 +2311,10 @@ export function transition(
       const incoming = {...command.entry};
       const previous = data.catalog.find(item => item.id === incoming.id);
       if (previous && incoming.type !== previous.type) throw new Error("已创建的资料不能更换类型");
+      if (incoming.type === "老师标签") {
+        incoming.name = incoming.name.trim();
+        if (data.catalog.some(c=>c.type === "老师标签" && c.id !== incoming.id && c.name === incoming.name)) throw new Error("已有同名老师标签");
+      }
       if (incoming.type === "队伍" || incoming.type === "组别") {
         incoming.name = incoming.name.trim();
         const team = data.catalog.find(c => c.type === "队伍" && c.id === incoming.parentId);
@@ -2503,6 +2518,12 @@ export function transition(
   if (["student.create", "student.profile", "student.details.update", "student.edit", "student.import"].includes(command.type)) {
     for (const next of data.students) {
       const before = current.students.find(s => s.id === next.id);
+      if (next.owner !== before?.owner && next.ownerAccountId === before?.ownerAccountId) delete next.ownerAccountId;
+      if (next.ownerAccountId) {
+        const owner = data.accounts.find(a => a.id === next.ownerAccountId);
+        if (!owner || (!owner.enabled && before?.ownerAccountId !== owner.id) || owner.roleId !== "ops") throw new Error("请选择启用的负责教务账号");
+        next.owner = owner.name;
+      }
       if (before && before.channel === next.channel && before.project === next.project) continue;
       if (!next.channel && !next.project) continue;
       const channel = data.catalog.find(c => c.type === "渠道" && c.name === next.channel && c.enabled);
@@ -2510,6 +2531,8 @@ export function transition(
         throw new Error("请选择启用且存在合作关系的渠道与项目");
     }
   }
+  migrateStudentOwners(data);
+  refreshOffboardRebooking(data);
   return { data, message };
 }
 

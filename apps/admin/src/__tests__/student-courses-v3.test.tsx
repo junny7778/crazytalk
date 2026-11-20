@@ -21,7 +21,7 @@ function Subject() {
   const { data, setRole } = useDemo();
   return (
     <>
-      <button onClick={() => setRole("course-reader")}>切换只读</button>
+      <button onClick={() => setRole("course-reader",false,"course-reader-account")}>切换只读</button>
       <StudentCourses student={data.students[0]} onReschedule={reschedule} />
     </>
   );
@@ -152,6 +152,7 @@ beforeEach(() => {
       suggestedLevel: "",
     },
   ];
+  state.accounts.push({id:"course-reader-account",name:"课程只读",phone:"",roleId:"course-reader",enabled:true,scope:"全部"});
   state.roles.push({
     id: "course-reader",
     name: "课程只读",

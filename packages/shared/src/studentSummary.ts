@@ -1,3 +1,4 @@
+import { isUnstartedBooking } from "./classInChanges";
 import { DEMO_TODAY, type DemoState } from "./model";
 
 export function getStudentSummary(
@@ -84,7 +85,9 @@ export function getStudentSummary(
     .at(-1);
   const currentTeacherName =
     futureChange?.fromTeacher ||
-    effectiveChange?.toTeacher ||
+    (effectiveChange?.toTeacher === "待重新排课"
+      ? teacher?.name || data.teachers.find(t => t.id === lessons.find(isUnstartedBooking)?.teacherId)?.name || "待重新排课"
+      : effectiveChange?.toTeacher) ||
     teacher?.name ||
     student.teacherName;
   const currentTeacher = data.teachers.find(

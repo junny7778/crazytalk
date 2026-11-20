@@ -38,7 +38,7 @@ export async function verifyWorkflows(
   const secondLesson = (second.data as DemoState).lessons.find(l => l.studentId === existing.id)!;
   assert.equal(getScheduleCredits(await read(), sibling.id, 1, 1).available, available - 1);
   await send({ type: "lesson.cancel", id: secondLesson.id, reason: "提前取消验收", responsibility: "学员", kind: "学员请假" });
-  assert.equal(getScheduleCredits(await read(), existing.id, 1, 1).available, available);
+  assert.equal(getScheduleCredits(await read(), existing.id, 1, 1).available, available - 1, "外部取消未确认前保留原课时占用");
   for (const [studentId, time] of [[existing.id, "11:00"], [sibling.id, "12:00"]])
     await send({ type: "lesson.schedule", studentId, teacherId: firstLesson.teacherId,
       slots: [{ date: firstLesson.date, time }], duration: 25, kind: "临时课", material: "账号退款验收", confirmedTeacher: true });

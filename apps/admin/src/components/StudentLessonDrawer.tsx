@@ -1,5 +1,6 @@
+import ClassInOperationFeedback from "./ClassInOperationFeedback";
 import { formatStudentProgress } from "@crazytalk/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
   DEMO_TODAY,
@@ -59,6 +60,8 @@ export function StudentLessonDrawer({
 }) {
   const { data, can, act } = useDemo();
   const toast = useToast();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [editing, setEditing] = useState<
     "correct" | "cancel" | "report" | null
   >(null);
@@ -207,6 +210,7 @@ export function StudentLessonDrawer({
       if (editing === "cancel") {
         if (!canChange) throw new Error("这节课当前无法取消");
         await act({ type: "lesson.cancel", id: lesson.id, reason, responsibility,kind:cancelKind,waived });
+        if (!mounted.current) return;
         toast(`${student?.name} ${lesson.date} ${lesson.time} 的课程已取消`);
         if (cancelDirectly) onClose();
       } else if (pending) {
@@ -246,7 +250,7 @@ export function StudentLessonDrawer({
     <>
       <Drawer
         open
-        onClose={() => requestClose("close")}
+        onClose={() => saving ? onClose() : requestClose("close")}
         title={cancelDirectly ? "取消课程" : "课程详情"}
         description={`${student?.name || "学员"} · ${lesson.date} ${lesson.time}`}
         width={620}
@@ -254,7 +258,7 @@ export function StudentLessonDrawer({
           editing ? (
             <>
               {editing === "cancel" && <small>{charge === undefined ? "本次不调整课时" : `预计扣除 ${charge} 课时`}</small>}
-              <Button disabled={saving} onClick={() => requestClose(cancelDirectly ? "close" : "back")}>
+              <Button onClick={() => saving ? onClose() : requestClose(cancelDirectly ? "close" : "back")}>
                 {cancelDirectly ? "关闭" : "返回详情"}
               </Button>
               <Button
@@ -262,7 +266,7 @@ export function StudentLessonDrawer({
                 variant={editing === "cancel" ? "danger-solid" : "primary"}
                 onClick={save}
               >
-                {editing === "report"
+                {saving ? (editing === "cancel" ? "正在取消课程" : "正在保存") : editing === "report"
                   ? "保存教材进度"
                   : editing === "cancel"
                     ? "确认取消课程"
@@ -357,7 +361,7 @@ export function StudentLessonDrawer({
             </div>
           </dl>
           {editing === "report" && (
-            <section className="sc-editor">
+            <section {...(saving ? {inert:""}: {})} className="sc-editor">
               <h3>更正教材进度</h3>
               <Field label="更正教材" required>
                 <input
@@ -386,7 +390,7 @@ export function StudentLessonDrawer({
             </section>
           )}
           {editing === "correct" && (
-            <section className="sc-editor">
+            <section {...(saving ? {inert:""}: {})} className="sc-editor">
               <h3>{pending ? "确认本节课时" : "更正本节记录"}</h3>
               {editableFacts && (
                 <>
@@ -459,8 +463,9 @@ export function StudentLessonDrawer({
               </Field>
             </section>
           )}
+          <ClassInOperationFeedback studentId={lesson.studentId}/>
           {editing === "cancel" && (
-            <section className="sc-editor">
+            <section {...(saving ? {inert:""}: {})} className="sc-editor">
               <h3>取消本节课程</h3>
               <p>
                 将取消 {lesson.date} {lesson.time}{" "}

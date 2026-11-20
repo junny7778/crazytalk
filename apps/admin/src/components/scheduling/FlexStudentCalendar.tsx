@@ -1,3 +1,5 @@
+import ClassInOperationFeedback from "../ClassInOperationFeedback";
+import ClassInBookingPreview from "./ClassInBookingPreview";
 import { useScheduleCredits } from "./useScheduleCredits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
@@ -6,6 +8,7 @@ import {
   addDays,
   DEMO_TODAY,
   isAvailable,
+  teacherFit, compareTeacherFit,
   getStudentScheduleProgress,
   minutes,
   type ScheduleIntent,
@@ -28,6 +31,9 @@ export function FlexStudentCalendar({
 }) {
   const { data, act, can, preview } = useDemo();
   const toast = useToast();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const student = data.students.find(s=>s.id===studentId);
   const progress = getStudentScheduleProgress(data, studentId, intent);
   const [week, setWeek] = useState(
     monday(intent.startDate < DEMO_TODAY ? DEMO_TODAY : intent.startDate),
@@ -107,6 +113,7 @@ export function FlexStudentCalendar({
       )
       .sort(
         (a, b) =>
+          (student ? compareTeacherFit(data,student,a,b) : 0) ||
           Number(previous.has(b.id)) - Number(previous.has(a.id)) ||
           Number(selected.has(b.id)) - Number(selected.has(a.id)) ||
           a.name.localeCompare(b.name),
@@ -162,12 +169,18 @@ export function FlexStudentCalendar({
     setDrag(null);
     setHover("");
   }
+  const [scheduleRevision] = useState(() => data.students.find(s => s.id === studentId)?.scheduleRevision ?? 0);
   const credits = useScheduleCredits(studentId, intent.duration, slots.length);
+  const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
   async function submit() {
+    if (submitLock.current) return;
+    submitLock.current = true; setSubmitting(true);
     try {
       if (!slots.length) return;
       const result = await act({
         type: "lesson.schedule",
+        scheduleRevision,
         plannedUnits: credits.units,
         schedulingMode: "flex",
         kind: "临时课",
@@ -177,6 +190,7 @@ export function FlexStudentCalendar({
         duration: intent.duration,
         material: data.students.find((s) => s.id === studentId)?.material || "",
       });
+      if (!mounted.current) return;
       toast(result.message);
       setSlots([]);
       setEditor(null);
@@ -195,13 +209,15 @@ export function FlexStudentCalendar({
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "提交失败，请重试");
-    }
+    } finally { submitLock.current = false; setSubmitting(false); }
   }
   const hasInvalid = slots.some(
     (s, i) => !candidates(s.date, s.time, i).some((t) => t.id === s.teacherId),
   );
   return (
     <section className="flex-student-calendar stack" aria-label="学员灵活课表">
+      <ClassInOperationFeedback studentId={studentId}/>
+      <fieldset disabled={submitting} className="stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
       {!intent.windows.length && (
         <p className="muted">
           尚未填写意向时间，可通过“修改排课信息”补充，也可直接选择时间排课。
@@ -460,7 +476,7 @@ export function FlexStudentCalendar({
               </span>
             </div>
             <div className="flex-picker-toolbar">
-              <strong>可选老师 {editingTeachers.length} 位</strong>
+              <strong>可选老师 {editingTeachers.length} 位（时间均可用，按标签适配排序）</strong>
               <input
                 aria-label="搜索可选老师"
                 placeholder="搜索老师姓名"
@@ -491,6 +507,8 @@ export function FlexStudentCalendar({
                     <div className="flex-teacher-heading">
                       <Avatar name={t.name} />
                       <strong>{t.name}</strong>
+                      {student && <small>一级匹配 {teacherFit(data,student,t).matchedPrimary.length} 项；二级匹配 {teacherFit(data,student,t).matchedSecondary.length} 项</small>}
+                      {student && [...teacherFit(data,student,t).blocked,...teacherFit(data,student,t).warnings].map(note=><small key={note}>{note}（教务可手动选择）</small>)}
                       {lessons.some(
                         (l) => l.teacherId === t.id && l.status === "已完成",
                       ) ? (
@@ -547,7 +565,9 @@ export function FlexStudentCalendar({
           部分已选课程已不可安排，请点击课程重新选择老师或移除。
         </p>
       )}
+      <ClassInBookingPreview studentId={studentId} teacherIds={slots.map(row => row.teacherId)}/>
       {credits.node}
+      </fieldset>
       <div className="fixed-plan-footer">
         <span>
           <strong>
@@ -573,9 +593,10 @@ export function FlexStudentCalendar({
             preview ||
             !can("schedule.create")
           }
-          onClick={submit}
+          loading={submitting}
+            onClick={submit}
         >
-          确认排课
+          {submitting ? "正在排课" : "确认排课"}
         </Button>
       </div>
     </section>

@@ -174,17 +174,18 @@ describe("学员操作体验补齐", () => {
         .lessons.find((lesson) => lesson.id === "preview-first")?.time,
     ).toBe("18:00");
   });
-  it("换师只预览生效日期后的课程，显示实际时长及逐节可用结果", async () => {
+  it("换师预览所选原老师的全部未开始预约，不要求新老师覆盖原时间", async () => {
     fixture();
     mount(<Action action="changeTeacher" />);
-    await choose("老师", "T. Destiny · BigBrains");
-    await change("从哪天开始", addDays(DEMO_TODAY, 3));
     const preview = screen.getByLabelText("换老师影响预览");
-    expect(preview.textContent).toContain("将调整 1 节课");
+    expect(screen.getByRole("combobox", {name:"要更换的原老师"})).toBeTruthy();
+    expect(screen.queryByLabelText("从哪天开始")).toBeNull();
+    expect(preview.textContent).toContain("将取消");
+    expect(preview.textContent).toContain("55 分钟");
     expect(preview.textContent).toContain("25 分钟");
-    expect(preview.textContent).toContain("时间可安排");
-    expect(preview.textContent).not.toContain("55 分钟");
+    expect(preview.textContent).toContain("重新选择老师、日期和时间");
   });
+
   it("速览按业务日期显示最近反馈，保留上下文回调并提供换师入口", async () => {
     const state = fixture();
     const template = state.feedback[0];
@@ -329,7 +330,7 @@ describe("学员操作体验补齐", () => {
         />,
       );
       await change("业务日期", addDays(DEMO_TODAY, -3));
-      await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "共享已有课时" })); });
+      await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "续费" })); });
       await testAct(async () => { fireEvent.click(
         screen.getByRole("button", { name: button }),
       ); });

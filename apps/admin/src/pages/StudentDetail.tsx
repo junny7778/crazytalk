@@ -1,3 +1,7 @@
+import ClassInOperationFeedback from "../components/ClassInOperationFeedback";
+import StudentClasses from "../components/StudentClasses";
+import ProfileCard from "../components/ProfileCard";
+import { studentProfileCard, type ProfileCardContent } from "../../../../packages/shared/src/profileCards";
 import {rosterValues} from "../lib/customerRoster";
 import { studentOrganization } from "@crazytalk/shared";
 import {SurveyLink} from "../components/StudentSurvey";
@@ -80,6 +84,7 @@ export default function StudentDetail() {
   const navigate = useNavigate();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
+  const [card, setCard] = useState<ProfileCardContent | null>(null);
   const [action, setAction] = useState<StudentAction | null>(null);
   const [initialLessonId, setInitialLessonId] = useState<string>();
   const [initialFeedbackId, setInitialFeedbackId] = useState<string>();
@@ -257,6 +262,7 @@ export default function StudentDetail() {
         <div>
           <div className="student-name-status">
             <h1>{student.name}</h1>
+            {card && <ProfileCard content={card} onClose={() => setCard(null)} />}
             <Badge
               tone={student.orderStatus === "正常" ? "success" : "neutral"}
             >
@@ -265,7 +271,7 @@ export default function StudentDetail() {
           </div>
           <p>
             渠道：{student.channel || "未填写"} · 负责教务：
-            {student.owner || "未填写"} · 所属队伍：{studentOrganization(data.accounts,student.owner,student.roster).team} · 所属组别：{studentOrganization(data.accounts,student.owner,student.roster).group}
+            {student.owner || "未填写"} · 所属队伍：{studentOrganization(data.accounts,student.owner,student.roster,student.ownerAccountId).team} · 所属组别：{studentOrganization(data.accounts,student.owner,student.roster,student.ownerAccountId).group}
           </p>
         </div>
         <div className="student-header-actions">
@@ -332,6 +338,7 @@ export default function StudentDetail() {
               </div>
             </details>
           )}
+          <Button variant="ghost" onClick={() => setCard(studentProfileCard(student, data.lessons))}>查看学员画像信息</Button>
           {can("student.edit") && (
             <Button onClick={() => openAction("edit")}>
               <Pencil size={16} />
@@ -362,7 +369,7 @@ export default function StudentDetail() {
       )}
       <div className="student-detail-stats">
         <StatCard
-          label="剩余课时"
+          label={shared.length ? "账号共享剩余课时" : "剩余课时"}
           title="查看课时明细"
           value={
             packages.length ? `${packages.reduce((total, item) => total + item.balance, 0)} 课时${shared.length ? packages.length === 1 ? ` · ${shared[0].memberCount ?? shared[0].studentIds.length} 人共用` : " · 含共享套餐" : ""}` : student.balanceKnown ? `${student.balance} 课时` : "余额待核实"
@@ -429,7 +436,7 @@ export default function StudentDetail() {
       </div>
       {tab === "profile" && (
         <>
-          <div className="profile-service-grid"><SurveyLink key={"survey-"+student.id} student={student}/><StudentClassIn key={student.id} student={student}/></div>
+          <ClassInOperationFeedback studentId={student.id}/><div className="profile-service-grid"><SurveyLink key={"survey-"+student.id} student={student}/><StudentClassIn key={student.id} student={student}/></div><StudentClasses studentId={student.id}/>
           {studentFieldGroups
             .filter(
               (group) =>

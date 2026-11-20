@@ -61,7 +61,7 @@ it("按专属链接保存十一项原答并同步画像，年龄区间可用于�
   expect(updated).toMatchObject({id: student.id, name: "学员甲", chineseName: "学员甲", englishName: student.englishName, gender: "女",
     surveyOriginal: answers, age: null, ageText: answers.ageGroup, level: "L2", material: student.material,
     interests: "唱歌、画画、昆虫", foreignTeacherExperience: "无", preferences: student.preferences});
-  expect(recommendedTags(updated)).toEqual(expect.arrayContaining(["擅长少儿(6-9岁)", "温柔有耐心", "会唱歌"]));
+  expect(recommendedTags(updated)).toEqual(expect.arrayContaining(["擅长少儿 (6-9岁)", "温柔有耐心", "会唱歌"]));
   expect(stored.students[1]).toEqual(initial.students[1]);
 });
 

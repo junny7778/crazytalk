@@ -263,8 +263,17 @@ export function assertCommandAccess(
       command.studentId,
       command.orderId,
     ).members.forEach(checkStudent);
-  if (command.type === "student.bindClassIn")
+  if (command.type === "student.bindClassIn") {
     sharedBalanceGroup(state, command.id).members.forEach(checkStudent);
+    state.classInAccounts?.find(account => account.uid === command.uid.trim())?.studentIds.forEach(checkStudent);
+  }
+  if (command.type === "account.save" && command.handoverTo) {
+    const successor = state.accounts.find(a => a.id === command.handoverTo);
+    for (const student of state.students.filter(s => s.ownerAccountId === command.account.id)) {
+      checkStudent(student.id);
+      if (successor && !inScope({...student,ownerAccountId:successor.id,owner:successor.name})) throw new Error("接手教务超出当前数据范围");
+    }
+  }
   if (command.type === "credit.add" || command.type === "credit.deduct") {
     if (command.orderId) {
       const order = state.orders?.find((item) => item.id === command.orderId);
@@ -282,20 +291,22 @@ export function assertCommandAccess(
   // Scope must hold after reassignment too, including imports and newly created records.
   const checkProfile = (profile: {
     owner: string;
+    ownerAccountId?: string;
     project: string;
     channel: string;
-  }) => {
-    if (!studentInScope(state, profile, account.scope, account))
+  }, existing?: Student) => {
+    const ownerAccountId = existing && profile.owner !== existing.owner && profile.ownerAccountId === existing.ownerAccountId ? undefined : profile.ownerAccountId;
+    if (!studentInScope(state, {...profile,ownerAccountId}, account.scope, account))
       throw new Error("资料归属超出当前数据范围");
   };
   if (command.type === "student.create") checkProfile(command.student);
-  if (command.type === "student.profile") checkProfile(command.profile);
+  if (command.type === "student.profile") checkProfile(command.profile,state.students.find(s=>s.id===command.id));
   if (
     command.type === "student.details.update" ||
     command.type === "student.edit"
   ) {
     const existing = state.students.find((item) => item.id === command.id)!;
-    checkProfile({ ...existing, ...command.patch });
+    checkProfile({ ...existing, ...command.patch },existing);
   }
   if (command.type === "student.import") {
     for (const profile of command.students) {
@@ -703,7 +714,9 @@ export function scopeState(
       ...teacher,
       phone: "",
       notes: "",
-      bio: "",
+      teachingPhilosophy: "",
+      educationBackground: "",
+      classInAccount: "",
       photo: "",
       photos: [],
       introVideo: "",

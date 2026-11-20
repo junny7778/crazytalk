@@ -933,7 +933,7 @@ export function Account({
       </div>
       <section className="teacher-card">
         <h2>{t("profile")}</h2>
-        <p className="teacher-profile-bio">{teacher.bio}</p>
+        <p className="teacher-profile-bio">{teacher.teachingPhilosophy}</p>
         <div className="row gap-12">
           <Badge tone="info">{t("certificates")} · TEFL</Badge>
         </div>

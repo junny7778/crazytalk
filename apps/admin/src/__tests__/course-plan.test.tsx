@@ -68,7 +68,7 @@ function mount(
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
-  demoRepository.read().classInAccounts = [{ id: "verified-test-account", phone: "13800000000", uid: "123456", studentIds: demoRepository.read().students.map(student => student.id) }];
+  demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index) => ({id:"verified-"+student.id,phone:"",uid:String(990000+index),studentIds:[student.id]}));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -154,7 +154,7 @@ describe("多老师课程计划", () => {
       "临时课",
     );
     await testAct(async () => { fireEvent.click(screen.getByLabelText("第2节老师")); });
-    await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: b.name })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: name => name.startsWith(b.name) })); });
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认排课" })); });
     expect(
       demoRepository.read().lessons.map((l) => [l.date, l.time, l.teacherId]),

@@ -394,7 +394,7 @@ describe("学员中心 V3 独立验收", () => {
       dueDate: "",
     });
   });
-  it("老师离职仅向实际受影响学员派单且附真实课程", () => {
+  it("老师离职向有预约或有效绑定的学员派单且附真实课程", () => {
     const data = fixture();
     const t = data.teachers[0];
     const affected = data.lessons.filter(
@@ -404,14 +404,13 @@ describe("学员中心 V3 独立验收", () => {
     const next = transition(data, {
       type: "teacher.offboard",
       teacherId: t.id,
-      confirmName: t.name,
       reason: "独立验收",
     }).data;
     const tasks = next.tasks.filter(
       (task) => task.sourceId === `offboard:${t.id}`,
     );
     expect(tasks.map((t) => t.studentId).sort()).toEqual(
-      [...new Set(affected.map((l) => l.studentId))].sort(),
+      [...new Set([...affected.map((l) => l.studentId), ...data.students.filter(s => s.teacherId === t.id && !["停课", "结课", "退费"].includes(s.status)).map(s => s.id)])].sort(),
     );
     for (const task of tasks)
       expect(task.lessonIds?.sort()).toEqual(

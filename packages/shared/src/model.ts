@@ -38,6 +38,10 @@ export const studentSchema = z.object({
   project: z.string(),
   channel: z.string(),
   owner: z.string(),
+  ownerAccountId: z.string().optional(),
+  scheduleRevision: z.number().int().nonnegative().optional(),
+  rebookingLessonIds: z.array(z.string()).optional(),
+  classInChange: z.object({phase:z.enum(["canceling", "members"]), uid:z.string(),phone:z.string(),lessonIds:z.array(z.string()),operator:z.string(),sourceUid:z.string(),requestedByAccountId:z.string().optional(),operationId:z.string().optional(),error:z.string().optional()}).optional(),
   phone: z.string(),
   email: z.string().default(""),
   status: z.enum(["待排课", "在读", "停课", "结课", "退费"]),
@@ -108,7 +112,7 @@ export const studentSchema = z.object({
 export const studentProfileSchema = studentSchema
   .omit({
     id: true, surveySecret:true,surveyToken:true,surveySubmittedAt:true,surveyPreviousSubmittedAt:true,surveyOriginal:true,
-    scheduleIntent: true,
+    scheduleIntent: true, scheduleRevision:true, rebookingLessonIds:true, classInChange:true,
     balance: true,
     createdAt: true,
     lastLesson: true,
@@ -143,6 +147,7 @@ export const studentEditableSchema = studentProfileSchema.pick({
   project: true,
   channel: true,
   owner: true,
+  ownerAccountId: true,
   personality: true,
   foreignTeacherExperience: true,
   preferences: true,
@@ -228,7 +233,17 @@ const clockFromHour = (hour: number) => {
 export const teacherSchema = z.preprocess(
   (value) => {
     const record = z.record(z.unknown()).safeParse(value);
-    if (!record.success || "availability" in record.data) return value;
+    if (!record.success) return value;
+    if (typeof record.data.bio === "string") {
+      const previous = record.data.bio.trim();
+      const current = record.data.teachingPhilosophy;
+      if (previous) record.data.teachingPhilosophy = typeof current === "string" && current.trim()
+        ? current.trim() === previous ? current : `${current}\n\n${previous}`
+        : previous;
+      delete record.data.bio;
+    }
+    value = record.data;
+    if ("availability" in record.data) return value;
     const old = legacyAvailabilitySchema.safeParse(value);
     if (!old.success) return value;
     return {
@@ -246,6 +261,7 @@ export const teacherSchema = z.preprocess(
     name: z.string(),
     so: z.string(),
     tmAccountId: z.string().optional(),
+    classInAccount: z.string().optional(),
     classInUid: z.string().regex(/^[1-9]\d*$/).optional(),
     accent: z.string(),
     level: z.string(),
@@ -269,7 +285,6 @@ export const teacherSchema = z.preprocess(
     teacherTraining: z.string().optional(),
     needConfirm: z.boolean(),
     phone: z.string(),
-    bio: z.string(),
     rate: z.number(),
     availability: z.array(availabilitySlotSchema).default([]),
     availabilityFrom: z.string().default(""),
@@ -278,6 +293,9 @@ export const teacherSchema = z.preprocess(
       .enum(["legacy", "entered", "reference"])
       .default("entered"),
     tags: z.array(z.string()),
+    educationBackground: z.string().optional(),
+    teachingExperience: z.string().optional(),
+    teachingPhilosophy: z.string().optional(),
   }),
 );
 export const lessonSchema = z.object({
@@ -316,6 +334,9 @@ export const lessonSchema = z.object({
   plannedUnits: z.number().positive().finite().optional(),
   sync: z.enum(["已同步", "处理中", "未同步"]),
   syncReason: z.string(),
+  classInPreviousSlot: z.object({date:z.string(),time:z.string(),duration:z.number(),teacherId:z.string()}).optional(),
+  syncState: z.enum(["pending", "completed", "failed", "uncertain", "blocked"]).optional(),
+  syncRetryable: z.boolean().optional(),
   material: z.string(),
   note: z.string(),
   teacherAttendance: z
@@ -464,6 +485,7 @@ export const referralSchema = z.object({
   recordedAt: z.string().optional(),
 });
 export const serviceTaskSchema = z.object({
+  rebooking: z.object({ slots: z.array(z.object({ duration: z.number().positive(), lessonId: z.string().optional() })) }).optional(),
   id: z.string(),
   studentId: z.string(),
   title: z.string(),
@@ -587,6 +609,8 @@ export const accountSchema = z.object({
   team: z.string().optional(),
   scope: z.string(),
   enabled: z.boolean(),
+  classInAccount: z.string().optional(),
+  classInUid: z.string().optional(),
 });
 export const catalogSchema = z.object({
   id: z.string(),
@@ -597,7 +621,12 @@ export const catalogSchema = z.object({
   targetHistory: z.array(z.object({ at: z.string(), lessons: z.number().int().positive(), operator: z.string() })).optional(),
   monthlyLessons: z.number().int().positive().optional(),
   usedInFeedback: z.boolean().optional(),
-  type: z.enum(["教材", "反馈分类", "SO", "下拉选项", "项目", "渠道", "队伍", "组别"]),
+  tagCategory: z.string().optional(),
+  tagColor: z.enum(["green", "yellow", "red", "purple"]).optional(),
+  tagMeaning: z.string().optional(),
+  tagExample: z.string().optional(),
+  tagAdvice: z.string().optional(),
+  type: z.enum(["教材", "反馈分类", "SO", "下拉选项", "项目", "渠道", "队伍", "组别", "老师标签"]),
   name: z.string(),
   detail: z.string(),
   enabled: z.boolean(),
@@ -624,7 +653,7 @@ export const stateSchema = z.object({
   studentIdAliases: z.record(z.string()).optional(),
   classInAccounts: z.array(z.object({id:z.string(), phone:z.string(), uid:z.string(), studentIds:z.array(z.string())})).optional(),
   packageBalanceVersion: z.union([z.literal(1), z.literal(2)]).optional(),
-  orders: z.array(z.object({ id:z.string(), memberCount:z.number().optional(), hiddenReservations:z.object({ units:z.number(), unknownCount:z.number() }).optional(), studentIds:z.array(z.string()), units:z.number(), balance:z.number(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
+  orders: z.array(z.object({ id:z.string(), classInAccountId:z.string().optional(), purchaseStudentIds:z.array(z.string()).optional(), memberCount:z.number().optional(), hiddenReservations:z.object({ units:z.number(), unknownCount:z.number() }).optional(), studentIds:z.array(z.string()), units:z.number(), balance:z.number(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
   slotLocks:z.array(z.object({studentId:z.string(),teacherId:z.string(),date:z.string(),time:z.string(),duration:z.number().positive(),operator:z.string(),expiresAt:z.string()})).optional(),
   payTerms:z.array(payTermsSchema).optional(),
   settlements:z.array(z.object({teacherId:z.string(),month:z.string(),so:z.string(),at:z.string(),lines:z.array(payLine)})).optional(),
@@ -771,6 +800,7 @@ export type Command = { operator?: string } & (
           | "chineseName"
           | "phone"
           | "owner"
+          | "ownerAccountId"
           | "level"
           | "material"
           | "unit"
@@ -815,6 +845,8 @@ export type Command = { operator?: string } & (
     }
   | {
       type: "lesson.schedule";
+      scheduleRevision?: number;
+      selectionMode?: "recommended" | "manual";
       schedulingMode?: "flex";
       studentId: string;
       teacherId: string;
@@ -854,8 +886,7 @@ export type Command = { operator?: string } & (
   | {
       type: "lesson.changeTeacher";
       studentId: string;
-      teacherId: string;
-      from: string;
+      originalTeacherId: string;
       reason: string;
       confirmedTeacher?: boolean;
       confirmationNote?: string;
@@ -949,7 +980,6 @@ export type Command = { operator?: string } & (
   | {
       type: "teacher.offboard";
       teacherId: string;
-      confirmName: string;
       reason: string;
     }
   | { type: "payroll.adjust"; id: string; amount: number; note: string }
@@ -975,7 +1005,10 @@ export type Command = { operator?: string } & (
 );
 // Demo keeps its reference date. Business entry points refresh this before reading or writing.
 export let DEMO_TODAY = "2026-10-31";
+let businessNow: number | undefined;
+export function schedulingNow() { return businessNow ?? Date.parse(DEMO_TODAY + "T00:00:00+08:00"); }
 export function configureBusinessClock(now = Date.now()) {
+  businessNow = now;
   DEMO_TODAY = new Date(now + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return DEMO_TODAY;
 }

@@ -157,7 +157,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     kind: id,
     note: text,
   }),
-  z.object({ type: z.literal("student.bindClassIn"), id, phone: id, uid: id }),
+  z.object({ type: z.literal("student.bindClassIn"), id, phone: z.string(), uid: id }),
   z.object({
     type: z.literal("student.profile"),
     id,
@@ -188,6 +188,7 @@ export const commandSchema = z.discriminatedUnion("type", [
         chineseName: true,
         phone: true,
         owner: true,
+        ownerAccountId: true,
         level: true,
         material: true,
         unit: true,
@@ -234,6 +235,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("lesson.schedule"),
+    scheduleRevision: z.number().int().nonnegative().optional(),
+    selectionMode: z.enum(["recommended", "manual"]).optional(),
     schedulingMode: z.literal("flex").optional(),
     studentId: id,
     teacherId: id,
@@ -283,8 +286,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("lesson.changeTeacher"),
     studentId: id,
-    teacherId: id,
-    from: date,
+    originalTeacherId: id,
     reason: id,
     confirmedTeacher: z.boolean().optional(),
     confirmationNote: text.optional(),
@@ -374,7 +376,6 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("teacher.offboard"),
     teacherId: id,
-    confirmName: id,
     reason: id,
   }),
   z.object({ type: z.literal("payroll.adjust"), id, amount: number, note: id }),

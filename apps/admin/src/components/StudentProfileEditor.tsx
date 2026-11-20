@@ -1,3 +1,4 @@
+import ClassInHandoverPreview from "./ClassInHandoverPreview";
 import {studentOrganization} from "@crazytalk/shared";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -50,9 +51,12 @@ export default function StudentProfileEditor({
   const { data, act, can } = useDemo();
   const navigate = useNavigate();
   const toast = useToast();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [draft, setDraft] = useState<StudentProfileInput>(() =>
     student ? studentProfileSchema.parse(can("field.student_phone") ? student : { ...student, phone: "", email: "" }) : emptyStudentProfile(),
   );
+  const organization = studentOrganization(data.accounts, draft.owner, draft.roster, draft.ownerAccountId);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const formRoot = useRef<HTMLDivElement>(null);
@@ -125,6 +129,7 @@ export default function StudentProfileEditor({
         "project",
         "channel",
         "owner",
+        "ownerAccountId",
         "personality","level","interests",
         "foreignTeacherExperience",
         "preferences",
@@ -149,6 +154,7 @@ export default function StudentProfileEditor({
             }
           : { type: "student.create", student: profile },
       );
+      if (!mounted.current) return;
       toast(result.message);
       onClose();
       const saved = student ?? result.data.students[0];
@@ -168,7 +174,7 @@ export default function StudentProfileEditor({
   return (
     <Drawer
       open
-      onClose={requestClose}
+      onClose={saving ? onClose : requestClose}
       title={student ? "编辑学员资料" : "新建学员"}
       description={
         student
@@ -178,8 +184,8 @@ export default function StudentProfileEditor({
       width={880}
       footer={
         <>
-          <Button onClick={requestClose} disabled={saving}>
-            取消
+          <Button onClick={saving ? onClose : requestClose}>
+            {saving ? "关闭" : "取消"}
           </Button>
           {!student && (
             <>
@@ -193,15 +199,16 @@ export default function StudentProfileEditor({
           )}
           <Button
             variant="primary"
+            loading={saving}
             disabled={saving}
             onClick={() => save("none")}
           >
-            保存学员资料
+            {saving ? (student && draft.ownerAccountId !== student.ownerAccountId ? "正在交接" : "正在保存") : "保存学员资料"}
           </Button>
         </>
       }
     >
-      <div ref={formRoot} className="stack student-profile-editor">
+      <div {...(saving ? { inert: "" } : {})} ref={formRoot} className="stack student-profile-editor">
         <section>
           <h3>基本资料</h3>
           <div className="student-profile-fields">
@@ -305,18 +312,14 @@ export default function StudentProfileEditor({
             <Field label="项目"><Choice label="项目" value={draft.project} onChange={project => patch({project})}
               options={data.catalog.filter(p => p.enabled && p.type === "项目" && data.catalog.some(c => p.channelIds?.includes(c.id) && c.name === draft.channel)).map(p => p.name)}/></Field>
             <Field label="负责教务">
-              <Choice
-                label="负责教务"
-                value={draft.owner}
-                onChange={(owner) => patch({ owner })}
-                options={[
-                  ...data.students.map((item) => item.owner),
-                  ...data.accounts.filter(a=>a.enabled && a.roleId==="ops").map(a=>a.name),
-                ]}
-              />
+              <Select aria-label="负责教务" value={draft.ownerAccountId || ""} onValueChange={ownerAccountId => patch({ownerAccountId, owner: data.accounts.find(a => a.id === ownerAccountId)?.name || ""})}>
+                <option value="">{draft.owner && !draft.ownerAccountId ? `${draft.owner}（待关联账号）` : "未分配"}</option>
+                {data.accounts.filter(a => a.roleId === "ops" && (a.enabled || a.id === draft.ownerAccountId)).map(a => <option key={a.id} value={a.id} disabled={!a.enabled}>{a.name} · {a.team || "未分队"} / {a.group || "未分组"}</option>)}
+              </Select>
             </Field>
-            <Field label="所属队伍"><input readOnly value={studentOrganization(data.accounts,draft.owner,draft.roster).team}/></Field>
-            <Field label="所属组别"><input readOnly value={studentOrganization(data.accounts,draft.owner,draft.roster).group}/></Field>
+            {student && draft.ownerAccountId !== student.ownerAccountId && <ClassInHandoverPreview studentIds={[student.id]} ownerId={draft.ownerAccountId || ""}/>}
+            <Field label="所属队伍"><input readOnly disabled={organization.team === "待分配"} className="student-organization-value" value={organization.team}/></Field>
+            <Field label="所属组别"><input readOnly disabled={organization.group === "待分配"} className="student-organization-value" value={organization.group}/></Field>
           </div>
         </section>
         {(!student || !hasReports) && (

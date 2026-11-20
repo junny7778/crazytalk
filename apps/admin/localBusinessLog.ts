@@ -19,6 +19,7 @@ const renderEvent = z.object({
   updateSequence: z.number().int().nonnegative().optional(),
   pendingRequests: z.number().int().nonnegative().optional(),
   interaction: z.object({ blocked: z.boolean(), dialogs: z.number().int().nonnegative(), overlays: z.number().int().nonnegative() }).optional(),
+  errorCode: z.enum(["dom-remove-child", "dom-insert-before", "business-context-missing", "update-depth", "duplicate-root", "other"]).optional(),
   errorKind: z.enum(["uncaught", "rejection", "update-depth", "duplicate-root", "react-boundary", "console-error"]).optional(),
   frames: z.array(z.object({ file: z.string().regex(/^[\w.-]{1,80}\.(?:tsx?|jsx?)$/), line: z.number().int().nonnegative(), column: z.number().int().nonnegative() })).max(6).optional(),
   request: z.object({ id: z.string().uuid(), endpoint: z.enum(["/api/me", "/api/state"]), phase: z.enum(["start", "response", "rejected"]), status: z.number().int().min(100).max(599).optional(), elapsedMs: z.number().int().nonnegative().optional() }).optional(),

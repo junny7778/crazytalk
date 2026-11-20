@@ -49,3 +49,5 @@
     grid-template-columns: 1fr;
   }
 }
+
+.student-credit-sharing-note { font-size: 12px; color: var(--ct-brand-700); }

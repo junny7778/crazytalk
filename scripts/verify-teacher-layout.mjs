@@ -1,0 +1,41 @@
+import {chromium,expect} from '@playwright/test';
+import {mkdir,writeFile} from 'node:fs/promises';
+const out='docs/evidence/teacher-layout';await mkdir(out,{recursive:true});
+const browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(10000);
+const logs=[];function pass(s){logs.push(s);console.log(s);}
+try {
+ await page.goto('http://127.0.0.1:5173/teachers');await page.getByRole('button',{name:'新建老师',exact:true}).click();
+ let form=page.getByRole('dialog',{name:'新建老师'});
+ await expect(form.locator('.teacher-form-section-title')).toHaveText(['基本信息','教学信息','对外介绍','排课信息','培训与内部记录']);
+ await form.getByLabel('英文名',{exact:true}).fill('T. Layout Verification');
+ await form.getByLabel('联系手机',{exact:true}).fill('13912345678');
+ await expect(form.getByLabel('老师介绍',{exact:true})).toHaveCount(0);
+ await form.getByLabel('教学经验',{exact:true}).fill('3年教学经验');
+ await form.getByLabel('教师寄语与教学特色',{exact:true}).fill('鼓励表达，耐心引导');
+ await form.getByLabel('内部备注',{exact:true}).fill('内部核验记录');
+ await form.getByLabel('quiz 成绩',{exact:true}).fill('88');
+ await form.getByLabel('视频培训已完成',{exact:true}).check();
+ await form.locator('.teacher-tag-options label').filter({hasText:'温柔有耐心'}).click();
+ await expect(form.getByLabel('已选老师标签')).toContainText('温柔有耐心');
+ await form.getByRole('button',{name:'周历勾选',exact:true}).click();
+ await expect(form.getByLabel('每周可用时间周历')).toBeVisible();
+ await expect(form.getByRole('group',{name:'每周授课日'})).toHaveCount(0);
+ await form.getByRole('button',{name:'周一 10:00',exact:true}).click();
+ await form.getByRole('button',{name:'周一 10:30',exact:true}).click();
+ await form.getByRole('button',{name:'按星期填写',exact:true}).click();
+ await expect(form.getByLabel('每周可用时间周历')).toHaveCount(0);
+ await expect(form.getByLabel('周一 开始时间 1',{exact:true})).toHaveValue('10:00');
+ await expect(form.getByLabel('周一 结束时间 1',{exact:true})).toHaveValue('11:00');
+ await form.screenshot({path:out+'/create.png'});
+ await form.getByRole('button',{name:'保存老师',exact:true}).click();await expect(form).toHaveCount(0);
+ pass('PASS five sections and compact tag selection; grid/day modes mutually exclusive and preserve 10:00-11:00');
+ await page.getByText('T. Layout Verification',{exact:true}).click();await page.getByRole('button',{name:'编辑资料',exact:true}).click();
+ form=page.getByRole('dialog',{name:'编辑老师'});
+ await form.getByRole('button',{name:'按星期填写',exact:true}).click();
+ for(const [label,value] of [['英文名','T. Layout Verification'],['联系手机','13912345678'],['教学经验','3年教学经验'],['教师寄语与教学特色','鼓励表达，耐心引导'],['内部备注','内部核验记录'],['quiz 成绩','88']]) await expect(form.getByLabel(label,{exact:true})).toHaveValue(value);
+ await expect(form.getByLabel('视频培训已完成',{exact:true})).toBeChecked();await expect(form.getByLabel('已选老师标签')).toContainText('温柔有耐心');
+ await form.getByLabel('教学经验',{exact:true}).fill('4年教学经验');await form.getByRole('button',{name:'保存老师',exact:true}).click();await expect(form).toHaveCount(0);
+ await page.reload();await expect(page.getByText('4年教学经验',{exact:true})).toBeVisible();await expect(page.getByText('内部核验记录',{exact:true})).toBeVisible();await page.waitForTimeout(700);await page.screenshot({path:out+'/detail.png'});
+ await page.getByRole('button',{name:'编辑资料',exact:true}).click();form=page.getByRole('dialog',{name:'编辑老师'});await form.getByRole('button',{name:'按星期填写',exact:true}).click();await expect(form.getByLabel('教学经验',{exact:true})).toHaveValue('4年教学经验');await expect(form.getByLabel('周一 开始时间 1',{exact:true})).toHaveValue('10:00');
+ pass('PASS create-save-edit fields roundtrip; edit-save-refresh retains detail, notes, tags, schedule');
+} catch(e){await page.screenshot({path:out+'/failure.png'});console.error((await page.locator('body').innerText()).slice(-7000));throw e;}finally{await writeFile(out+'/verification.txt',logs.join('\n'));await browser.close();}

@@ -53,7 +53,7 @@ function setup(windowEnd = "19:25") {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
-  demoRepository.read().classInAccounts = [{ id: "verified-test-account", phone: "13800000000", uid: "123456", studentIds: demoRepository.read().students.map(student => student.id) }];
+  demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index) => ({id:"verified-"+student.id,phone:"",uid:String(990000+index),studentIds:[student.id]}));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -73,7 +73,7 @@ it("新固定入口只展示完整方案与负荷，进入学生日历不写数�
   expect(screen.getAllByText(/已排 0 节（所有学员）/)).toHaveLength(2);
   await testAct(async () => { fireEvent.click(screen.getAllByRole("button", { name: "查看排课方案" })[0]); });
   expect(screen.getByRole("region", { name: "学员固定课表" })).toBeTruthy();
-  expect(screen.getByText("方案预览 · 尚未确认")).toBeTruthy();
+  expect(screen.getByText("系统推荐方案 · 尚未确认")).toBeTruthy();
   expect(demoRepository.read().lessons).toHaveLength(0);
 });
 it("单节换师只影响本节，最终确认一次创建双老师课程", async () => {
@@ -90,6 +90,7 @@ it("单节换师只影响本节，最终确认一次创建双老师课程", asyn
   await testAct(async () => { fireEvent.click(screen.getByLabelText("本节可用老师")); });
   await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: other.name })); });
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "完成" })); });
+  expect(screen.getByText("教务手动调整 · 尚未确认")).toBeTruthy();
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "下一周" })); });
   expect(
     within(screen.getByRole("region", { name: "学员固定课表" })).getByRole(

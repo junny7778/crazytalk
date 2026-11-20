@@ -11,14 +11,14 @@ export function packagePurchases(data: DemoState) {
     return [{
       id: entry.purchaseId ?? entry.id, packageId: pack.id,
       date: entry.date, units: entry.units, kind: entry.type,
-      studentIds: entry.purchaseStudentIds ?? pack.studentIds,
+      studentIds: entry.purchaseStudentIds ?? pack.purchaseStudentIds ?? pack.studentIds,
     }];
   });
   // Older imports can contain a purchase order without its matching ledger row.
   for (const pack of packages.values()) {
     if (!represented.has(pack.id) && ["新购", "购课", "充值", "续费"].includes(pack.kind)) {
       purchases.push({ id: pack.id, packageId: pack.id, date: pack.date,
-        units: pack.units, kind: pack.kind, studentIds: pack.studentIds });
+        units: pack.units, kind: pack.kind, studentIds: pack.purchaseStudentIds ?? pack.studentIds });
     }
   }
   return purchases;

@@ -320,7 +320,7 @@ describe("运营业务闭环", () => {
     const after = transition(data, {
       type: "account.save",
       account: { ...account, enabled: false },
-      handoverTo: "Roma",
+      handoverTo: "u3",
     }).data;
     expect(after.students.some((s) => s.owner === "Rita")).toBe(false);
     expect(
@@ -365,17 +365,12 @@ describe("撤销扣课", () => {
 });
 
 describe("跨模块边界回归", () => {
-  it("更换老师与排课遵守同一少儿授课限制", () => {
+  it("换师取消只针对选定原老师，其他关系和历史不改变", () => {
     const data = createSeed();
-    expect(() =>
-      transition(data, {
-        type: "lesson.changeTeacher",
-        studentId: "s1",
-        teacherId: "t7",
-        from: "2026-11-20",
-        reason: "家长要求",
-      }),
-    ).toThrow("少儿");
+    const student = data.students[0];
+    const changed = transition(data,{type:"lesson.changeTeacher",studentId:student.id,originalTeacherId:student.teacherId,reason:"家长要求"}).data;
+    expect(changed.lessons.filter(l => l.studentId !== student.id || l.teacherId !== student.teacherId)).toEqual(data.lessons.filter(l => l.studentId !== student.id || l.teacherId !== student.teacherId));
+    expect(changed.students[0].teacherId).toBe("");
   });
 
   it("老师单价变更不回写已经确认的历史工资", () => {

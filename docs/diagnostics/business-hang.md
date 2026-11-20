@@ -94,3 +94,13 @@ node scripts/verify-browser-diagnostics.mjs /tmp/ct-hang-repro-2334 http://127.0
 代码排查同时检查了 BusinessProvider 初始加载与轮询 effect、App 导航 effect、Settings 草稿同步及离开阻止、业务模式的问卷预填开关。尚未在这些路径中证实造成第二次卡死的无界更新循环，因此未添加业务重试或改动业务状态处理。
 
 admin 类型检查只报告已有 settings-navigation.test.tsx:922 的 Testing Library exact 选项类型错误，本轮诊断文件未报告类型错误；未宣称完整类型检查通过。未部署。
+
+## 2026-11-20 19:25 现场与入口修复
+
+pageId=12ac4dae-91ec-4c67-a017-2935f7e94050 的第一条错误为 duplicate-root，发生在两次 mount 的同一毫秒（19:25:58.355）；紧接着是 dom-insert-before/dom-remove-child 和持续 render-burst。已有卸载日志说明之前仅靠 dispose 的修复不能覆盖入口重复执行。此证据比此前仅观察 DOM 错误更直接。
+
+main.tsx 现在将当前入口清理函数保存在同一路径的 hot.data 中，每次重新执行入口前清理上一实例；清理函数检查所有权并先移除登记，旧回调不能清理新实例。同步释放 router/root/query client。
+
+隔离回归：用 Vite 标准 t 参数重新加载入口模块两次，旧实现记录两条重复 root 警告；新实现为零，心跳持续。该实验验证重复执行机制，不等同于完整重现所有现场时序。首次双页热更新验收第一轮通过、后续 settings-shell 等待超时，继续核验中，不能宣称全套通过。
+
+隔离副本恢复为修复后的入口后重跑：双标签两轮 HMR 均无运行错误/重复 root，心跳正常，两页均通过到学员中心的导航。前一次超时原因尚未单独解释，保留为验证限制；未部署或执行全量回归。

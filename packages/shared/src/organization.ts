@@ -6,13 +6,13 @@ export function scopeLabel(_catalog: CatalogEntry[], scope: string) {
 
 export function studentInScope(
   data: DemoState,
-  student: Pick<Student, "owner" | "project" | "channel" | "roster">,
+  student: Pick<Student, "owner" | "ownerAccountId" | "project" | "channel" | "roster">,
   scope: string,
   account?: Account,
 ) {
   if (account?.roleId === "admin" || scope === "全部") return true;
   if (scope === "本组" || scope === "本队") {
-    const owner = studentOrganization(data.accounts,student.owner,student.roster);
+    const owner = studentOrganization(data.accounts,student.owner,student.roster,student.ownerAccountId);
     if (!owner || !account) return false;
     return scope === "本组"
       ? !!account.team &&
@@ -43,9 +43,14 @@ export function assignSampleTeams(data: DemoState) {
   return true;
 }
 
-export function studentOrganization(accounts: Account[], owner: string, roster?:Student["roster"]) {
+export function studentOrganization(accounts: Account[], owner: string, roster?:Student["roster"], ownerAccountId?: string) {
+  if (ownerAccountId) {
+    const account = accounts.find(a => a.id === ownerAccountId);
+    return { team: account?.team || "待分配", group: account?.group || "待分配" };
+  }
   if(roster && (roster.fields["教务"] || "")===owner)return {team:roster.fields["队别"]||"待分配",group:roster.fields["组别"]||"待分配"};
-  const account = accounts.find(a => a.name === owner);
+  const matches = accounts.filter(a => a.name === owner);
+  const account = matches.length === 1 ? matches[0] : undefined;
   return { team: account?.team || "待分配", group: account?.group || "待分配" };
 }
 
@@ -53,7 +58,7 @@ export function organizationView(data: DemoState, params: URLSearchParams) {
   const team = params.get("team"), group = params.get("group");
   if (!team && !group) return data;
   const students = data.students.filter(s => {
-    const org = studentOrganization(data.accounts, s.owner, s.roster);
+    const org = studentOrganization(data.accounts, s.owner, s.roster, s.ownerAccountId);
     return (!team || org.team === team) && (!group || org.group === group);
   });
   const ids = new Set(students.map(s => s.id));
@@ -61,6 +66,20 @@ export function organizationView(data: DemoState, params: URLSearchParams) {
   const teacherIds = new Set([...students, ...lessons].map(item => item.teacherId));
   return {...data, students, lessons, feedback: data.feedback.filter(f => ids.has(f.studentId)),
     teachers: data.teachers.filter(t => teacherIds.has(t.id))};
+}
+
+export function migrateStudentOwners(data: DemoState) {
+  let changed = false;
+  for (const student of data.students) {
+    if (student.ownerAccountId || !student.owner) continue;
+    const candidates = data.accounts.filter(a => a.roleId === "ops" && a.name === student.owner &&
+      (!student.roster?.fields["队别"] || a.team === student.roster.fields["队别"]) &&
+      (!student.roster?.fields["组别"] || a.group === student.roster.fields["组别"]));
+    if (candidates.length !== 1) continue;
+    student.ownerAccountId = candidates[0].id;
+    changed = true;
+  }
+  return changed;
 }
 
 export function migrateTeamCatalog(data: DemoState) {

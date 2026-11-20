@@ -1,5 +1,6 @@
 import {purchasedDelivery, organizationView} from "@crazytalk/shared";
 import CourseSyncLink from "../../components/CourseSyncLink";
+import {lessonSyncCategory,syncCategories} from "../../lib/lessonSync";
 import { lessonStatusLabel } from "../../lib/lessonStatus";
 import { compareLessonRecords, isOverdueLesson } from "../../lib/lessonOrder";
 import ListPagination from "../../components/ListPagination";
@@ -105,6 +106,7 @@ export default function Lessons() {
           (l.status !== "已取消" &&
             (Boolean(l.studentIn) || recordAttendance(l).some(tag => tag.endsWith("缺席") ) || Boolean(l.attendanceMessages)))) &&
         (view !== "unsynced" || l.sync === "未同步") &&
+        (!params.get("syncCategory") || lessonSyncCategory(l) === params.get("syncCategory")) &&
         (view !== "conflict" || l.conflict) &&
         (!query ||
           `${student(l.studentId)?.name ?? ""} ${teacher(l.teacherId)?.name ?? ""}`
@@ -119,7 +121,7 @@ export default function Lessons() {
       : !params.get("status") || lessonStatusLabel(l.status) === statusFilter,
   );
   const recordStats = [
-    { label: "总约课数", value: filtered.length, icon: CalendarDays, tone: "total" },
+    { label: "课程记录数", value: filtered.length, icon: CalendarDays, tone: "total" },
     { label: "待上课数", value: filtered.filter((lesson) => lesson.status === "未开始").length, icon: Clock3, tone: "upcoming" },
     { label: "已完成数", value: filtered.filter((lesson) => lesson.status === "已完成").length, icon: CircleCheck, tone: "completed" },
     { label: "已取消数", value: filtered.filter((lesson) => lesson.status === "已取消").length, icon: CalendarX2, tone: "cancelled" },
@@ -185,7 +187,9 @@ export default function Lessons() {
             </article>
           ))}
         </div>
-        <small className="lesson-summary-note">当前筛选范围 · 包含全部分页；待确认及历史缺席记录计入总约课数，未计入已完成。</small>
+        <small className="lesson-summary-note">当前筛选范围 · 包含全部分页；待确认及历史缺席记录计入课程记录数，未计入已完成。</small>
+        <div className="row" aria-label="ClassIn 同步统计">{syncCategories.map(category=><Button key={category} size="sm" variant="ghost" onClick={()=>update("syncCategory",category)}>{category} {filtered.filter(l=>lessonSyncCategory(l)===category).length}</Button>)}</div>
+        <small className="lesson-summary-note">本地记录数包含取消及待核实课程；已确认课堂数不包含取消记录。</small>
       </section>
       {(delivery || params.has("from") ||
         params.has("status") ||

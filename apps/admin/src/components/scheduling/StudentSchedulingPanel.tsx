@@ -1,3 +1,4 @@
+import ClassInOperationFeedback from "../ClassInOperationFeedback";
 import { FlexStudentCalendar } from "./FlexStudentCalendar";
 import { DatePicker } from "@crazytalk/ui";
 import { ZodError } from "zod";
@@ -8,7 +9,7 @@ import {
   scheduleIntentSchema,
   isScheduleDate,
   addDays,
-  matchedTags, getFixedSchedulePlans,
+  teacherFit, compareTeacherFit, getFixedSchedulePlans,
   type FixedPlan,
   getStudentScheduleProgress,
   type Student,
@@ -102,6 +103,7 @@ export function StudentSchedulingPanel({
   }
   return (
     <div className="student-scheduling stack">
+      <ClassInOperationFeedback studentId={student.id}/>
       <div className="row between">
         <div>
           <h3>为 {student.name} 安排课程</h3>
@@ -402,15 +404,19 @@ export function StudentSchedulingPanel({
                   .includes(query.toLowerCase()),
               )
               .sort((a,b)=>{
-                const score=(id:string)=>{const t=data.teachers.find(t=>t.id===id);return t?matchedTags(student,t).length:0;};
-                const fit=score(b.primaryTeacherId)-score(a.primaryTeacherId),coverage=b.coveredCount-a.coveredCount;
-                return priority==="老师优先" ? fit || coverage : coverage || fit;
+                const at=data.teachers.find(t=>t.id===a.primaryTeacherId)!, bt=data.teachers.find(t=>t.id===b.primaryTeacherId)!;
+                const complete=Number(b.complete && b.teacherCount===1)-Number(a.complete && a.teacherCount===1);
+                const available=Number(b.primaryCount>0)-Number(a.primaryCount>0);
+                const fit=compareTeacherFit(data,student,at,bt), coverage=b.primaryCount-a.primaryCount;
+                return available || complete || (priority==="老师优先" ? fit || coverage : coverage || fit);
+
               })
               .map((plan) => {
                 const teacher = data.teachers.find(
                   (t) => t.id === plan.primaryTeacherId,
                 );
                 if (!teacher) return null;
+                const fit=teacherFit(data,student,teacher);
                 const distribution = [
                   ...new Set(
                     plan.slots
@@ -428,13 +434,18 @@ export function StudentSchedulingPanel({
                     <div className="schedule-match-heading">
                       <Avatar name={teacher.name} />
                       <strong>{teacher.name}</strong>
-                      <Badge tone={plan.complete ? "success" : "warning"}>
-                        {plan.complete
+                      <Badge tone={plan.primaryCount > 0 && plan.complete ? "success" : "warning"}>
+                        {plan.primaryCount===0 ? "时间不合适" : plan.complete
                           ? "全部排满"
                           : `缺 ${plan.requiredCount - plan.coveredCount} 节`}
                       </Badge>
                     </div>
-                    <p>匹配标签：{matchedTags(student,teacher).join("、") || "暂无命中"}</p>
+                    <p>一级匹配：{fit.matchedPrimary.join("、") || "暂无命中"}</p>
+                    <p>二级匹配：{fit.matchedSecondary.join("、") || "暂无命中"}</p>
+                    <p>未命中：{fit.missing.join("、") || "无"}</p>
+                    {[...fit.blocked,...fit.warnings].map(note=><p className="muted" key={note}>{note}</p>)}
+                    <p>本人覆盖 {plan.primaryCount}/{plan.requiredCount} 节；方案覆盖 {plan.coveredCount}/{plan.requiredCount} 节</p>
+                    {plan.teacherCount>1 && <p>多老师组合方案，需教务确认各老师负责课次。</p>}
                     <dl className="schedule-match-meta">
                       <div>
                         <dt>SO</dt>
@@ -491,13 +502,13 @@ export function StudentSchedulingPanel({
                       )}
                     </dl>
                     <div className="schedule-match-actions">
-                      <Button size="sm" disabled={dirty||preview||!can("schedule.create")||!(holdMinutes>0)} onClick={async ()=>{try{
+                      <Button size="sm" disabled={dirty||preview||!can("schedule.create")||!(holdMinutes>0)||!plan.primaryCount||!!fit.blocked.length} onClick={async ()=>{try{
                         await act({type:"slot.lock",studentId:student.id,duration:saved.duration,slots:plan.slots.filter(s=>s.teacherId && !s.lessonId),expiresAt:new Date(Date.now()+holdMinutes*60000).toISOString()});toast("档期已保留");
                       }catch(e){toast(String(e),{tone:"error"});}}}>锁定方案时段</Button>
                       <Button
                         size="sm"
                         variant="primary"
-                        disabled={dirty || preview || !can("schedule.create")}
+                        disabled={dirty || preview || !can("schedule.create") || !plan.primaryCount || !!fit.blocked.length}
                         onClick={() => onFixedPlan(plan, saved)}
                       >
                         查看排课方案

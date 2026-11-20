@@ -17,6 +17,8 @@ import {
   pulseBrowserDiagnostics,
 } from "./lib/browserDiagnostics";
 import App from "./App";
+const previousCleanup: (() => void) | undefined = import.meta.hot?.data.cleanupApp;
+previousCleanup?.();
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
@@ -47,12 +49,18 @@ if (browserDiagnosticsEnabled) {
 }
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => {
+  const hot = import.meta.hot;
+  const cleanup = () => {
+    if (hot.data.cleanupApp !== cleanup) return;
+    delete hot.data.cleanupApp;
     noteReactUnmount("unmounting");
     router.dispose();
     root.unmount();
+    client.clear();
     noteReactUnmount("unmounted");
-  });
+  };
+  hot.data.cleanupApp = cleanup;
+  hot.dispose(cleanup);
 }
 root.render(
   <React.StrictMode>

@@ -1,89 +1,38 @@
-import { businessRequest, businessMode } from "@crazytalk/shared/react";
-import { useRef, useState } from "react";
+import ClassInLinkForm from "./ClassInLinkForm";
+import { useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
-import { Badge, Button, Field, Modal, Panel, useToast } from "@crazytalk/ui";
-import { sharedBalanceGroup, type Student } from "@crazytalk/shared";
+import { Badge, Button, Modal, Panel } from "@crazytalk/ui";
+import { accountBalanceAlignmentIssue, accountBalanceReviewIssue, sharedBalanceGroup, type Student } from "@crazytalk/shared";
 
 export default function StudentClassIn({ student }: { student: Student }) {
   const { data, act, can, preview } = useDemo();
-  const demo = !businessMode();
   const linked = data.classInAccounts?.find((a) =>
     a.studentIds.includes(student.id),
   );
-  const [editing, setEditing] = useState(false);
-  const [phone, setPhone] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [password, setPassword] = useState("");
-  const [uid, setUid] = useState("");
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const request = useRef(0);
-  const toast = useToast();
-  const target = editing ? data.classInAccounts?.find(account => account.phone === phone.trim()) : undefined;
+  const accountStudents = data.students.filter(s => linked?.studentIds.includes(s.id));
+  const [editing,setEditing]=useState(false),[phone,setPhone]=useState(""),[uid,setUid]=useState("");
+  const target = editing ? data.classInAccounts?.find(account => uid.trim() ? account.uid === uid.trim() : !!phone.trim() && account.phone === phone.trim()) : undefined;
   const family = sharedBalanceGroup(data, student.id);
-  const groupBinding = family.members.length > 1;
+  const changing = !!linked?.uid && !!uid && linked.uid !== uid;
+  const groupBinding = !linked && family.members.length > 1;
   const otherUsers = data.students.filter(s => s.id !== student.id && target?.studentIds.includes(s.id));
+  const reviewIssue = changing ? accountBalanceAlignmentIssue(data,student.id) || (target?.studentIds[0] ? accountBalanceAlignmentIssue(data,target.studentIds[0]) : "") : accountBalanceReviewIssue(data, [...new Set([...family.members, ...(target?.studentIds ?? [])])]);
   const usedBalances = (data.orders ?? []).filter(pack => otherUsers.some(s => pack.studentIds.includes(s.id)));
-  function open() {
-    setPhone(linked?.phone || student.phone);
-    setUid("");
-    setError("");
-    setNotice("");
-    setConsent(false);
-    setPassword("");
-    setEditing(true);
-  }
-  function close() {
-    request.current++;
-    setBusy(false);
-    setPassword("");
-    setEditing(false);
-  }
-  async function lookup() {
-    const sequence = ++request.current;
-    setBusy(true);
-    setUid("");
-    setError("");
-    setNotice("");
-    try {
-      const result = await businessRequest("/classin-account", "POST",
-        demo ? { phone } : { phone, password, consent, role: "student" });
-      if (sequence !== request.current) return;
-      const simulated = demo && result.demo === true;
-      const matchedUid = simulated && target?.uid ? target.uid : result.uid;
-      if (!/^[1-9]\d*$/.test(String(matchedUid ?? ""))) throw new Error("未查询到有效 UID，无法绑定");
-      setUid(matchedUid);
-      setNotice("已匹配 UID，请核对后保存。");
-    } catch (e) {
-      if (sequence === request.current)
-        setError(e instanceof Error ? e.message : "查询失败");
-    } finally {
-      if (sequence === request.current) setBusy(false);
-    }
-  }
-  async function save() {
-    try {
-      if (!uid) throw new Error("请先查询并核实 ClassIn 账号");
-      await act({ type: "student.bindClassIn", id: student.id, phone, uid });
-      close();
-      toast("账号关联已保存");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存失败");
-    }
-  }
+  function open(){setPhone("");setUid("");setEditing(true);}
+  function close(){setEditing(false);}
   return (
     <>
       <Panel
         title="ClassIn 账号"
         action={
           can("classin_account.link") && (
-            <Button size="sm" disabled={preview} onClick={open}>
+            <Button size="sm" disabled={preview || !!student.classInChange} onClick={open}>
               {linked ? "编辑关联" : "关联账号"}
             </Button>
           )
         }
       >
+        {student.classInChange && <p role="status">账号更换尚未完成，完成后可重新排课。</p>}
         <dl className="profile-summary-fields">
           <div>
             <dt>关联状态</dt>
@@ -102,16 +51,16 @@ export default function StudentClassIn({ student }: { student: Student }) {
             <dd>{linked?.uid || "—"}</dd>
           </div>
         </dl>
-        {linked && (
+        {accountStudents.length > 1 && (
           <div className="profile-related">
-            <span>关联学员</span>
-            {data.students
-              .filter((s) => linked.studentIds.includes(s.id))
-              .map((s) => (
-                <a key={s.id} href={"/students/" + s.id}>
-                  {s.name}
-                </a>
-              ))}
+            <span>共有{accountStudents.length}位学员使用此账号：{accountStudents.map((s, index) => (
+              <span key={s.id}>
+                {index > 0 && "、"}
+                {s.id === student.id ? `${s.name}（当前账号）` : (
+                  <a href={"/students/" + s.id}>{s.name}</a>
+                )}
+              </span>
+            ))}</span>
           </div>
         )}
       </Panel>
@@ -120,87 +69,29 @@ export default function StudentClassIn({ student }: { student: Student }) {
         title="关联 ClassIn 账号"
         onClose={close}
         width={480}
-        footer={
-          <>
-            <Button onClick={close}>取消</Button>
-            <Button
-              variant="primary"
-              disabled={busy || !uid}
-              onClick={save}
-            >
-              {groupBinding ? `为 ${family.members.length} 位共用学员绑定` : "保存账号关联"}
-            </Button>
-          </>
-        }
       >
-        <div className="stack">
-          <Field label="ClassIn 账号" required>
-            <div className="profile-phone-lookup">
-              <input
-                aria-label="ClassIn 账号"
-                type="text"
-                placeholder="请输入 ClassIn 注册手机号或邮箱"
-                value={phone}
-                onChange={(e) => {
-                  request.current++;
-                  setBusy(false);
-                  setPhone(e.target.value);
-                  setConsent(false);
-                  setUid("");
-                  setError("");
-                  setNotice("");
-                }}
-              />
-              <Button
-                variant="primary"
-                disabled={busy || (!demo && (!consent || password.length < 6 || password.length > 20)) || !(/^1\d{10}$/.test(phone.trim()) || (!demo && /^00\d{1,4}-\d+$/.test(phone.trim())) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(phone.trim()))}
-                onClick={lookup}
-              >
-                {busy ? "处理中…" : demo ? "查询 UID" : "注册/获取 UID"}
-              </Button>
-            </div>
-          </Field>
-          {!demo && <>
-            <Field label="新账号初始密码" hint="6至20位，仅用于新账号；不会修改已有账号密码，本系统不保存此密码。">
-              <input aria-label="新账号初始密码" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} />
-            </Field>
-            <label><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />已取得账号持有人同意：未注册时创建 ClassIn 账号，并加入本机构学生名单；已有账号获取 UID 并加入机构。</label>
-          </>}
-          <Field label={demo ? "ClassIn UID" : "已核实的 UID"} hint={demo ? "查询成功后自动填写 UID。" : "查询成功后才能绑定账号，UID 由查询结果自动填写。"}>
-            <input value={uid} readOnly />
-          </Field>
+        {editing && <ClassInLinkForm targetId={student.id} name={student.name} phone={linked?.phone || student.phone} uid={linked?.uid} role="student" saveDisabled={!!reviewIssue} saveLabel={changing ? "确认取消原预约并更换账号" : otherUsers.length ? "确认关联并共享课时" : "确认关联"} onAccountChange={(uid,phone)=>{setUid(uid);setPhone(phone);}} onSave={async(uid,phone)=>{const result = await act({type:"student.bindClassIn",id:student.id,phone,uid});close();return result.message;}}>
+          {reviewIssue && <p role="alert" className="danger">{reviewIssue}</p>}
+          {changing && <div className="shared-credit-preview" role="status">
+            <strong>仅更换 {student.name} 的账号</strong>
+            <p>取消该学员所有老师名下的未开始预约，释放占位后重新排课。</p>
+            <p>{linked.studentIds.length > 1 ? `原账号仍由其他学员使用，全部 ${family.balance} 课时留在原账号，本学员带走 0 课时。` : `原账号仅该学员使用，剩余 ${family.balance} 课时转入新账号。`}</p>
+            <p>新账号已有余额 {usedBalances.reduce((n,p) => n+p.balance,0)} 课时，完成后余额 {usedBalances.reduce((n,p) => n+p.balance,0) + (linked.studentIds.length > 1 ? 0 : family.balance)} 课时。</p>
+          </div>}
           {groupBinding && <div className="shared-credit-preview" role="status">
             <strong>本次绑定全部 {family.members.length} 位共用学员</strong>
             <p>{family.members.map(id => data.students.find(s => s.id === id)?.name ?? id).join("、")} · 共用 {family.balance} 课时</p>
             <p>ClassIn 账号：{phone || "待填写"} · UID：{uid || target?.uid || "待核实"}</p>
             <p>确认后全组使用此账号排课，课时余额保持不变。</p>
           </div>}
-          {otherUsers.length > 0 && <div className="shared-credit-preview" role="status">
+          {!changing && otherUsers.length > 0 && <div className="shared-credit-preview" role="status">
             <strong>此 ClassIn 账号已有学员使用</strong>
             <p>使用学员：{otherUsers.map(s => s.name).join("、")}</p>
-            {usedBalances.map(pack => {
-              const owners = data.students.filter(s => pack.studentIds.includes(s.id));
-              const group = sharedBalanceGroup(data, student.id, pack.id);
-              const canShare = (uid.trim() || target?.uid) && group.members.every(id => id === student.id || target?.studentIds.includes(id)) &&
-                group.sources.every(source => (source.memberCount ?? source.studentIds.length) === source.studentIds.length);
-              return <p key={pack.id}>{owners.map(s => s.name).join("、")} · 剩余 {pack.balance} 课时
-                {pack.studentIds.includes(student.id) ? "（已共用）" : canShare ? `；确认共享后共 ${group.balance} 课时` : ""}</p>;
-            })}
-            {otherUsers.filter(s => !usedBalances.some(pack => pack.studentIds.includes(s.id))).map(s =>
-              <p key={s.id}>{s.name} · {s.balanceKnown ? `剩余 ${s.balance} 课时` : "余额待核实"}</p>)}
-            <p>保存只关联账号。核实 UID 后，可在「加课时 → 共享已有课时」确认共享。</p>
+            <p>账号现有余额：{usedBalances.reduce((sum, pack) => sum + pack.balance, 0)} 课时</p>
+            <p>关联后共享余额：{reviewIssue ? "待核实" : (data.orders ?? []).filter(pack => pack.studentIds.some(id => id === student.id || target?.studentIds.includes(id))).reduce((sum, pack) => sum + pack.balance, 0)} 课时</p>
+            <p>关联后，以上学员与当前学员共同使用剩余课时；任一学员上课都会扣减这份余额。</p>
           </div>}
-          {notice && (
-            <p role="status" className="muted">
-              {notice}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="danger">
-              {error}
-            </p>
-          )}
-        </div>
+        </ClassInLinkForm>}
       </Modal>
     </>
   );

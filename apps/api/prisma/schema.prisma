@@ -217,8 +217,12 @@ model Attachment {
 }
 
 model ClassInJob {
+  operationId String?
+  retryAt DateTime?
+  @@index([operationId])
   id        String   @id @default(uuid())
-  lessonId  String
+  lessonId  String?
+  classLocalId String?
   operation String
   payload   Json
   status    String   @default("pending")
@@ -252,4 +256,24 @@ model ClassInLesson {
   classId    String?
   teacherUid String?
   studentUid String?
+  classLocalId String?
+  activityId String?
+  externalUpdatedAt Int?
+  externalFacts Json?
+}
+
+model ClassInClass {
+  id String @id @default(uuid())
+  studentId String
+  teacherId String
+  courseId String? @unique
+  name String
+  ownerAccountId String
+  studentUid String?
+  teacherUids String[] @default([])
+  mainTeacherUid String?
+  ownerMode String @default("headteacher")
+  externalUpdatedAt Int?
+  externalFacts Json?
+  @@unique([studentId, teacherId])
 }

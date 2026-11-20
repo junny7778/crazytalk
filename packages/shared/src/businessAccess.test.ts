@@ -258,6 +258,7 @@ describe("业务接口权限边界", () => {
     account.roleId = "limited";
     Object.assign(account, {scope:"本组", team:"A队", group:"二组"});
     state.students[0].owner = "Rita";
+    state.students[0].ownerAccountId = "u2";
     state.roles.push({
       id: "limited",
       name: "资料编辑",
@@ -327,6 +328,7 @@ describe("业务接口权限边界", () => {
     account.roleId = "dictionary";
     Object.assign(account, {scope:"本组", team:"A队", group:"二组"});
     state.students[0].owner = "Rita";
+    state.students[0].ownerAccountId = "u2";
     state.roles.push({
       id: "dictionary",
       name: "关联名称",

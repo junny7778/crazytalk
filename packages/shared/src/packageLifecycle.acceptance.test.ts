@@ -29,9 +29,9 @@ it("购课、后续加入、续费、补赠和不同学员上课均落到同一�
   };
   const b = enroll("小贝");
   const c = enroll("小辰");
-  for (const member of [b, c]) execute({type:"order.join", orderId:"family", studentId:member});
+
   expect(() => takeLesson(b, "2026-11-23", 25)).toThrow("绑定 ClassIn");
-  execute({type:"student.bindClassIn",id:b,phone:"13900001234",uid:"101"});
+  for (const id of [a,b,c]) execute({type:"student.bindClassIn",id,phone:"13900001234",uid:"101"});
   expect(data.classInAccounts!.find(account => account.uid === "101")!.studentIds.sort()).toEqual([a,b,c].sort());
   expect(pack().balance).toBe(72);
   takeLesson(a, "2026-11-23", 50);

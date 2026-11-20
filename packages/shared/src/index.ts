@@ -30,6 +30,10 @@ export * from "./projectMetrics";
 
 export * from "./studentSurvey";
 export * from "./studentNames";
-export { sharedBalanceGroup, sharedClassIn, schedulingAccountIssue } from "./packageBalances";
+export { sharedBalanceGroup, sharedClassIn, schedulingAccountIssue, accountBalanceAlignmentIssue, accountBalanceReviewIssue } from "./packageBalances";
 
 export { accountPasswordHint, accountPasswordSchema } from "./accountPassword";
+
+export * from "./teacherTags";
+
+export * from "./teacherOffboard";

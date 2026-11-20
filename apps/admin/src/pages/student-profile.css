@@ -31,3 +31,10 @@
 .students-list-panel > .toolbar {
   margin: 0 0 16px;
 }
+
+.student-profile-editor input.student-organization-value:disabled {
+  background: var(--ct-gray-100);
+  color: var(--ct-gray-400);
+  cursor: default;
+  opacity: 1;
+}

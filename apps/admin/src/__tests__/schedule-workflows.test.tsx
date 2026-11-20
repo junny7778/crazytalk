@@ -7,6 +7,7 @@ import {
   render,
   screen,
   within,
+  waitFor,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ import { DemoProvider } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
 import { demoRepository } from "../../../../packages/shared/src/repository";
 import Schedule from "../pages/Schedule";
+import { transition } from "@crazytalk/shared";
 function mount(path = "/schedule?teacher=t1&date=2026-11-23") {
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -55,7 +57,7 @@ function fixture() {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
-  demoRepository.read().classInAccounts = [{ id: "verified-test-account", phone: "13800000000", uid: "123456", studentIds: demoRepository.read().students.map(student => student.id) }];
+  demoRepository.read().classInAccounts = demoRepository.read().students.map((student, index) => ({ id: `verified-${student.id}`, phone: "", uid: String(123456 + index), studentIds: [student.id] }));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -105,8 +107,10 @@ describe("排课双工作流", () => {
       await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "安排课程" })); });
       await testAct(async () => { fireEvent.click(screen.getByLabelText("学员")); });
       await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: new RegExp(demoRepository.read().students[3].name) })); });
+      await waitFor(()=>expect(document.activeElement).toBe(screen.getByLabelText("学员")));
       await testAct(async () => { fireEvent.click(screen.getByLabelText("排课方式")); });
-      await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: mode })); });
+      const modeOption = await screen.findByRole("option", { name: mode });
+      await testAct(async () => { fireEvent.click(modeOption); });
       if (mode === "固定排课")
         await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "生成课程计划" })); });
       await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认排课" })); });
@@ -206,6 +210,17 @@ describe("排课双工作流", () => {
     ).toBeTruthy();
     expect(screen.queryByText("请选择待排课学员")).toBeNull();
   });
+  it("在读的多老师学员仍展示离职补排需求", async () => {
+    const { data, student } = fixture();
+    data.students.forEach(s => { s.status="在读"; s.scheduleIntent=null; s.teacherId=""; });
+    student.teacherId="t1";
+    data.slotLocks=[{studentId:student.id,teacherId:"t2",date:"2099-01-02",time:"19:00",duration:25,operator:"教务",expiresAt:"2099-01-03"}];
+    Object.assign(data, transition(data,{type:"teacher.offboard",teacherId:"t1",reason:"离职"}).data);
+    expect(data.students.find(s=>s.id===student.id)?.status).toBe("在读");
+    mount();
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: /待排课学员/ })); });
+    expect(screen.getByText(/原老师 .* 已离职，需要重新安排老师/)).toBeTruthy();
+  });
   it("待排课列表为空时不默认选择其他学员", async () => {
     const { data } = fixture();
     data.students.forEach((student) => {
@@ -240,7 +255,7 @@ describe("排课双工作流", () => {
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "查看排课方案" })); });
     expect(demoRepository.read().lessons).toHaveLength(0);
     const dialog = within(screen.getByRole("dialog"));
-    expect(dialog.getByText("方案预览 · 尚未确认")).toBeTruthy();
+    expect(dialog.getByText("系统推荐方案 · 尚未确认")).toBeTruthy();
     await testAct(async () => { fireEvent.click(dialog.getByRole("button", { name: "确认排课" })); });
     expect(demoRepository.read().lessons).toHaveLength(2);
     expect(new Set(demoRepository.read().lessons.map((l) => l.date))).toEqual(
@@ -327,7 +342,7 @@ describe("排课双工作流", () => {
 
 it("老师资料使用独立标签内容布局，待排学员侧栏不显示操作提示", async () => {
   const { student, teacher } = fixture();
-  teacher.bio = "耐心、有亲和力，善于引导学员表达。";
+  teacher.teachingPhilosophy = "耐心、有亲和力，善于引导学员表达。";
   mount(`/schedule?student=${student.id}`);
   expect(
     screen.queryByText("选择学员，保存意向后匹配老师并生成预览。"),
@@ -339,7 +354,7 @@ it("老师资料使用独立标签内容布局，待排学员侧栏不显示操�
   expect(details?.querySelectorAll("dt")).toHaveLength(7);
   expect(details?.querySelectorAll("dd")).toHaveLength(7);
   expect(
-    within(screen.getByRole("dialog")).getByText(teacher.bio),
+    within(screen.getByRole("dialog")).getByText(teacher.teachingPhilosophy),
   ).toBeTruthy();
 });
 

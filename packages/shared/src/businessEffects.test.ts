@@ -36,13 +36,14 @@ it("账号退款清零共享余额并取消所有关联学员未来课，保留�
   expect(again.credits.filter(c => c.type === "退费")).toHaveLength(1);
 });
 
-it("老师联系账号变化且未重新核实时清除旧UID，同账号普通编辑保留UID", () => {
+it("联系方式和普通资料编辑保留已关联 UID，显式改绑需单独处理", () => {
   const state = createSeed();
   state.teachers[0].classInUid = "400";
   const teacher = state.teachers[0];
   const { classInUid: _uid, ...withoutUid } = teacher;
-  const same = transition(state, { type: "teacher.save", teacher: { ...withoutUid, bio: "资料修改" } }).data;
+  const same = transition(state, { type: "teacher.save", teacher: { ...withoutUid, teachingPhilosophy: "资料修改" } }).data;
   expect(same.teachers[0].classInUid).toBe("400");
   const changed = transition(state, { type: "teacher.save", teacher: { ...withoutUid, phone: "13812345678" } }).data;
-  expect(changed.teachers[0].classInUid).toBeUndefined();
+  expect(changed.teachers[0].classInUid).toBe("400");
+  expect(()=>transition(state,{type:"teacher.save",teacher:{...teacher,classInUid:"401"}})).toThrow("不能直接改绑");
 });

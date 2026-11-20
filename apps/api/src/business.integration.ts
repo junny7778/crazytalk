@@ -1,3 +1,4 @@
+import { verifyMatching } from "./matching.integration";
 import { verifyModules } from "./modules.integration";
 import "dotenv/config";
 import { verifyIntake } from "./integrations/intake.integration";
@@ -219,10 +220,12 @@ async function main() {
       ),
       "plaintext passwords never persisted in commands",
     );
+    const bookingOwner = {...state.accounts.find(a=>a.roleId === "ops")!,id:randomUUID(),name:"排课验收教务",phone:"verify-booking-owner",scope:"全部",classInUid:"998001"};
+    await invoke({type:"account.save",account:bookingOwner,initialPassword:password});
     const createChild = async (name: string) => {
       const result = await invoke({
         type: "student.create",
-        student: { ...emptyStudentProfile(), name, chineseName: name },
+        student: { ...emptyStudentProfile(), name, chineseName: name, owner:bookingOwner.name,ownerAccountId:bookingOwner.id },
       });
       return (result.data as DemoState).students.find(
         (student) => student.chineseName === name,
@@ -275,6 +278,7 @@ async function main() {
     const teacher = {
       ...state.teachers[0],
       trained: true,
+      classInUid: state.teachers[0].classInUid || "998002",
       availabilityFrom: "",
       categories: ["少儿"],
       availability: Array.from({ length: 7 }, (_, day) => ({
@@ -495,6 +499,8 @@ async function main() {
       }),
     });
     assert.notEqual(forbiddenTeacher.status, 201);
+    await verifyMatching("http://127.0.0.1:3191", headers);
+    if (process.argv.includes("--matching-only")) return;
     await verifyModules("http://127.0.0.1:3191", headers, teacherHeaders);
     await verifyWorkflows("http://127.0.0.1:3191", headers, teacherHeaders);
     await verifyIntake(
@@ -606,6 +612,6 @@ async function main() {
   }
 }
 main().catch((error) => {
-  process.stderr.write(String(error) + "\n");
+  process.stderr.write((error instanceof Error ? error.stack : String(error)) + "\n");
   process.exitCode = 1;
 });

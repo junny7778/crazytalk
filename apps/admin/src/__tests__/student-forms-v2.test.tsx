@@ -543,28 +543,9 @@ it("同一购课入口累计余额，B 的余额合并后归零再购买仍共�
     note: "赠课",
   });
   const page = mount(<Action action="credit" studentId={b.id} />);
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "共享已有课时" }));
-  });
-  await choose("共享课时余额", "13900001234 · 安安 · 剩余 142 课时 · 1 人使用");
-  expect(screen.getByText(/共享后余额 152 课时/)).toBeTruthy();
-  expect(
-    screen.getByText(/将把蓓蓓绑定到 ClassIn 账号 13900001234/),
-  ).toBeTruthy();
-  expect(
-    demoRepository
-      .read()
-      .classInAccounts?.some((account) => account.studentIds.includes(b.id)),
-  ).toBe(false);
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "确认绑定并共享" }));
-  });
-  expect(
-    demoRepository
-      .read()
-      .classInAccounts?.find((account) => account.uid === "101")?.studentIds,
-  ).toContain(b.id);
+  expect(screen.queryByRole("button", {name:"共享已有课时"})).toBeNull();
   page.unmount();
+  demoRepository.execute({type:"student.bindClassIn",id:b.id,phone:"13900001234",uid:"101"});
   demoRepository.execute({
     type: "credit.deduct",
     studentId: b.id,
@@ -584,7 +565,7 @@ it("绑定前提示现有使用者，共用的 72 课时只展示一次", async 
     .spyOn(globalThis, "fetch")
     .mockResolvedValue({
       ok: true,
-      json: async () => ({ uid: "101" }),
+      json: async () => ({ uid: "101", addedToInstitution: false }),
     } as Response);
   const enroll = (name: string) => {
     demoRepository.execute({
@@ -624,20 +605,19 @@ it("绑定前提示现有使用者，共用的 72 课时只展示一次", async 
   });
   expect(screen.getByText(/使用学员：/).textContent).toContain(a.name);
   expect(
-    screen.getAllByText(/剩余 72 课时；确认共享后共 72 课时/),
+    screen.getAllByText(/关联后共享余额：72 课时/),
   ).toHaveLength(1);
   await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "查询 UID" }));
+    fireEvent.click(screen.getByRole("button", { name: "核实账号" }));
   });
-  await screen.findByText("已匹配 UID，请核对后保存。");
   await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "保存账号关联" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认关联并共享课时" }));
   });
   lookup.mockRestore();
   expect(
     demoRepository.read().orders!.find((pack) => pack.id === "siblings")!
       .studentIds,
-  ).toEqual([a.id, b.id]);
+  ).toEqual([a.id, b.id, c.id]);
 });
 
 it("两人未绑号可直接共享，首次绑号列出成员并一次保存全组", async () => {
@@ -645,7 +625,7 @@ it("两人未绑号可直接共享，首次绑号列出成员并一次保存全�
     .spyOn(globalThis, "fetch")
     .mockResolvedValue({
       ok: true,
-      json: async () => ({ uid: "101" }),
+      json: async () => ({ uid: "101", addedToInstitution: false }),
     } as Response);
   const enroll = (name: string) => {
     demoRepository.execute({
@@ -670,16 +650,7 @@ it("两人未绑号可直接共享，首次绑号列出成员并一次保存全�
     units: 2,
     note: "赠课",
   });
-  const page = mount(<Action action="credit" studentId={b.id} />);
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "共享已有课时" }));
-  });
-  await choose("共享课时余额", "未绑甲 · 剩余 17 课时 · 1 人使用");
-  expect(screen.getByText(/共享后余额 19 课时/)).toBeTruthy();
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "确认共享" }));
-  });
-  page.unmount();
+  demoRepository.execute({type:"student.bindClassIn",id:a.id,phone:"13900001234",uid:"101"});
   mount(<StudentClassIn student={b} />);
   await testAct(async () => {
     fireEvent.click(screen.getByRole("button", { name: "关联账号" }));
@@ -690,15 +661,12 @@ it("两人未绑号可直接共享，首次绑号列出成员并一次保存全�
     });
   });
   await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "查询 UID" }));
-  });
-  await screen.findByText("已匹配 UID，请核对后保存。");
-  lookup.mockRestore();
-  await testAct(async () => {
     fireEvent.click(
-      screen.getByRole("button", { name: "为 2 位共用学员绑定" }),
+      screen.getByRole("button", { name: "核实账号" }),
     );
   });
+  await testAct(async()=>{fireEvent.click(screen.getByRole("button",{name:"确认关联并共享课时"}));});
+  lookup.mockRestore();
   const result = demoRepository.read();
   expect(
     result
@@ -710,56 +678,34 @@ it("两人未绑号可直接共享，首次绑号列出成员并一次保存全�
   ).toBe(19);
 });
 
-it("查询失败不能绑定，成功后才能保存，改账号需重新查询", async () => {
-  const student = demoRepository.read().students[0];
-  const fetchMock = vi.spyOn(globalThis, "fetch");
-  fetchMock.mockResolvedValueOnce({
-    ok: false,
-    json: async () => ({ error: "当前机构未找到精确匹配账号" }),
-  } as Response);
-  mount(<StudentClassIn student={student} />);
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "关联账号" }));
-  });
-  const input = screen.getByRole("textbox", { name: "ClassIn 账号" });
-  await testAct(async () => {
-    fireEvent.change(input, { target: { value: "student@example.com" } });
-  });
-  const save = screen.getByRole("button", {
-    name: "保存账号关联",
-  }) as HTMLButtonElement;
-  expect(save.disabled).toBe(true);
-  expect(
-    (screen.getByLabelText("ClassIn UID") as HTMLInputElement).readOnly,
-  ).toBe(true);
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "查询 UID" }));
-  });
-  await screen.findByText("当前机构未找到精确匹配账号");
-  expect(save.disabled).toBe(true);
-  fetchMock.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ uid: "123" }),
-  } as Response);
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "查询 UID" }));
-  });
-  await waitFor(() => expect(save.disabled).toBe(false));
-  await testAct(async () => {
-    fireEvent.change(input, { target: { value: "another@example.com" } });
-  });
-  expect(save.disabled).toBe(true);
-  fetchMock.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ uid: "123" }),
-  } as Response);
-  await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "查询 UID" }));
-  });
-  await waitFor(() => expect(save.disabled).toBe(false));
-  await testAct(async () => {
-    fireEvent.click(save);
-  });
-  expect(screen.getByText("已关联")).toBeTruthy();
-  fetchMock.mockRestore();
+it("关联失败不保存关联，成功后保存UID", async()=>{
+ const student=demoRepository.read().students[0];
+ const fetchMock=vi.spyOn(globalThis,"fetch").mockResolvedValueOnce({ok:false,json:async()=>({error:"请求结果未确认，请核实账号状态"})} as Response);
+ mount(<StudentClassIn student={student}/>);
+ fireEvent.click(screen.getByRole("button",{name:"关联账号"}));
+ fireEvent.change(screen.getByLabelText("ClassIn 账号"),{target:{value:"student@example.com"}});
+ fireEvent.click(screen.getByRole("button",{name:"核实账号"}));
+ await screen.findByRole("alert");
+ expect(demoRepository.read().classInAccounts?.some(a=>a.studentIds.includes(student.id))).not.toBe(true);
+ fetchMock.mockResolvedValueOnce({ok:true,json:async()=>({uid:"123",addedToInstitution:false})} as Response);
+ fireEvent.click(screen.getByRole("button",{name:"核实账号"}));
+ await screen.findByText("已取得 UID：123");
+ fireEvent.click(screen.getByRole("button",{name:"确认关联"}));
+ await screen.findByText("已关联");
+ expect(demoRepository.read().classInAccounts?.find(a=>a.uid==="123")?.phone).toBe("student@example.com");
+ fetchMock.mockRestore();
+});
+
+it("加课时仅展示其他共享学员，单人账号隐藏提示", () => {
+  const [a,b] = demoRepository.read().students;
+  demoRepository.execute({type:"student.bindClassIn",id:a.id,phone:"",uid:"7654321"});
+  const first = mount(<Action action="credit" studentId={a.id}/>);
+  expect(screen.queryByText(/本次课时将由/)).toBeNull();
+  first.unmount();
+  demoRepository.execute({type:"student.bindClassIn",id:b.id,phone:"",uid:"7654321"});
+  mount(<Action action="credit" studentId={a.id}/>);
+  const note = screen.getByText(/本次课时将由/);
+  expect(note.textContent).toContain(b.name);
+  expect(note.textContent).not.toContain(a.name);
+  expect(note.textContent).toMatch(/共同使用。$/);
 });

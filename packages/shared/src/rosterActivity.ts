@@ -26,6 +26,7 @@ export function withRosterActivity(state: DemoState): DemoState {
       state.accounts,
       student.owner,
       student.roster,
+      student.ownerAccountId,
     );
     const key = JSON.stringify([team, group]);
     if (!groups.has(key)) groups.set(key, []);

@@ -8,7 +8,9 @@ export function createOpeningPackage(
 ) {
   const orders = (data.orders ??= []);
   const openingId = `opening-${student.id}`;
-  const order = {
+  const account = data.classInAccounts?.find(a => a.studentIds.includes(student.id));
+  const order: NonNullable<DemoState["orders"]>[number] = {
+    classInAccountId: account?.studentIds.length === 1 ? account.id : undefined,
     id: orders.some((order) => order.id === openingId)
       ? crypto.randomUUID()
       : openingId,
@@ -81,6 +83,11 @@ export function sharedBalanceGroup(
   targetId?: string,
 ) {
   const orders = data.orders ?? [];
+  const account = data.classInAccounts?.find(a => a.studentIds.includes(studentId));
+  if (account && !targetId) {
+    const sources = orders.filter(o => o.classInAccountId === account.id || (!o.classInAccountId && o.studentIds.some(id => account.studentIds.includes(id))));
+    return {members:[...account.studentIds],sources,balance:sources.reduce((n,o) => n+o.balance,0)};
+  }
   const members = new Set([studentId]);
   const target = orders.find((order) => order.id === targetId);
   target?.studentIds.forEach((id) => members.add(id));
@@ -154,6 +161,27 @@ export function sharedClassIn(data: DemoState, members: string[]) {
 }
 
 export function schedulingAccountIssue(data: DemoState, id: string) {
+  const student = data.students.find(s => s.id === id);
+  if (student?.classInChange) return "账号更换尚未完成，请先处理原预约和班级成员同步";
+  if (student?.rebookingLessonIds?.some(id => data.lessons.some(l => l.id === id && l.syncState && l.syncState !== "completed"))) return "原老师课程取消尚未确认，请先完成取消同步再重新排课";
   return data.classInAccounts?.some(account => account.uid && account.studentIds.includes(id))
     ? "" : "请先绑定 ClassIn 账号并核实 UID，再为学员排课";
+}
+
+// Imported balances may repeat the same household balance on multiple student rows.
+export function accountBalanceReviewIssue(data: DemoState, members: string[]) {
+  const sources = (data.orders ?? []).filter(order => order.studentIds.some(id => members.includes(id)));
+  if (members.some(id => data.students.some(student => student.id === id && student.roster && !student.balanceKnown)))
+    return "历史学员余额待核实，请先核实历史余额再关联共享账号";
+  if (sources.length > 1 && sources.some(order => order.kind === "期初余额" && order.studentIds.some(id => data.students.some(student => student.id === id && student.roster))))
+    return "存在历史导入的多份余额，可能重复记录家庭余额，请先核实历史余额再合并";
+  return "";
+}
+
+export function accountBalanceAlignmentIssue(data: DemoState, studentId: string) {
+  const account = data.classInAccounts?.find(item => item.studentIds.includes(studentId));
+  if (!account) return "";
+  const sources = (data.orders ?? []).filter(order => order.studentIds.some(id => account.studentIds.includes(id)));
+  return sources.length > 1 || sources.some(order => order.studentIds.length !== account.studentIds.length || order.studentIds.some(id => !account.studentIds.includes(id)))
+    ? "账号与历史余额成员未统一，请先核实余额并重新关联 ClassIn 账号" : "";
 }

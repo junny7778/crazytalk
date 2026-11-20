@@ -1,4 +1,13 @@
-import {organizationView} from "@crazytalk/shared";
+import { teacherOffboardImpact, publicTeacherTags } from "@crazytalk/shared";
+import ProfileCard from "../../components/ProfileCard";
+import {
+  teacherProfileCard,
+  type ProfileCardContent,
+} from "../../../../../packages/shared/src/profileCards";
+import TeacherTagPicker, {
+  TeacherTags,
+} from "../../components/TeacherTagPicker";
+import { organizationView } from "@crazytalk/shared";
 import ListPagination, { useListPage } from "../../components/ListPagination";
 import TeacherAttendance from "../../components/TeacherAttendance";
 import TeacherFeedback from "../../components/TeacherFeedback";
@@ -23,7 +32,7 @@ import {
   X,
   AlertTriangle,
 } from "lucide-react";
-import TeacherClassInRegistration from "../../components/TeacherClassInRegistration";
+import ClassInLinkForm from "../../components/ClassInLinkForm";
 import {
   isDemoTeacherMedia,
   removeDemoTeacherMedia,
@@ -62,20 +71,45 @@ const defaultPhotos = [1, 2, 3, 4].map(
   (number) => `/avatars/avatar-${number}.webp`,
 );
 const teacherMedia = {
-  photos: { types: ["image/png", "image/jpeg", "image/webp"], error: "请选择 PNG、JPG 或 WebP 图片" },
-  introVideo: { types: ["video/mp4", "video/webm"], error: "请选择 MP4 或 WebM 视频" },
+  photos: {
+    types: ["image/png", "image/jpeg", "image/webp"],
+    error: "请选择 PNG、JPG 或 WebP 图片",
+  },
+  introVideo: {
+    types: ["video/mp4", "video/webm"],
+    error: "请选择 MP4 或 WebM 视频",
+  },
 };
-const teacherMediaSources = (teacher?: Teacher | null) =>
-  [...(teacher?.photos ?? []), teacher?.introVideo ?? ""];
+const teacherMediaSources = (teacher?: Teacher | null) => [
+  ...(teacher?.photos ?? []),
+  teacher?.introVideo ?? "",
+];
 const isUploadedVideo = (source = "") =>
-  /^(?:data:video\/|blob:|\/api\/files\/)/.test(source) || isDemoTeacherMedia(source);
+  /^(?:data:video\/|blob:|\/api\/files\/)/.test(source) ||
+  isDemoTeacherMedia(source);
 
-function TeacherMediaPreview({ source, alt, width }: { source: string; alt?: string; width?: number }) {
+function TeacherMediaPreview({
+  source,
+  alt,
+  width,
+}: {
+  source: string;
+  alt?: string;
+  width?: number;
+}) {
   const url = useTeacherMediaSource(source);
   if (!url) return null;
-  return alt
-    ? <img src={url} alt={alt} width={width} />
-    : <video src={url} aria-label="介绍视频预览" width={width} controls preload="metadata" />;
+  return alt ? (
+    <img src={url} alt={alt} width={width} />
+  ) : (
+    <video
+      src={url}
+      aria-label="介绍视频预览"
+      width={width}
+      controls
+      preload="metadata"
+    />
+  );
 }
 const trainingStatuses = ["未登记", "未完成", "已完成", "不适用"] as const;
 const trainingFields = [
@@ -106,12 +140,12 @@ function TeacherPhoto({
   );
 }
 export default function Teachers() {
-  const { data: allData, can } = useDemo();
+  const { data: allData, can, act } = useDemo();
   const run = useBusinessAction();
   const navigate = useNavigate();
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
-  const data=organizationView(allData,params);
+  const data = organizationView(allData, params);
   const legacyView = params.get("view") || "";
   const status =
     params.get("status") ??
@@ -143,7 +177,9 @@ export default function Teachers() {
   const [photoLoading, setPhotoLoading] = useState(false);
   const [mediaError, setMediaError] = useState("");
   const [mediaLoading, setMediaLoading] = useState(false);
+  const [classInOpen,setClassInOpen]=useState(false);
   const [trainingOnly, setTrainingOnly] = useState(false);
+  const [card, setCard] = useState<ProfileCardContent | null>(null);
   const [edit, setEdit] = useState<Teacher | null>(null);
   const editId = edit?.id;
   useEffect(() => {
@@ -167,7 +203,10 @@ export default function Teachers() {
     };
   }, []);
 
-  async function readTeacherMedia(event: ChangeEvent<HTMLInputElement>, kind: keyof typeof teacherMedia) {
+  async function readTeacherMedia(
+    event: ChangeEvent<HTMLInputElement>,
+    kind: keyof typeof teacherMedia,
+  ) {
     const files = Array.from(event.currentTarget.files ?? []);
     event.currentTarget.value = "";
     if (!files.length) return;
@@ -180,12 +219,17 @@ export default function Teachers() {
     setMediaLoading(true);
     try {
       const media = businessMode()
-        ? await Promise.all(files.map((file) => new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          })))
+        ? await Promise.all(
+            files.map(
+              (file) =>
+                new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(String(reader.result));
+                  reader.onerror = reject;
+                  reader.readAsDataURL(file);
+                }),
+            ),
+          )
         : files.map((file) => {
             const url = URL.createObjectURL(file);
             draftMedia.current.set(url, file);
@@ -198,29 +242,48 @@ export default function Teachers() {
           : { ...current, introVideo: media[0] };
       });
     } catch {
-      setMediaError(kind === "photos" ? "展示照片读取失败，请重新选择" : "介绍视频读取失败，请重新选择");
+      setMediaError(
+        kind === "photos"
+          ? "展示照片读取失败，请重新选择"
+          : "介绍视频读取失败，请重新选择",
+      );
     } finally {
       setMediaLoading(false);
     }
   }
   const certificateOptions = ["TEFL", "TESOL", "CELTA"];
-  const certificates = [...new Set((edit?.certificates || "").split(/[、,，;；\n]/).map((value) => value.trim()).filter(Boolean))];
-  const otherCertificates = certificates.filter((value) => !certificateOptions.includes(value.toUpperCase()));
+  const certificates = [
+    ...new Set(
+      (edit?.certificates || "")
+        .split(/[、,，;；\n]/)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const otherCertificates = certificates.filter(
+    (value) => !certificateOptions.includes(value.toUpperCase()),
+  );
   function toggleCertificate(option: string, checked: boolean) {
     if (!edit) return;
-    const remaining = certificates.filter((value) => option === "其他"
-      ? certificateOptions.includes(value.toUpperCase())
-      : value.toUpperCase() !== option);
-    setEdit({ ...edit, certificates: (checked ? [...remaining, option] : remaining).join("、") });
+    const remaining = certificates.filter((value) =>
+      option === "其他"
+        ? certificateOptions.includes(value.toUpperCase())
+        : value.toUpperCase() !== option,
+    );
+    setEdit({
+      ...edit,
+      certificates: (checked ? [...remaining, option] : remaining).join("、"),
+    });
   }
 
   const [leave, setLeave] = useState(false);
   const [offboard, setOffboard] = useState(false);
+  const [offboardBusy, setOffboardBusy] = useState(false);
+  const offboardSubmitting = useRef(false);
   const [start, setStart] = useState(addDays(DEMO_TODAY, 1));
   const [end, setEnd] = useState(addDays(DEMO_TODAY, 7));
   const [reason, setReason] = useState("");
 
-  const [confirmName, setConfirmName] = useState("");
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState<
     Record<string, boolean>
@@ -270,13 +333,14 @@ export default function Teachers() {
           <span style={{ whiteSpace: "pre-line" }}>
             {availabilitySummary(t)}
           </span>
-
         </>
       ),
     },
     {
-      key: "needConfirm", label: "排课确认要求", defaultVisible: true,
-      render: (t: Teacher) => t.needConfirm ? "排课前需确认" : "常规开放",
+      key: "needConfirm",
+      label: "排课确认要求",
+      defaultVisible: true,
+      render: (t: Teacher) => (t.needConfirm ? "排课前需确认" : "常规开放"),
     },
     {
       key: "status",
@@ -311,13 +375,15 @@ export default function Teachers() {
       key: "tags",
       label: "老师标签",
       defaultVisible: false,
-      render: (t: Teacher) => t.tags.join("、") || "—",
+      render: (t: Teacher) => (
+        <TeacherTags catalog={data.catalog} values={t.tags} />
+      ),
     },
     {
-      key: "bio",
-      label: "老师介绍",
+      key: "teachingPhilosophy",
+      label: "教师寄语与教学特色",
       defaultVisible: false,
-      render: (t: Teacher) => t.bio || "—",
+      render: (t: Teacher) => t.teachingPhilosophy || "—",
     },
     {
       key: "availabilityNote",
@@ -350,6 +416,7 @@ export default function Teachers() {
   const upcoming = data.lessons.filter(
     (l) => l.teacherId === id && l.date >= DEMO_TODAY && l.status === "未开始",
   );
+  const offboardImpact = teacherOffboardImpact(data, id || "");
   const affected = upcoming.filter((l) => l.date >= start && l.date <= end);
   const filtered = data.teachers.filter(
     (t) =>
@@ -385,7 +452,7 @@ export default function Teachers() {
     trained: false,
     needConfirm: false,
     phone: "",
-    bio: "",
+    teachingPhilosophy: "",
     rate: 180,
     availability: [],
     availabilityFrom: "",
@@ -431,22 +498,33 @@ export default function Teachers() {
       await run({ type: "teacher.save", teacher: candidate }, onSaved);
       return;
     }
-    const selected = [...draftMedia.current].filter(([url]) => teacherMediaSources(candidate).includes(url));
+    const selected = [...draftMedia.current].filter(([url]) =>
+      teacherMediaSources(candidate).includes(url),
+    );
     let refs: string[] = [];
     setMediaLoading(true);
     try {
-      refs = selected.length ? await storeDemoTeacherMedia(selected.map(([, file]) => file)) : [];
+      refs = selected.length
+        ? await storeDemoTeacherMedia(selected.map(([, file]) => file))
+        : [];
       const byUrl = new Map(selected.map(([url], index) => [url, refs[index]]));
       const teacher = {
         ...candidate,
         photos: candidate.photos?.map((source) => byUrl.get(source) ?? source),
-        introVideo: candidate.introVideo ? byUrl.get(candidate.introVideo) ?? candidate.introVideo : candidate.introVideo,
+        introVideo: candidate.introVideo
+          ? (byUrl.get(candidate.introVideo) ?? candidate.introVideo)
+          : candidate.introVideo,
       };
-      const previousMedia = teacherMediaSources(data.teachers.find((item) => item.id === teacher.id));
+      const previousMedia = teacherMediaSources(
+        data.teachers.find((item) => item.id === teacher.id),
+      );
       const remainingMedia = teacherMediaSources(teacher);
       const saved = await run({ type: "teacher.save", teacher }, onSaved);
       const removed = saved
-        ? previousMedia.filter((source) => isDemoTeacherMedia(source) && !remainingMedia.includes(source))
+        ? previousMedia.filter(
+            (source) =>
+              isDemoTeacherMedia(source) && !remainingMedia.includes(source),
+          )
         : refs;
       void removeDemoTeacherMedia(removed).catch(() => {});
     } catch {
@@ -479,12 +557,22 @@ export default function Teachers() {
                     {teacher.name}{" "}
                     <Badge tone={tone(teacher.status)}>{teacher.status}</Badge>
                   </h1>
-                  <p className="teacher-profile-intro">
-                    {teacher.bio || "暂无介绍"}
-                  </p>
                 </div>
               </div>
               <div className="row">
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    setCard(
+                      teacherProfileCard(
+                        teacher,
+                        publicTeacherTags(data.catalog, teacher.tags),
+                      ),
+                    )
+                  }
+                >
+                  生成老师简介卡
+                </Button>
                 {can("teacher.leave") && teacher.status !== "已离职" && (
                   <Button
                     variant="ghost"
@@ -501,7 +589,6 @@ export default function Teachers() {
                     variant="ghost"
                     className="teacher-offboard-action"
                     onClick={() => {
-                      setConfirmName("");
                       setReason("");
                       setOffboard(true);
                     }}
@@ -512,76 +599,109 @@ export default function Teachers() {
                 {can("teacher.edit") && (
                   <Button
                     variant="primary"
-                    onClick={() => setEdit({ ...teacher })}
+                    onClick={() => setEdit({
+                      ...teacher,
+                      photo: teacher.photo || defaultAvatarSource(teacher.name),
+                    })}
                   >
                     编辑资料
                   </Button>
                 )}
               </div>
             </div>
+            <section className="teacher-detail-section">
+              <h3>基本信息</h3>
+              <dl className="teacher-profile-grid" aria-label="基本信息">
+                <div>
+                  <dt>联系手机</dt>
+                  <dd>
+                    {teacher.phone
+                      ? `${teacher.phone.slice(0, 3)}****${teacher.phone.slice(-4)}`
+                      : "未填写"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>在职状态</dt>
+                  <dd>{teacher.status}</dd>
+                </div>
+                <div>
+                  <dt>SO</dt>
+                  <dd>{teacher.so}</dd>
+                </div>
+                <div>
+                  <dt>负责 TM</dt>
+                  <dd>
+                    {data.accounts.find((a) => a.id === teacher.tmAccountId)
+                      ?.name || "待分配"}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section className="teacher-detail-section">
+              <h3>教学信息</h3>
+              <dl className="teacher-profile-grid" aria-label="教学信息">
+                <div>
+                  <dt>能教的类别</dt>
+                  <dd>{teacher.categories.join("、")}</dd>
+                </div>
+                <div>
+                  <dt>口音等级</dt>
+                  <dd>{teacher.accent || "未填写"}</dd>
+                </div>
+                <div>
+                  <dt>导师等级</dt>
+                  <dd>{teacher.level || "未填写"}</dd>
+                </div>
+                <div>
+                  <dt>证书</dt>
+                  <dd>{teacher.certificates || "未填写"}</dd>
+                </div>
+                <div className="teacher-profile-full"><dt>教育背景</dt><dd>{teacher.educationBackground || "未填写"}</dd></div>
+                <div className="teacher-profile-full">
+                  <dt>教学经验</dt>
+                  <dd>{teacher.teachingExperience || "未填写"}</dd>
+                </div>
+                <div className="teacher-profile-full">
+                  <dt>老师标签</dt>
+                  <dd>
+                    <TeacherTags catalog={data.catalog} values={teacher.tags} />
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section className="teacher-detail-section">
+              <h3>对外介绍</h3>
+              <dl className="teacher-profile-grid" aria-label="对外介绍">
+                <div className="teacher-profile-full teacher-profile-long-label">
+                  <dt>教师寄语与教学特色</dt>
+                  <dd>{teacher.teachingPhilosophy || "未填写"}</dd>
+                </div>
+              </dl>
+            </section>
             <div className="teacher-profile-media">
               {teacher.photos?.map((photo, i) => (
-                <TeacherMediaPreview key={i} width={120} source={photo} alt={teacher.name + " 展示照片 " + (i + 1)} />
+                <TeacherMediaPreview
+                  key={i}
+                  width={120}
+                  source={photo}
+                  alt={teacher.name + " 展示照片 " + (i + 1)}
+                />
               ))}
-              {teacher.introVideo && <TeacherMediaPreview width={240} source={teacher.introVideo} />}
+              {teacher.introVideo && (
+                <TeacherMediaPreview width={240} source={teacher.introVideo} />
+              )}
             </div>
-            <dl className="teacher-profile-grid" aria-label="老师基本资料">
-              <div>
-                <dt>负责 TM</dt><dd>{data.accounts.find(a => a.id === teacher.tmAccountId)?.name || "待分配"}</dd>
-              </div><div>
-                <dt>SO</dt>
-                <dd>{teacher.so}</dd>
-              </div>
-              <div>
-                <dt>口音等级</dt>
-                <dd>{teacher.accent || "未填写"}</dd>
-              </div>
-              <div>
-                <dt>导师等级</dt>
-                <dd>{teacher.level || "未填写"}</dd>
-              </div>
-              <div>
-                <dt>在职状态</dt>
-                <dd>{teacher.status}</dd>
-              </div>
-              <div>
-                <dt>开课日期</dt>
-                <dd>{teacher.startDate || "未填写"}</dd>
-              </div>
-              <div>
-                <dt>联系方式</dt>
-                <dd>
-                  {teacher.phone
-                    ? `${teacher.phone.slice(0, 3)}****${teacher.phone.slice(-4)}`
-                    : "未填写"}
-                </dd>
-              </div>
-              <div>
-                <dt>能教的类别</dt>
-                <dd>{teacher.categories.join("、")}</dd>
-              </div>
-              <div>
-                <dt>证书</dt>
-                <dd>{teacher.certificates || "未填写"}</dd>
-              </div>
-              <div>
-                <dt>老师标签</dt>
-                <dd>{teacher.tags.join("、") || "未填写"}</dd>
-              </div>
-              <div>
-                <dt>备注</dt>
-                <dd style={{ whiteSpace: "pre-wrap" }}>
-                  {teacher.notes || "未填写"}
-                </dd>
-              </div>
-              <div>
-                <dt>排课限制</dt>
-                <dd>
-                  {teacher.needConfirm ? "排课前需先与老师确认" : "无额外限制"}
-                </dd>
-              </div>
-            </dl>
+            <section className="teacher-detail-section">
+              <h3>内部备注</h3>
+              <p style={{ whiteSpace: "pre-wrap" }}>{teacher.notes || "未填写"}</p>
+            </section>
           </Panel>
+          {businessMode() && <Panel title="ClassIn 账号" action={can("teacher.edit") && <Button size="sm" onClick={()=>setClassInOpen(true)}>{teacher.classInUid ? "编辑关联" : "关联账号"}</Button>}>
+            <dl className="profile-summary-fields"><div><dt>关联状态</dt><dd><Badge tone={teacher.classInUid ? "success" : "neutral"}>{teacher.classInUid ? "已关联" : "待绑定"}</Badge></dd></div><div><dt>注册账号</dt><dd>{teacher.classInAccount || "—"}</dd></div><div><dt>ClassIn UID</dt><dd>{teacher.classInUid || "—"}</dd></div></dl>
+          </Panel>}
+          {classInOpen && <Modal open width={480} title="关联 ClassIn 账号" onClose={()=>setClassInOpen(false)}>
+            <ClassInLinkForm targetId={teacher.id} name={teacher.name} role="teacher" phone={teacher.classInAccount || teacher.phone} uid={teacher.classInUid} onSave={async(uid,account)=>{await act({type:"teacher.save",teacher:{...teacher,classInUid:uid,classInAccount:account || (uid===teacher.classInUid ? teacher.classInAccount : "")}});setClassInOpen(false);}}/>
+          </Modal>}
           <div className="grid-4">
             <StatCard
               label="名下学员"
@@ -621,6 +741,20 @@ export default function Teachers() {
             <div style={{ marginTop: 24 }}>
               {tab === "availability" ? (
                 <div className="stack">
+                  <dl className="teacher-profile-grid teacher-scheduling-summary" aria-label="排课信息">
+                    <div>
+                      <dt>开课日期</dt>
+                      <dd>{teacher.startDate || "未填写"}</dd>
+                    </div>
+                    <div>
+                      <dt>排课限制</dt>
+                      <dd>
+                        {teacher.needConfirm
+                          ? "排课前需先与老师确认"
+                          : "无额外限制"}
+                      </dd>
+                    </div>
+                  </dl>
                   <WeeklyAvailabilityEditor
                     heading="每周常规可用时间"
                     key={teacher.id}
@@ -662,7 +796,8 @@ export default function Teachers() {
                         <th>学员</th>
                         <th>项目</th>
                         <th>负责教务</th>
-                        <th>教材</th><th>学习进度</th>
+                        <th>教材</th>
+                        <th>学习进度</th>
                         <th>状态</th>
                       </tr>
                     </thead>
@@ -674,7 +809,8 @@ export default function Teachers() {
                           </td>
                           <td>{s.project || "—"}</td>
                           <td>{s.owner || "—"}</td>
-                          <td>{s.material || "—"}</td><td>{formatStudentProgress(s.unit) || "—"}</td>
+                          <td>{s.material || "—"}</td>
+                          <td>{formatStudentProgress(s.unit) || "—"}</td>
                           <td>
                             <Badge tone="success">{s.status}</Badge>
                           </td>
@@ -738,7 +874,14 @@ export default function Teachers() {
                     .filter((l) => l.teacherId === teacher.id)
                     .map((l) => (
                       <div key={l.id} className="inset row between">
-                        <dl className="detail-pairs"><dt>开始时间</dt><dd>{l.start}</dd><dt>结束时间</dt><dd>{l.end}</dd><dt>请假原因</dt><dd>{l.reason}</dd></dl>
+                        <dl className="detail-pairs">
+                          <dt>开始时间</dt>
+                          <dd>{l.start}</dd>
+                          <dt>结束时间</dt>
+                          <dd>{l.end}</dd>
+                          <dt>请假原因</dt>
+                          <dd>{l.reason}</dd>
+                        </dl>
                         <Badge tone={tone(l.status)}>{l.status}</Badge>
                       </div>
                     ))
@@ -762,7 +905,14 @@ export default function Teachers() {
                     size="sm"
                     onClick={() =>
                       exportCsv("老师档案", [
-                        ["老师", "SO", "状态", "能教的类别", "可上课时间", "排课确认要求"],
+                        [
+                          "老师",
+                          "SO",
+                          "状态",
+                          "能教的类别",
+                          "可上课时间",
+                          "排课确认要求",
+                        ],
                         ...filtered.map((t) => [
                           t.name,
                           t.so,
@@ -927,14 +1077,11 @@ export default function Teachers() {
               page={listPage.page}
               onChange={listPage.setPage}
             />
-            {!filtered.length && (
-              <EmptyState
-                title="没有符合条件的老师"
-              />
-            )}
+            {!filtered.length && <EmptyState title="没有符合条件的老师" />}
           </Panel>
         </>
       )}
+      {card && <ProfileCard content={card} onClose={() => setCard(null)} />}
       <Modal
         drawer={!trainingOnly}
         open={!!edit}
@@ -994,7 +1141,6 @@ export default function Teachers() {
                       }
                     : {
                         ...edit,
-                        photo: edit.photo || defaultAvatarSource(edit.name),
                         tags: edit.tags
                           .map((tag) => tag.trim())
                           .filter(Boolean),
@@ -1019,7 +1165,7 @@ export default function Teachers() {
                   style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
                   className="stack"
                 >
-                  <h3>基本资料</h3>
+                  <h3 className="teacher-form-section-title is-first-section">基本信息</h3>
                   <Field label="英文名" required>
                     <input
                       value={edit.name}
@@ -1028,22 +1174,6 @@ export default function Teachers() {
                       }
                       placeholder="输入老师姓名"
                     />
-                  </Field>
-                  <Field label="负责 TM"><Select value={edit.tmAccountId || ""} onValueChange={tmAccountId => setEdit({...edit,tmAccountId})}>
-                    <option value="">待分配</option>
-                    {data.accounts.filter(a => a.enabled && a.roleId === "tm").map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
-                  </Select></Field>
-                  <Field label="SO" required>
-                    <Select
-                      value={edit.so}
-                      onValueChange={(value) => setEdit({ ...edit, so: value })}
-                    >
-                      {data.catalog
-                        .filter((c) => c.type === "SO" && c.enabled)
-                        .map((c) => (
-                          <option key={c.id}>{c.name}</option>
-                        ))}
-                    </Select>
                   </Field>
                   <Field label="头像">
                     <div className="teacher-photo-picker">
@@ -1085,10 +1215,7 @@ export default function Teachers() {
                             key={photo}
                             className="teacher-avatar-option"
                             aria-label={`默认头像 ${index + 1}`}
-                            aria-pressed={
-                              (edit.photo || defaultAvatarSource(edit.name)) ===
-                              photo
-                            }
+                            aria-pressed={edit.photo === photo}
                             disabled={photoLoading}
                             onClick={() => {
                               setPhotoError("");
@@ -1097,8 +1224,7 @@ export default function Teachers() {
                           >
                             <img src={photo} alt="" />
                             <span>头像 {index + 1}</span>
-                            {(edit.photo || defaultAvatarSource(edit.name)) ===
-                              photo && (
+                            {edit.photo === photo && (
                               <span className="teacher-avatar-check">
                                 <Check size={12} />
                               </span>
@@ -1154,145 +1280,75 @@ export default function Teachers() {
                           {photoError}
                         </p>
                       )}
-                      {edit.photo && !defaultPhotos.includes(edit.photo) && (
-                        <Button
-                          size="xs"
-                          disabled={photoLoading}
-                          onClick={() => {
-                            setPhotoError("");
-                            setEdit({ ...edit, photo: defaultPhotos[0] });
-                          }}
-                        >
-                          使用默认头像
-                        </Button>
-                      )}
+
                     </div>
                   </Field>
-                  <Field label="展示照片">
-                    <div className="teacher-media-row">
+                  <div className="form-grid">
+                    <Field label="联系手机">
                       <input
-                        ref={displayPhotosInputRef}
-                        type="file"
-                        aria-label="选择展示照片"
-                        hidden
-                        multiple
-                        accept={teacherMedia.photos.types.join(",")}
-                        disabled={mediaLoading}
-                        onChange={(event) => void readTeacherMedia(event, "photos")}
-                      />
-                      <button
-                        type="button"
-                        className="teacher-media-upload"
-                        disabled={mediaLoading}
-                        onClick={() => displayPhotosInputRef.current?.click()}
-                      >
-                        <Plus size={20} aria-hidden="true" />
-                        添加照片
-                      </button>
-                      {edit.photos?.map((photo, index) => (
-                        <div className="teacher-media-preview" key={index}>
-                          <TeacherMediaPreview source={photo} alt={`展示照片 ${index + 1}`} />
-                          <button
-                            type="button"
-                            className="teacher-media-remove"
-                            aria-label={`移除展示照片 ${index + 1}`}
-                            onClick={() => setEdit({ ...edit, photos: edit.photos?.filter((_, i) => i !== index) })}
-                          >
-                            <X size={14} aria-hidden="true" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </Field>
-                  <Field label="介绍视频">
-                    <div className="teacher-media-row">
-                      <input
-                        ref={videoInputRef}
-                        type="file"
-                        aria-label="选择介绍视频"
-                        hidden
-                        accept={teacherMedia.introVideo.types.join(",")}
-                        disabled={mediaLoading}
-                        onChange={(event) => void readTeacherMedia(event, "introVideo")}
-                      />
-                      <button
-                        type="button"
-                        className="teacher-media-upload"
-                        disabled={mediaLoading}
-                        onClick={() => videoInputRef.current?.click()}
-                      >
-                        <Plus size={20} aria-hidden="true" />
-                        {isUploadedVideo(edit.introVideo) ? "更换视频" : "添加视频"}
-                      </button>
-                      {edit.introVideo && isUploadedVideo(edit.introVideo) && (
-                        <div className="teacher-media-preview teacher-media-preview-video">
-                          <TeacherMediaPreview source={edit.introVideo} />
-                          <button
-                            type="button"
-                            className="teacher-media-remove"
-                            aria-label="移除介绍视频"
-                            onClick={() => setEdit({ ...edit, introVideo: "" })}
-                          >
-                            <X size={14} aria-hidden="true" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </Field>
-                  {mediaError && <p className="teacher-photo-error" role="alert">{mediaError}</p>}
-                  {!isUploadedVideo(edit.introVideo) && (
-                    <Field label="介绍视频链接">
-                      <input
-                        type="url"
-                        placeholder="https://"
-                        value={edit.introVideo || ""}
-                        disabled={mediaLoading}
-                        onChange={(event) => setEdit({ ...edit, introVideo: event.target.value })}
+                        value={edit.phone}
+                        onChange={(e) =>
+                          setEdit({
+                            ...edit,
+                            phone: e.target.value,
+
+                          })
+                        }
                       />
                     </Field>
-                  )}
-                  <Field label="开课日期">
-                    <DatePicker
-                      placeholder="开课日期"
-                      mode="date"
-                      value={edit.startDate || ""}
-                      onValueChange={(startDate) =>
-                        setEdit({ ...edit, startDate })
-                      }
-                    />
-                  </Field>
-                  <Field label="在职状态">
-                    <Select
-                      value={edit.status}
-                      disabled={
-                        edit.status === "已离职"
-                      }
-                      onValueChange={(value) => {
-                        const status = (["在职"] as const).find(
-                          (item) => item === value,
-                        );
-                        if (status) setEdit({ ...edit, status });
-                      }}
-                    >
-                      {["在职", "已离职"].map((status) => (
-                        <option
-                          key={status}
-                          disabled={status === "已离职"}
-                        >
-                          {status}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label="联系手机">
-                    <input
-                      value={edit.phone}
-                      onChange={(e) =>
-                        setEdit({ ...edit, phone: e.target.value, classInUid: undefined })
-                      }
-                    />
-                  </Field>
-                  {businessMode() && data.teachers.some(t => t.id === edit.id) && <TeacherClassInRegistration phone={edit.phone} uid={edit.classInUid} onRegistered={uid => setEdit(current => current ? { ...current, classInUid: uid } : current)} />}
+                    <Field label="在职状态">
+                      <Select
+                        value={edit.status}
+                        disabled={edit.status === "已离职"}
+                        onValueChange={(value) => {
+                          const status = (["在职"] as const).find(
+                            (item) => item === value,
+                          );
+                          if (status) setEdit({ ...edit, status });
+                        }}
+                      >
+                        {["在职", "已离职"].map((status) => (
+                          <option key={status} disabled={status === "已离职"}>
+                            {status}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  <div className="form-grid">
+                    <Field label="SO" required>
+                      <Select
+                        value={edit.so}
+                        onValueChange={(value) =>
+                          setEdit({ ...edit, so: value })
+                        }
+                      >
+                        {data.catalog
+                          .filter((c) => c.type === "SO" && c.enabled)
+                          .map((c) => (
+                            <option key={c.id}>{c.name}</option>
+                          ))}
+                      </Select>
+                    </Field>
+                    <Field label="负责 TM">
+                      <Select
+                        value={edit.tmAccountId || ""}
+                        onValueChange={(tmAccountId) =>
+                          setEdit({ ...edit, tmAccountId })
+                        }
+                      >
+                        <option value="">待分配</option>
+                        {data.accounts
+                          .filter((a) => a.enabled && a.roleId === "tm")
+                          .map((a) => (
+                            <option value={a.id} key={a.id}>
+                              {a.name}
+                            </option>
+                          ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  <h3 className="teacher-form-section-title">教学信息</h3>
                   <Field label="能教的类别" required>
                     <div className="row wrap">
                       {["少儿", "成人", "商务", "雅思", "零基础", "托福"].map(
@@ -1342,14 +1398,6 @@ export default function Teachers() {
                       </Select>
                     </Field>
                   </div>
-                  <Field label="老师介绍">
-                    <textarea
-                      value={edit.bio}
-                      onChange={(e) =>
-                        setEdit({ ...edit, bio: e.target.value })
-                      }
-                    />
-                  </Field>
                   <div role="group" aria-label="证书" className="stack">
                     <span>证书</span>
                     <div className="row wrap">
@@ -1357,40 +1405,180 @@ export default function Teachers() {
                         <label className="select-row" key={option}>
                           <input
                             type="checkbox"
-                            checked={option === "其他" ? otherCertificates.length > 0 : certificates.some((value) => value.toUpperCase() === option)}
-                            onChange={(event) => toggleCertificate(option, event.target.checked)}
+                            checked={
+                              option === "其他"
+                                ? otherCertificates.length > 0
+                                : certificates.some(
+                                    (value) => value.toUpperCase() === option,
+                                  )
+                            }
+                            onChange={(event) =>
+                              toggleCertificate(option, event.target.checked)
+                            }
                           />
                           {option}
                         </label>
                       ))}
                     </div>
                     {otherCertificates.some((value) => value !== "其他") && (
-                      <small className="muted">其他证书：{otherCertificates.filter((value) => value !== "其他").join("、")}</small>
+                      <small className="muted">
+                        其他证书：
+                        {otherCertificates
+                          .filter((value) => value !== "其他")
+                          .join("、")}
+                      </small>
                     )}
                   </div>
-                  <Field label="老师标签">
-                    <input
-                      value={edit.tags.join("、")}
-                      onChange={(e) =>
-                        setEdit({
-                          ...edit,
-                          tags: e.target.value.split(/[、,，]/),
-                        })
-                      }
-                      placeholder="多个标签用顿号分隔"
-                    />
-                  </Field>
-                  <Field label="备注">
+                  <Field label="教育背景"><textarea value={edit.educationBackground || ""} onChange={e=>setEdit({...edit,educationBackground:e.target.value})}/></Field>
+                  <Field label="教学经验">
                     <textarea
-                      value={edit.notes || ""}
+                      value={edit.teachingExperience || ""}
                       onChange={(e) =>
-                        setEdit({ ...edit, notes: e.target.value })
+                        setEdit({ ...edit, teachingExperience: e.target.value })
                       }
                     />
                   </Field>
+                  <div className="field">
+                    <label>老师标签</label>
+                    <TeacherTagPicker
+                      catalog={data.catalog}
+                      values={edit.tags}
+                      onChange={(tags) => setEdit({ ...edit, tags })}
+                    />
+                  </div>
+                  <h3 className="teacher-form-section-title">对外介绍</h3>
+                  <Field label="教师寄语与教学特色">
+                    <textarea
+                      value={edit.teachingPhilosophy || ""}
+                      onChange={(e) =>
+                        setEdit({ ...edit, teachingPhilosophy: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="展示照片">
+                    <div className="teacher-media-row">
+                      <input
+                        ref={displayPhotosInputRef}
+                        type="file"
+                        aria-label="选择展示照片"
+                        hidden
+                        multiple
+                        accept={teacherMedia.photos.types.join(",")}
+                        disabled={mediaLoading}
+                        onChange={(event) =>
+                          void readTeacherMedia(event, "photos")
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="teacher-media-upload"
+                        disabled={mediaLoading}
+                        onClick={() => displayPhotosInputRef.current?.click()}
+                      >
+                        <Plus size={20} aria-hidden="true" />
+                        添加照片
+                      </button>
+                      {edit.photos?.map((photo, index) => (
+                        <div className="teacher-media-preview" key={index}>
+                          <TeacherMediaPreview
+                            source={photo}
+                            alt={`展示照片 ${index + 1}`}
+                          />
+                          <button
+                            type="button"
+                            className="teacher-media-remove"
+                            aria-label={`移除展示照片 ${index + 1}`}
+                            onClick={() =>
+                              setEdit({
+                                ...edit,
+                                photos: edit.photos?.filter(
+                                  (_, i) => i !== index,
+                                ),
+                              })
+                            }
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label="介绍视频">
+                    <div className="teacher-media-row">
+                      <input
+                        ref={videoInputRef}
+                        type="file"
+                        aria-label="选择介绍视频"
+                        hidden
+                        accept={teacherMedia.introVideo.types.join(",")}
+                        disabled={mediaLoading}
+                        onChange={(event) =>
+                          void readTeacherMedia(event, "introVideo")
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="teacher-media-upload"
+                        disabled={mediaLoading}
+                        onClick={() => videoInputRef.current?.click()}
+                      >
+                        <Plus size={20} aria-hidden="true" />
+                        {isUploadedVideo(edit.introVideo)
+                          ? "更换视频"
+                          : "添加视频"}
+                      </button>
+                      {edit.introVideo && isUploadedVideo(edit.introVideo) && (
+                        <div className="teacher-media-preview teacher-media-preview-video">
+                          <TeacherMediaPreview source={edit.introVideo} />
+                          <button
+                            type="button"
+                            className="teacher-media-remove"
+                            aria-label="移除介绍视频"
+                            onClick={() => setEdit({ ...edit, introVideo: "" })}
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </Field>
+                  {mediaError && (
+                    <p className="teacher-photo-error" role="alert">
+                      {mediaError}
+                    </p>
+                  )}
+                  {!isUploadedVideo(edit.introVideo) && (
+                    <Field label="介绍视频链接">
+                      <input
+                        type="url"
+                        placeholder="https://"
+                        value={edit.introVideo || ""}
+                        disabled={mediaLoading}
+                        onChange={(event) =>
+                          setEdit({ ...edit, introVideo: event.target.value })
+                        }
+                      />
+                    </Field>
+                  )}
                 </fieldset>
                 <div className="stack-sm">
-                  <h3>每周常规可用时间</h3>
+                  <h3 className="teacher-form-section-title">排课信息</h3>
+                  <fieldset
+                    disabled={!can("teacher.edit")}
+                    className="teacher-form-fieldset"
+                  >
+                    <Field label="开课日期">
+                      <DatePicker
+                        placeholder="开课日期"
+                        mode="date"
+                        value={edit.startDate || ""}
+                        onValueChange={(startDate) =>
+                          setEdit({ ...edit, startDate })
+                        }
+                      />
+                    </Field>
+                  </fieldset>
+                  <h4>每周常规可用时间</h4>
                   <WeeklyAvailabilityEditor
                     key={edit.id}
                     value={edit}
@@ -1429,7 +1617,9 @@ export default function Teachers() {
               style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
               className="stack"
             >
-              <h3>培训记录</h3>
+              <h3 className={`teacher-form-section-title${trainingOnly ? " is-first-section" : ""}`}>
+                {trainingOnly ? "培训记录" : "培训与内部记录"}
+              </h3>
               <label className="select-row">
                 <input
                   type="checkbox"
@@ -1443,44 +1633,46 @@ export default function Teachers() {
                 />
                 视频培训已完成
               </label>
-              <Field label="quiz 成绩">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="any"
-                  value={edit.quizScore ?? ""}
-                  placeholder="未登记"
-                  onChange={(e) =>
-                    setEdit({
-                      ...edit,
-                      quizScore:
-                        e.target.value === "" ? null : Number(e.target.value),
-                    })
-                  }
-                />
-              </Field>
-              {edit.quizScore != null &&
-                (edit.quizScore < 0 || edit.quizScore > 100) && (
-                  <p role="alert">quiz 成绩需在 0–100 分之间</p>
-                )}
-              {trainingFields.map((field) => (
-                <Field key={field.key} label={field.label}>
-                  <Select
-                    value={edit[field.key] || "未登记"}
-                    onValueChange={(value) => {
-                      const status = trainingStatuses.find(
-                        (item) => item === value,
-                      );
-                      if (status) setEdit({ ...edit, [field.key]: status });
-                    }}
-                  >
-                    {trainingStatuses.map((status) => (
-                      <option key={status}>{status}</option>
-                    ))}
-                  </Select>
+              <div className="form-grid">
+                <Field label="quiz 成绩">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    value={edit.quizScore ?? ""}
+                    placeholder="未登记"
+                    onChange={(e) =>
+                      setEdit({
+                        ...edit,
+                        quizScore:
+                          e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                  />
                 </Field>
-              ))}
+                {edit.quizScore != null &&
+                  (edit.quizScore < 0 || edit.quizScore > 100) && (
+                    <p role="alert">quiz 成绩需在 0–100 分之间</p>
+                  )}
+                {trainingFields.map((field) => (
+                  <Field key={field.key} label={field.label}>
+                    <Select
+                      value={edit[field.key] || "未登记"}
+                      onValueChange={(value) => {
+                        const status = trainingStatuses.find(
+                          (item) => item === value,
+                        );
+                        if (status) setEdit({ ...edit, [field.key]: status });
+                      }}
+                    >
+                      {trainingStatuses.map((status) => (
+                        <option key={status}>{status}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                ))}
+              </div>
               <Field label="老师培训">
                 <textarea
                   value={edit.teacherTraining || ""}
@@ -1490,6 +1682,21 @@ export default function Teachers() {
                   placeholder="填写培训记录或说明"
                 />
               </Field>
+              {!trainingOnly && (
+                <fieldset
+                  className="teacher-form-fieldset"
+                  disabled={!can("teacher.edit")}
+                >
+                  <Field label="内部备注">
+                    <textarea
+                      value={edit.notes || ""}
+                      onChange={(e) =>
+                        setEdit({ ...edit, notes: e.target.value })
+                      }
+                    />
+                  </Field>
+                </fieldset>
+              )}
             </fieldset>
           </div>
         )}
@@ -1547,7 +1754,7 @@ export default function Teachers() {
               disabled={!reason.trim() || end < start}
               onClick={async () =>
                 teacher &&
-                await run(
+                (await run(
                   {
                     type: "teacher.leave",
                     teacherId: teacher.id,
@@ -1557,7 +1764,7 @@ export default function Teachers() {
                     cancelLessons: false,
                   },
                   () => setLeave(false),
-                )
+                ))
               }
             >
               确认请假
@@ -1604,51 +1811,49 @@ export default function Teachers() {
       </Modal>
       <Modal
         open={offboard && !!teacher}
-        onClose={() => setOffboard(false)}
+        onClose={() => { if (!offboardSubmitting.current) setOffboard(false); }}
         title={`办理 ${teacher?.name} 离职`}
         width={440}
         footer={
           <>
-            <Button onClick={() => setOffboard(false)}>取消</Button>
+            <Button disabled={offboardBusy} onClick={() => setOffboard(false)}>取消</Button>
             <Button
               variant="danger-solid"
-              disabled={confirmName !== teacher?.name || !reason.trim()}
-              onClick={async () =>
-                teacher &&
-                await run(
-                  {
-                    type: "teacher.offboard",
-                    teacherId: teacher.id,
-                    confirmName,
-                    reason,
-                  },
-                  () => setOffboard(false),
-                )
-              }
+              disabled={!reason.trim() || teacher?.status === "已离职"}
+              loading={offboardBusy}
+              onClick={async () => {
+                if (!teacher || offboardSubmitting.current) return;
+                offboardSubmitting.current = true;
+                setOffboardBusy(true);
+                try {
+                  await run({type:"teacher.offboard",teacherId:teacher.id,reason}, () => setOffboard(false));
+                } finally {
+                  offboardSubmitting.current = false;
+                  setOffboardBusy(false);
+                }
+              }}
             >
-              确认离职
+              {offboardBusy ? "正在办理离职" : "确认离职"}
             </Button>
           </>
         }
       >
         <div className="stack">
-          <div className="notice">
+          <div className={`notice${offboardImpact.students.length || offboardImpact.lessons.length ? " notice-danger" : ""}`}>
             <AlertTriangle size={18} />
             <span>
-              确认后老师不能再排课，以后的 {upcoming.length}{" "}
-              节课将取消。请提前通知相关学员。
+              {offboardImpact.lessons.length
+                ? `该老师有 ${offboardImpact.students.length} 位学员，合计 ${offboardImpact.lessons.length} 节待上课程。离职后，相关课程将全部取消，请提前通知相关学员。`
+                : offboardImpact.students.length
+                  ? `该老师有 ${offboardImpact.students.length} 位学员需要继续上课，目前暂无待上课程。离职后将解除相关教学安排，请提前通知相关学员。`
+                  : "老师离职后将无法再安排上课，目前该老师没有需要继续上课的学员。"}
             </span>
           </div>
           <Field label="离职原因" required>
             <textarea
+              disabled={offboardBusy}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-            />
-          </Field>
-          <Field label={`输入老师姓名 ${teacher?.name} 确认`} required>
-            <input
-              value={confirmName}
-              onChange={(e) => setConfirmName(e.target.value)}
             />
           </Field>
         </div>

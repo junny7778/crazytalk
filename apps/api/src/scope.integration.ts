@@ -48,8 +48,10 @@ export async function verifyScopedScheduling(
       ],
     },
   });
-  const operators: { name: string; headers: Record<string, string> }[] = [];
+  const operators: { name: string; ownerId:string; headers: Record<string, string> }[] = [];
   for (const team of ["A队", "B队"]) {
+    const parent=(await read()).catalog.find(c=>c.type==="队伍"&&c.name===team)!;
+    await ok({type:"catalog.save",entry:{id:randomUUID(),type:"组别",name:"同名组",parentId:parent.id,enabled:true,detail:""}});
     const password = "Test1!" + randomUUID().slice(0, 8),
       login = "scope-" + team + "-" + suffix,
       name = "验收教务" + team + suffix;
@@ -74,8 +76,10 @@ export async function verifyScopedScheduling(
     });
     assert.equal(response.status, 201);
     const identity = await response.json();
+    const ownerId=randomUUID();
+    await ok({type:"account.save",account:{id:ownerId,name:name+"负责人",phone:login+"-owner",roleId:"ops",scope:"本组",team,group:"同名组",enabled:true,classInUid:"998003"},initialPassword:password});
     operators.push({
-      name,
+      name,ownerId,
       headers: {
         ...admin,
         cookie: response.headers.get("set-cookie")!.split(";")[0],
@@ -92,7 +96,8 @@ export async function verifyScopedScheduling(
         ...emptyStudentProfile(),
         name,
         chineseName: name,
-        owner: operator.name,
+        owner: operator.name+"负责人",
+        ownerAccountId:operator.ownerId,
         phone: "13812345678",
         preferences: "仅该教务可见的画像" + index,
       },
@@ -160,6 +165,7 @@ export async function verifyScopedScheduling(
     ...initial.teachers[0],
     id: randomUUID(),
     name: "抢档验收老师" + suffix,
+    classInUid:"998004",
     status: "在职",
     trained: true,
     availabilityFrom: "",

@@ -647,6 +647,23 @@ it("看板老师入口使用可见普通筛选，清除后展示全部老师", a
 });
 
 describe("上课记录统计卡", () => {
+  it("AC-37 取消成功、未知结果和历史课不计入已确认课堂，点击汇总筛选同一明细", async () => {
+    const data=demoRepository.read(),sample=data.lessons[0];
+    data.lessons=[
+      {...sample,id:"sync-active",status:"未开始",sync:"已同步",syncState:"completed"},
+      {...sample,id:"sync-cancel",status:"已取消",sync:"已同步",syncState:"completed"},
+      {...sample,id:"sync-pending",status:"未开始",sync:"处理中",syncState:"pending"},
+      {...sample,id:"sync-failed",status:"未开始",sync:"未同步",syncState:"failed"},
+      {...sample,id:"sync-unknown",status:"未开始",sync:"未同步",syncState:"uncertain"},
+      {...sample,id:"sync-history",status:"已完成",sync:"已同步",syncState:undefined},
+    ];
+    mount("/lessons");
+    const stats=await screen.findByLabelText("ClassIn 同步统计");
+    for(const label of ["已确认课堂","取消已同步","同步中","同步失败","结果待核实","历史未核验"]) expect(within(stats).getByRole("button",{name:`${label} 1`})).toBeTruthy();
+    await testAct(async()=>{fireEvent.click(within(stats).getByRole("button",{name:"取消已同步 1"}));});
+    expect(screen.getByRole("article",{name:"课程记录数 1 节"})).toBeTruthy();
+    expect(within(stats).getByRole("button",{name:"已确认课堂 0"})).toBeTruthy();
+  });
   it("统计全部分页的匹配课程，并随姓名搜索更新", async () => {
     mount("/lessons");
     const stats = await screen.findByRole("region", { name: "上课记录统计" });
@@ -654,7 +671,7 @@ describe("上课记录统计卡", () => {
     const assertCounts = (lessons: typeof data.lessons) => {
       expect(
         within(stats).getByRole("article", {
-          name: `总约课数 ${lessons.length} 节`,
+          name: `课程记录数 ${lessons.length} 节`,
         }),
       ).toBeTruthy();
       for (const [label, status] of [
@@ -687,7 +704,7 @@ describe("上课记录统计卡", () => {
       .read()
       .lessons.filter((lesson) => lesson.status === "已取消").length;
     expect(
-      within(stats).getByRole("article", { name: `总约课数 ${count} 节` }),
+      within(stats).getByRole("article", { name: `课程记录数 ${count} 节` }),
     ).toBeTruthy();
     expect(
       within(stats).getByRole("article", { name: `已取消数 ${count} 节` }),

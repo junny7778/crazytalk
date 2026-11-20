@@ -79,22 +79,18 @@ it("后续续费及补赠进入同一套餐，购买保留当时成员快照，�
   data = transition(transition(data, renewal).data, renewal).data;
   expect(data.credits.filter(c => c.purchaseId === "renewal-2")).toHaveLength(1);
   expect(data.credits[0]).toMatchObject({ orderId: "family", purchaseStudentIds: [a.id,b.id] });
-  expect(data.credits.find(c => c.purchaseId === "family")!.purchaseStudentIds).toEqual([a.id]);
+  expect(data.credits.find(c => c.purchaseId === "family")!.purchaseStudentIds).toEqual([a.id,b.id]);
   for (const kind of ["补偿", "赠送"])
     data = transition(data, { type: "credit.add", kind, studentId: a.id, units: 1, note: "服务跟进" }).data;
   expect(data.students.slice(0, 2).map(s => s.balance)).toEqual([146,146]);
   expect(data.orders!.find(o => o.id === "family")!.balance).toBe(146);
 });
 
-it("多套课包时手动加减必须指定，不能改动其他学员的套餐", () => {
+it("同账号多次购买合入一个余额，其他账号不能扣减", () => {
   let data = newFamily();
-  const [a, b] = data.students;
-  for (const key of ["first", "second"])
-    data = transition(data, { type: "order.buy", id: key, studentId: a.id, studentIds: [a.id],
-      units: 72, date: "2026-10-31", kind: "新购", note: "" }).data;
-  const adjust = { type: "credit.deduct" as const, studentId: a.id, units: 1, reason: "重复登记" };
-  expect(() => transition(data, adjust)).toThrow("请选择");
-  expect(() => transition(data, { ...adjust, studentId: b.id, orderId: "first" })).toThrow("不属于");
-  data = transition(data, { ...adjust, orderId: "second" }).data;
-  expect(data.orders!.filter(o => o.studentIds.includes(a.id)).map(o => o.balance)).toEqual([72, 71]);
+  const [a,b,c] = data.students;
+  for (const id of ["first","second"]) data = transition(data,{type:"order.buy",id,studentId:a.id,studentIds:[a.id],units:72,date:"2026-10-31",kind:"新购",note:""}).data;
+  data = transition(data,{type:"credit.deduct",studentId:b.id,units:1,reason:"更正"}).data;
+  expect(data.orders!.filter(order=>order.studentIds.includes(a.id)).map(order=>order.balance)).toEqual([143]);
+  expect(()=>transition(data,{type:"credit.deduct",studentId:c.id,orderId:"first",units:1,reason:"更正"})).toThrow("不属于");
 });

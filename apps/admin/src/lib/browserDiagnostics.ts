@@ -9,6 +9,8 @@ let action: string | undefined;
 let commits = 0, errors = 0, longTaskMs = 0, pendingRequests = 0, updateSequence = 0;
 let errorSource: BrowserDiagnostic["errorSource"];
 let errorKind: BrowserDiagnostic["errorKind"];
+let errorCode: BrowserDiagnostic["errorCode"];
+const seenErrorCodes = new Set<string>();
 let frames: BrowserDiagnostic["frames"];
 let request: BrowserDiagnostic["request"];
 let hotUpdate: BrowserDiagnostic["hotUpdate"];
@@ -29,7 +31,7 @@ function pulse(reason: BrowserDiagnostic["reason"] = "heartbeat") {
     if (params.get("tab") === "org") screen = "organization-settings";
   }
   const heap = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
-  worker.postMessage({ version: 2, documentId, reason, screen, stage, action, commits, errors, errorSource, errorKind, frames,
+  worker.postMessage({ version: 2, documentId, reason, screen, stage, action, commits, errors, errorSource, errorKind, errorCode, frames,
     longTaskMs, pendingRequests, request, updateSequence, hotUpdate,
     mode: import.meta.env.MODE === "business" ? "business" : "demo",
     visible: document.visibilityState === "visible",
@@ -50,7 +52,15 @@ export function noteReactCommit() {
 }
 function noteError(kind: BrowserDiagnostic["errorKind"], error?: Error) {
   errors++; errorKind = kind;
-  if (performance.now() - lastErrorSent < 1000) return;
+  const message = error?.message || "";
+  errorCode = message.includes("removeChild") ? "dom-remove-child"
+    : message.includes("insertBefore") ? "dom-insert-before"
+    : message.includes("业务页面缺少登录上下文") ? "business-context-missing"
+    : message.includes("Maximum update depth") ? "update-depth"
+    : message.includes("createRoot") ? "duplicate-root" : "other";
+  const firstOccurrence = !seenErrorCodes.has(errorCode);
+  seenErrorCodes.add(errorCode);
+  if (!firstOccurrence && performance.now() - lastErrorSent < 1000) return;
   lastErrorSent = performance.now();
   frames = sourceFrames((error || new Error()).stack || ""); errorSource = frames[0];
   pulse("error");

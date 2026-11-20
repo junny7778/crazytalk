@@ -226,7 +226,7 @@ describe("教师可用时间与临时排课", () => {
     });
     expect(result.lessons[0].confirmation).toBeDefined();
   });
-  it("批量换师不能通过勾选把固定课放到非常规时间，临时课可确认换师", () => {
+  it("换师取消原预约，不需要新老师覆盖原时间", () => {
     const { data } = fixture();
     data.teachers[1].availability = [];
     data.teachers[1].needConfirm = false;
@@ -234,16 +234,15 @@ describe("教师可用时间与临时排课", () => {
     const command: Extract<Command, { type: "lesson.changeTeacher" }> = {
       type: "lesson.changeTeacher",
       studentId: "s4",
-      teacherId: "t2",
-      from: "2026-11-02",
+      originalTeacherId: booked.lessons[0].teacherId,
       reason: "家长要求",
       confirmedTeacher: true,
     };
-    expect(() => transition(booked, command)).toThrow("常规时间无法覆盖固定课");
-    booked.lessons[0].kind = "临时课";
+
     const result = transition(booked, command).data;
-    expect(result.lessons[0].teacherId).toBe("t2");
-    expect(result.lessons[0].confirmation).toBeDefined();
+    expect(result.lessons[0].teacherId).toBe(booked.lessons[0].teacherId);
+    expect(result.lessons[0].status).toBe("已取消");
+    expect(result.teachers).toEqual(booked.teachers);
   });
   it("保存时间拦截重叠区间，合法缩减时间保留已有课程并提示冲突", () => {
     const { data, teacher } = fixture();

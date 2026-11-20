@@ -112,6 +112,7 @@ function importProfile() {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
+  demoRepository.execute({type:"catalog.save",entry:{id:"independent-channel",type:"渠道",name:"独立渠道",detail:"",enabled:true}});
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -570,6 +571,7 @@ describe("独立学员数字化验收", () => {
 
 it("共享套餐详情标注实际使用人，学员链接打开成员档案", () => {
   const [a, b] = demoRepository.read().students;
+  const expectedBalance = a.balance + b.balance + 72;
   for (const id of [a.id, b.id])
     demoRepository.execute({
       type: "student.bindClassIn",
@@ -591,7 +593,7 @@ it("共享套餐详情标注实际使用人，学员链接打开成员档案", (
   const packageRow = within(
     screen.getByText(/共享课时 · 2 人共用/).closest("tr")!,
   );
-  expect(packageRow.getByText("72 课时")).toBeTruthy();
+  expect(packageRow.getByText(`${expectedBalance} 课时`)).toBeTruthy();
   expect(
     packageRow.getByRole("link", { name: a.name }).getAttribute("href"),
   ).toBe(`/students/${a.id}`);

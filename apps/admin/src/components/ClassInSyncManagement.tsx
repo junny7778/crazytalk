@@ -1,58 +1,121 @@
-import {organizationView} from "@crazytalk/shared";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
 import { useSearchParams } from "react-router-dom";
-import { useDemo } from "@crazytalk/shared/react";
-import { Button, EmptyState, Panel } from "@crazytalk/ui";
 import {
-  hasSyncIssue,
-  missingAttendanceData,
-  lessonSyncReason,
-} from "../lib/lessonSync";
-import { useBusinessAction } from "../pages/operations/common";
+  businessMode,
+  businessRequest,
+  useDemo,
+} from "@crazytalk/shared/react";
+import { Button, EmptyState, Panel } from "@crazytalk/ui";
 import ListPagination, { useListPage } from "./ListPagination";
-export default function ClassInSyncManagement({ connected }: { connected: boolean }) {
-  const { data: allData, can } = useDemo();
+const schema = z.object({
+  jobs: z.array(
+    z.object({
+      id: z.string(),
+      lessonId: z.string(),
+      studentId: z.string(),
+      createdAt: z.string(),
+      operation: z.string(),
+      status: z.string(),
+      error: z.string(),
+      step: z.string(),
+      courseId: z.string(),
+      attempts: z.number(),
+    }),
+  ),
+  notices: z.array(
+    z.object({
+      id: z.string(),
+      command: z.string(),
+      error: z.string(),
+      receivedAt: z.string(),
+      courseId: z.string(),
+      classId: z.string(),
+    }),
+  ),
+});
+const actions: Record<string, string> = {
+  create: "排课",
+  update: "改期",
+  cancel: "取消课程",
+  "course.owner": "教务交接",
+  "course.student": "更换账号",
+  "course.member": "添加成员",
+};
+const states: Record<string, string> = {
+  pending: "处理中",
+  processing: "处理中",
+  completed: "成功",
+  failed: "失败",
+  uncertain: "未能确认结果",
+  blocked: "未完成",
+  superseded: "已被后续操作替代",
+};
+export default function ClassInSyncManagement({
+  connected,
+}: {
+  connected: boolean;
+}) {
+  const { data, can, accountId } = useDemo();
   const [params, setParams] = useSearchParams();
-  const data=organizationView(allData,params);
-  const run = useBusinessAction();
-  const [busy, setBusy] = useState<string[]>([]);
   const target = params.get("lesson");
-  const queue = data.lessons.filter(
-    (l) =>
-      can("lesson.view") &&
-      (hasSyncIssue(l) || l.sync === "处理中") &&
-      (!target || target === l.id),
+  const query = useQuery({
+    queryKey: ["classin-logs", accountId],
+    enabled: businessMode() && can("lesson.view"),
+    queryFn: async () =>
+      schema.parse(await businessRequest("/classin-classes/logs")),
+    refetchInterval: 5000,
+  });
+  const jobs = (query.data?.jobs ?? [])
+    .filter((j) => !target || j.lessonId === target)
+    .map((j) => ({
+      id: j.id,
+      time: j.createdAt,
+      object: data.students.find((s) => s.id === j.studentId)?.name || "课程",
+      action: actions[j.operation] || j.operation,
+      result: states[j.status] || j.status,
+      reason: j.error,
+      detail: `任务 ${j.id} · 班级 ${j.courseId || "—"} · 步骤 ${j.step || "—"} · 尝试 ${j.attempts}`,
+    }));
+  const notices = target
+    ? []
+    : (query.data?.notices ?? []).map((n) => ({
+        id: n.id,
+        time: n.receivedAt,
+        object: n.courseId ? `班级 ${n.courseId}` : "外部通知",
+        action: "接收通知",
+        result: n.error ? "已记录" : "已接收",
+        reason: n.error,
+        detail: `${n.command} · 课堂 ${n.classId || "—"}`,
+      }));
+  const demo = businessMode()
+    ? []
+    : data.lessons
+        .filter((l) => !target || l.id === target)
+        .map((l) => ({
+          id: l.id,
+          time: `${l.date} ${l.time}`,
+          object:
+            data.students.find((s) => s.id === l.studentId)?.name || "课程",
+          action: "课程同步",
+          result: l.sync,
+          reason: l.syncReason,
+          detail: "演示数据",
+        }));
+  const rows = [...jobs, ...notices, ...demo].sort((a, b) =>
+    b.time.localeCompare(a.time),
   );
-  const page = useListPage(queue);
-  async function retry(ids: string[]) {
-    if (busy.length || !can("sync.retry") || !connected) return;
-    setBusy(ids);
-    try {
-      // Yield for pending feedback before running the local demo action.
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-      for (const id of ids) {
-        const lesson = data.lessons.find((l) => l.id === id);
-        if (!lesson || lesson.sync !== "未同步") continue;
-        await run({ type: "lesson.retry", id });
-      }
-    } finally {
-      setBusy([]);
-    }
-  }
-  if (!can("lesson.view"))
-    return (
-      <Panel title="同步异常处理">
-        <p>当前账号没有课程查看权限，请联系管理员。</p>
-      </Panel>
-    );
-  const retryable = queue.filter((l) => l.sync === "未同步");
+  const page = useListPage(rows);
   return (
-    <Panel title="同步异常处理">
-      {!connected && (
-        <p role="status">请先恢复 ClassIn 连接，再重试同步。</p>
-      )}
-      {(target || (can("sync.retry") && retryable.length > 1)) && (
-        <div className="row between">
+    <Panel title="同步日志">
+      {!can("lesson.view") ? (
+        <p>当前账号没有课程查看权限。</p>
+      ) : (
+        <>
+          {!connected && <p role="status">ClassIn 尚未连接。</p>}
+          {query.error && (
+            <p role="alert">日志读取失败：{query.error.message}</p>
+          )}
           {target && (
             <Button
               size="sm"
@@ -62,84 +125,53 @@ export default function ClassInSyncManagement({ connected }: { connected: boolea
                 setParams(next);
               }}
             >
-              查看全部同步异常
+              查看全部同步日志
             </Button>
           )}
-          {can("sync.retry") && retryable.length > 1 && (
-            <Button
-              size="sm"
-              disabled={!!busy.length || !connected}
-              onClick={() => void retry(retryable.map((l) => l.id))}
-            >
-              批量重试课程推送（{retryable.length}）
-            </Button>
+          <div className="table-wrap">
+            <table className="classin-log-table">
+              <colgroup>
+                <col style={{ width: 180 }} />
+                <col style={{ width: 120 }} />
+                <col style={{ width: 100 }} />
+                <col style={{ width: 100 }} />
+                <col style={{ width: 160 }} />
+                <col />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>对象</th>
+                  <th>操作</th>
+                  <th>结果</th>
+                  <th>原因</th>
+                  <th>详情</th>
+                </tr>
+              </thead>
+              <tbody>
+                {page.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.time.replace("T", " ").slice(0, 19)}</td>
+                    <td>{row.object}</td>
+                    <td>{row.action}</td>
+                    <td>{row.result}</td>
+                    <td>{row.reason || "—"}</td>
+                    <td>{row.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!rows.length && !query.isLoading && (
+            <EmptyState title="暂无同步日志" />
           )}
-        </div>
+          <ListPagination
+            total={rows.length}
+            page={page.page}
+            onChange={page.setPage}
+          />
+        </>
       )}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>上课时间</th>
-              <th>学员</th>
-              <th>老师</th>
-              <th>同步事项</th>
-              <th>异常原因</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {page.rows.map((lesson) => (
-              <tr key={lesson.id}>
-                <td>
-                  {lesson.date} {lesson.time}
-                </td>
-                <td>
-                  {data.students.find((s) => s.id === lesson.studentId)?.name ||
-                    "—"}
-                </td>
-                <td>
-                  {data.teachers.find((t) => t.id === lesson.teacherId)?.name ||
-                    "—"}
-                </td>
-                <td>
-                  {lesson.sync === "未同步" && <div>课程信息推送</div>}
-                  {lesson.sync === "处理中" && <div>同步处理中</div>}
-                  {missingAttendanceData(lesson) && <div>考勤数据拉取</div>}
-                </td>
-                <td>
-                  {lesson.sync === "未同步" && (
-                    <div>{lessonSyncReason(lesson)}</div>
-                  )}
-                  {missingAttendanceData(lesson) && <div>未收到考勤数据</div>}
-                </td>
-                <td>
-                  {lesson.sync === "未同步" && can("sync.retry") && (
-                    <Button
-                      size="sm"
-                      disabled={!!busy.length || !connected}
-                      onClick={() => void retry([lesson.id])}
-                    >
-                      {busy.includes(lesson.id) ? "处理中…" : "重新同步"}
-                    </Button>
-                  )}
-                  {missingAttendanceData(lesson) && (
-                    <small>考勤拉取尚未接入</small>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!queue.length && (
-        <EmptyState title={target ? "该课程暂无同步异常" : "暂无同步异常"} />
-      )}
-      <ListPagination
-        total={queue.length}
-        page={page.page}
-        onChange={page.setPage}
-      />
     </Panel>
   );
 }

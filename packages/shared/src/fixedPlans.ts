@@ -1,3 +1,4 @@
+import { teacherFit, compareTeacherFit } from "./teacherMatch";
 import {
   addDays,
   DEMO_TODAY,
@@ -41,6 +42,7 @@ export function getFixedSchedulePlans(
     return [];
   const teachers = data.teachers.filter(
     (t) =>
+      !teacherFit(data, student, t).blocked.length &&
       t.status !== "已离职" &&
       (!data.rules.trainingRequired || t.trained) &&
       !(
@@ -200,7 +202,7 @@ export function getFixedSchedulePlans(
           [...remaining].filter((i) => assignments[i].ids.includes(b.id))
             .length -
           [...remaining].filter((i) => assignments[i].ids.includes(a.id))
-            .length,
+            .length || compareTeacherFit(data, student, a, b),
       )[0];
       if (!best) break;
       for (const i of remaining)
@@ -232,7 +234,6 @@ export function getFixedSchedulePlans(
     };
   });
   return plans
-    .filter((p) => p.primaryCount > 0)
     .sort(
       (a, b) =>
         b.coveredCount - a.coveredCount ||

@@ -41,6 +41,7 @@ async function verify() {
     assert.equal((await database.classInJob.findUniqueOrThrow({ where: { id: abandoned.id } })).status, "uncertain");
     assert.equal((await database.classInJob.findUniqueOrThrow({ where: { id: later.id } })).status, "blocked");
     const state = createSeed();
+    state.accounts.filter(a=>a.roleId==="ops").forEach(a=>a.classInUid="900");
     const target = state.lessons[0];
     state.teachers.find(t => t.id === target.teacherId)!.classInUid = "400";
     state.classInAccounts = [{ id: randomUUID(), phone: "13800138000", uid: "300", studentIds: [target.studentId] }];
@@ -55,10 +56,11 @@ async function verify() {
       override async editLesson() { actions.push("edit"); return undefined; }
     }
     const rebind = new RebindBoundary({ CLASSIN_API_BASE: "https://api.eeo.cn", CLASSIN_SID: "local", CLASSIN_SECRET: "local" });
-    await database.classInJob.create({ data: { lessonId: target.id, operation: "update", payload: target } });
+    const changedAccountJob = await database.classInJob.create({ data: { lessonId: target.id, operation: "update", payload: target } });
     await processClassInJob(async () => rebind);
-    assert.deepEqual(actions, ["delCourseStudent:200:1", "addCourseStudent:300:1", "edit"]);
-    assert.equal((await database.classInLesson.findUniqueOrThrow({ where: { lessonId: target.id } })).studentUid, "300");
+    assert.deepEqual(actions, []);
+    assert.equal((await database.classInJob.findUniqueOrThrow({where:{id:changedAccountJob.id}})).status,"failed");
+    assert.equal((await database.classInLesson.findUniqueOrThrow({ where: { lessonId: target.id } })).studentUid, "200");
     const { ClassInWebhookController } = await import("./webhook.controller");
     const { processMappedClassInEvents } = await import("./webhook-replay");
     const controller = new ClassInWebhookController();
@@ -124,7 +126,8 @@ async function verify() {
       await writeState(tx, after);
     });
     await processClassInJob(async () => rebind);
-    assert.equal((await database.classInLesson.findUniqueOrThrow({ where: { lessonId: target.id } })).teacherUid, "401");
+    assert.equal((await database.classInLesson.findUniqueOrThrow({ where: { lessonId: target.id } })).teacherUid, "400");
+    assert.equal((await database.classInJob.findFirstOrThrow({where:{lessonId:target.id,operation:"update"},orderBy:{createdAt:"desc"}})).status,"failed");
     await database.$transaction(async tx => {
       const before = await readState(tx);
       before.lessons = before.lessons.filter(item => item.id === target.id || item.id === closedLoop.id);
@@ -189,7 +192,8 @@ async function verify() {
         return "701";
       }
       override async call() { return undefined; }
-      override async callV2() { return { classId: 702 }; }
+      override async addCourseTeacher() {}
+      override async callV2() { return { classId: 702, activityId: 703 }; }
     }
     const recoveryClient = new RecoveryBoundary({ CLASSIN_API_BASE: "https://api.eeo.cn", CLASSIN_SID: "local", CLASSIN_SECRET: "local" });
     await processClassInJob(async () => recoveryClient);
@@ -204,7 +208,7 @@ async function verify() {
     await assert.rejects(database.$transaction(tx => retryClassInLesson(recoveryLesson.id, tx)), /尚未核实/);
     assert.equal(identities.length, 2);
     console.log("PASS explicit course-create recovery reuses original unique identity and persists returned ID; unknown lesson creation remains blocked");
-    console.log("PASS worker exclusive execution, crash recovery, uncertain predecessor blocks later writes, changed student membership; mapped callback replay exactly once; refund cancellation summary and zero lessons; never-started creation cancels locally, attempted creation requires verification");
+    console.log("PASS worker exclusive execution, crash recovery, uncertain predecessor blocks later writes, direct student/teacher UID mutation rejected; mapped callback replay exactly once; refund cancellation summary and zero lessons; never-started creation cancels locally, attempted creation requires verification");
   } finally {
     await database.$executeRawUnsafe('DROP SCHEMA "' + schema + '" CASCADE');
     await database.$disconnect();

@@ -1,6 +1,8 @@
+import { finishStudentAccountChange } from "./classInChanges";
+import { initializeTeacherTags } from "./teacherTags";
 import { migratePackageBalances, refreshPackageBalances } from "./packageBalances";
 import { splitRosterName } from "./studentNames";
-import { assignSampleTeams, migrateTeamCatalog, migrateProjectChannels } from "./organization";
+import { assignSampleTeams, migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "./organization";
 import { unifyRoster } from "./unifyRoster";
 import { withRosterActivity, withTeacherNoShowSamples } from "./rosterActivity";
 import LZString from "lz-string";
@@ -102,11 +104,14 @@ function read(): DemoState {
           const catalog = migrateFeedbackCatalog(memory.catalog);
           const copyUpdated = updateStoredCopy(memory);
           let upgraded = catalog !== memory.catalog || payrollUpgrade || copyUpdated;
+          const tagsUpdated = initializeTeacherTags(memory);
+          upgraded ||= tagsUpdated;
           const teamsUpdated = assignSampleTeams(memory);
           upgraded ||= teamsUpdated;
           memory.catalog = catalog;
           upgraded = migrateTeamCatalog(memory) || upgraded;
           upgraded = migrateProjectChannels(memory) || upgraded;
+          upgraded = migrateStudentOwners(memory) || upgraded;
           const noticeRecoveryKey = `${storageKey}:nancy-sync-notice-2026-11-05`;
           const noticeRestored = !localStorage.getItem(noticeRecoveryKey) && restoreLessonSyncNotice(memory);
           upgraded ||= noticeRestored;
@@ -249,6 +254,10 @@ export const demoRepository = {
   execute(command: Command) {
     const before = read();
     const result = transition(before, resolveStudentCommand(before, command));
+    if (command.type === "student.bindClassIn" && result.data.students.find(s => s.id === command.id)?.classInChange) {
+      finishStudentAccountChange(result.data,command.id);
+      delete result.data.students.find(s => s.id === command.id)!.classInChange;
+    }
     result.data = autoSettleLessons(result.data);
     save(result.data);
     let undo: (() => void) | undefined;

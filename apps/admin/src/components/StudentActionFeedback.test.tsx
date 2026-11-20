@@ -1,0 +1,34 @@
+// @vitest-environment jsdom
+import {afterEach,expect,it,vi} from "vitest";
+import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
+import {MemoryRouter} from "react-router-dom";
+import {ToastProvider} from "@crazytalk/ui";
+import {createSeed} from "../../../../packages/shared/src/seed";
+import {StudentActionModal} from "./StudentActions";
+const hooks=vi.hoisted(()=>({useDemo:vi.fn()}));
+vi.mock("@crazytalk/shared/react",()=>({businessMode:()=>true,businessRequest:vi.fn(),useDemo:hooks.useDemo}));
+afterEach(()=>{cleanup();vi.resetAllMocks();});
+it("换师等待真实取消结果，失败保留原因；处理中可关闭，迟到结果不再关闭新页面",async()=>{
+  const data=createSeed();const student=data.students[0];
+  let reject:(reason:Error)=>void=()=>{};
+  let resolve:(value:{message:string;data:typeof data})=>void=()=>{};
+  const execute=vi.fn(()=>new Promise<{message:string;data:typeof data}>((yes,no)=>{resolve=yes;reject=no;}));
+  hooks.useDemo.mockReturnValue({data,can:()=>true,act:execute});
+  const close=vi.fn();
+  const view=render(<MemoryRouter><ToastProvider><StudentActionModal student={student} action="changeTeacher" onClose={close}/></ToastProvider></MemoryRouter>);
+  fireEvent.change(screen.getByLabelText(/备注 \/ 原因/),{target:{value:"更换适合的老师"}});
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button",{name:"确认保存"}));
+  const loading=await screen.findByRole("button",{name:"正在取消原预约"});
+  expect(loading.hasAttribute("disabled")).toBe(true);expect(loading.querySelector(".spin")).toBeTruthy();
+  expect(close).not.toHaveBeenCalled();fireEvent.click(loading);expect(execute).toHaveBeenCalledTimes(1);
+  await act(async()=>reject(new Error("原老师部分课程尚未取消")));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent","原老师部分课程尚未取消");
+  expect(screen.getByLabelText(/备注 \/ 原因/)).toHaveProperty("value","更换适合的老师");
+  fireEvent.click(screen.getByRole("button",{name:"确认保存"}));
+  await screen.findByRole("button",{name:"正在取消原预约"});
+  fireEvent.click(screen.getAllByRole("button",{name:"关闭"})[0]);
+  expect(close).toHaveBeenCalledTimes(1);view.unmount();
+  await act(async()=>resolve({message:"原预约已全部取消",data}));
+  await waitFor(()=>expect(close).toHaveBeenCalledTimes(1));
+});

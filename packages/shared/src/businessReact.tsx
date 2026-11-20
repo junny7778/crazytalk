@@ -5,6 +5,7 @@ import { BusinessRequestError, businessRequest, executeBusinessCommand, identity
 
 type BusinessContextValue = {
   data: DemoState; identity: Identity;
+  acceptState: (state: DemoState) => void;
   act: (command: Command) => Promise<{ message: string; data: DemoState; undo?: () => void }>;
 };
 const BusinessContext = createContext<BusinessContextValue | null>(null);
@@ -142,12 +143,12 @@ export function BusinessProvider({ children, loadingScreen, failureScreen: Failu
     </form>
   </main>;
   async function act(command: Command) {
-    const result = await executeBusinessCommand(command);
+    const result = await executeBusinessCommand(command, acceptState);
     acceptState(result.data);
     return { ...result, undo: result.undoToken ? async () => {
       const undone = await businessRequest("/undo", "POST", { token: result.undoToken });
       acceptState(stateSchema.parse(undone.data));
     } : undefined };
   }
-  return <BusinessContext.Provider value={{ data, identity, act }}>{error && <p role="alert">{error}</p>}{children}</BusinessContext.Provider>;
+  return <BusinessContext.Provider value={{ data, identity, act, acceptState }}>{error && <p role="alert">{error}</p>}{children}</BusinessContext.Provider>;
 }

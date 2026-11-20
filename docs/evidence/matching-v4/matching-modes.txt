@@ -1,0 +1,1 @@
+PASS UI saved one-week Sunday intent; available teachers ranked before Carol with no Sunday availability; no-time label visible and adopt disabled; teacher-first/time-first switch works and no-time remains last.

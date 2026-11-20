@@ -1029,3 +1029,54 @@ it("普通账号可选择全部本队本组，管理员使用全部", async () =
  await selectOption(screen.getByRole("option", {name:"教务"}));
  expect(form.getByRole("combobox", {name:"数据范围"}).textContent).toBe("本组");
 });
+
+it("基础资料提供老师标签库，编辑标准标签保留稳定ID", async () => {
+ mount("/settings?tab=basics");
+ fireEvent.click(await screen.findByRole("tab", {name:"老师标签"}));
+ const library=within(screen.getByLabelText("老师标签库"));
+ const row=library.getByText("有亲和力").closest("article")!;
+ fireEvent.click(within(row).getByRole("button", {name:"编辑"}));
+ const dialog=within(screen.getByRole("dialog", {name:"编辑老师标签"}));
+ expect(dialog.getByLabelText("标签释义")).toBeTruthy();
+ fireEvent.change(dialog.getByLabelText("名称"),{target:{value:"亲和力标签测试"}});
+ fireEvent.click(dialog.getByRole("button", {name:"保存"}));
+ await waitFor(()=>expect(demoRepository.read().catalog.find(t=>t.id==="tt-35")?.name).toBe("亲和力标签测试"));
+});
+
+it.each(["ops", "tm"])("%s 的 ClassIn 关联独立提交，不保存账号编辑草稿", async (roleId) => {
+  const account = demoRepository.read().accounts.find(a => a.roleId === roleId && a.enabled)!;
+  mount("/settings?tab=accounts");
+  let row = within(await screen.findByRole("table")).getByText(account.name).closest("tr")!;
+  await testAct(async () => { fireEvent.click(within(row).getByRole("button", {name:"编辑"})); });
+  const edit = within(screen.getByRole("dialog", {name:"编辑团队账号"}));
+  expect(edit.queryByLabelText("ClassIn 账号")).toBeNull();
+  expect(edit.queryByRole("button", {name:"确认关联"})).toBeNull();
+  await testAct(async () => { fireEvent.change(edit.getByLabelText("姓名"), {target:{value:"不应保存的草稿"}}); });
+  await testAct(async () => { fireEvent.click(edit.getByRole("button", {name:"取消"})); });
+  await testAct(async () => { fireEvent.click(screen.getByRole("button", {name:"放弃修改"})); });
+  let finish:(response:Response)=>void=()=>{};
+  const lookup=vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;}));
+  vi.stubGlobal("fetch", lookup);
+  row = within(screen.getByRole("table")).getByText(account.name).closest("tr")!;
+  await testAct(async () => { fireEvent.click(within(row).getByRole("button", {name:"关联"})); });
+  const dialog = within(screen.getByRole("dialog", {name:"关联 ClassIn 账号"}));
+  expect(dialog.queryByRole("button", {name:"保存账号"})).toBeNull();
+  expect(dialog.getByLabelText("姓名")).toHaveProperty("value", account.name);
+  expect(dialog.getByLabelText("姓名")).toHaveProperty("disabled", true);
+  expect(dialog.getByLabelText("角色")).toHaveProperty("value", demoRepository.read().roles.find(r=>r.id===roleId)!.name);
+  expect(dialog.getByLabelText("角色")).toHaveProperty("disabled", true);
+  expect(dialog.getByLabelText("ClassIn 账号")).toHaveProperty("disabled", false);
+  expect(dialog.queryByRole("button", {name:"取消"})).toBeNull();
+  await testAct(async () => { fireEvent.change(dialog.getByLabelText("ClassIn 账号"), {target:{value:"staff@example.com"}}); });
+  await testAct(async () => { fireEvent.click(dialog.getByRole("button", {name:"确认关联"})); });
+  expect(dialog.getByRole("button", {name:"正在关联"}).hasAttribute("disabled")).toBe(true);
+  expect(lookup).toHaveBeenCalledTimes(1);
+  await testAct(async () => { finish(new Response(JSON.stringify({uid:"998800",addedToInstitution:true}), {status:200})); });
+  await waitFor(()=>expect(screen.queryByRole("dialog", {name:"关联 ClassIn 账号"})).toBeNull());
+  const saved = demoRepository.read().accounts.find(a=>a.id===account.id)!;
+  expect(saved).toMatchObject({...account, classInUid:"998800", classInAccount:"staff@example.com"});
+  row=within(screen.getByRole("table")).getByText(account.name).closest("tr")!;
+  expect(within(row).getByText("已关联")).toBeTruthy();
+  expect(within(row).getByText("staff@example.com")).toBeTruthy();
+  expect(within(row).queryByRole("button", {name:"关联"})).toBeNull();
+});

@@ -12,8 +12,9 @@ import {
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as sharedReact from "@crazytalk/shared/react";
+import * as teacherActions from "../pages/operations/common";
 import { DemoProvider } from "@crazytalk/shared/react";
-import { ToastProvider } from "@crazytalk/ui";
+import { defaultAvatarSource, ToastProvider } from "@crazytalk/ui";
 import { demoRepository } from "../../../../packages/shared/src/repository";
 import {
   stateSchema,
@@ -25,7 +26,7 @@ import { Availability } from "../../../teacher/src/screens";
 import en from "../../../teacher/src/locales/en";
 
 function mount(path: string) {
-  return render(
+  const result = render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -43,11 +44,14 @@ function mount(path: string) {
       </DemoProvider>
     </QueryClientProvider>,
   );
+  const dayMode=screen.queryByRole("button",{name:"按星期填写"});
+  if(dayMode) fireEvent.click(dayMode);
+  return result;
 }
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
-  demoRepository.read().classInAccounts = [{id: "verified-test-account",phone:"13800000000",uid:"123456",studentIds:demoRepository.read().students.map(s=>s.id)}];
+  demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -166,7 +170,8 @@ describe("老师列表显示列", () => {
     expect(within(rows[1]).getAllByRole("cell")).toHaveLength(
       within(rows[0]).getAllByRole("columnheader").length,
     );
-    expect(within(rows[1]).getByText("耐心、发音清晰")).toBeTruthy();
+    expect(within(rows[1]).getByText("温柔有耐心")).toBeTruthy();
+    expect(within(rows[1]).getByText("口音好")).toBeTruthy();
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "恢复默认" })); });
     expect(screen.getByRole("columnheader", { name: "口音等级" })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "老师标签" })).toBeNull();
@@ -176,6 +181,80 @@ describe("老师列表显示列", () => {
 });
 
 describe("老师详情资料与培训", () => {
+  it("办理离职期间显示loading并防止重复提交", async () => {
+    const original = teacherActions.useBusinessAction;
+    let finish: () => void = () => {};
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    let calls = 0;
+    vi.spyOn(teacherActions,"useBusinessAction").mockImplementation(() => {
+      const run = original();
+      return async (...args) => { calls++; await pending; return run(...args); };
+    });
+    mount("/teachers/t1");
+    fireEvent.click(screen.getByRole("button",{name:"离职"}));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByRole("textbox"),{target:{value:"离职"}});
+    fireEvent.click(dialog.getByRole("button",{name:"确认离职"}));
+    const busy = dialog.getByRole("button",{name:"正在办理离职"});
+    expect(busy.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(busy);
+    expect(calls).toBe(1);
+    await testAct(async () => { finish(); await pending; });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it.each(["无学员", "仅绑定", "有课程"])("离职弹窗按影响范围展示提示：%s", async scenario => {
+    const data = demoRepository.read();
+    data.students.forEach(s => { s.teacherId = ""; });
+    const sample = data.lessons[0];
+    data.lessons = [];
+    data.slotLocks = [];
+    if (scenario !== "无学员") { data.students[0].teacherId = "t1"; data.students[0].status = "在读"; }
+    if (scenario === "有课程") data.lessons = [1,2].map(i => ({...sample,id:`offboard-${i}`,studentId:data.students[0].id,teacherId:"t1",status:"未开始",date:"2099-01-02"}));
+    mount("/teachers/t1");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", {name:"离职"})); });
+    const dialog=within(screen.getByRole("dialog"));
+    const notice=dialog.getByText(scenario === "无学员" ? /目前该老师没有需要继续上课/ : scenario === "仅绑定" ? /1 位学员需要继续上课，目前暂无待上课程/ : /1 位学员，合计 2 节待上课程/).closest(".notice");
+    expect(notice?.classList.contains("notice-danger")).toBe(scenario !== "无学员");
+  });
+
+  it("老师离职仅填写原因即可确认，无需输入姓名", async () => {
+    mount("/teachers/t1");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "离职" })); });
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.queryByText(/输入老师姓名/)).toBeNull();
+    expect(dialog.getAllByRole("textbox")).toHaveLength(1);
+    const confirm = dialog.getByRole("button", { name: "确认离职" });
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    await testAct(async () => { fireEvent.change(dialog.getByRole("textbox"), { target: { value: "个人原因" } }); });
+    expect(confirm.hasAttribute("disabled")).toBe(false);
+    await testAct(async () => { fireEvent.click(confirm); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(demoRepository.read().teachers.find(item => item.id === "t1")?.status).toBe("已离职");
+  });
+  it.each([undefined, "/avatars/avatar-3.webp", "https://example.com/teacher.webp"])(
+    "修改姓名保留当前头像并保存：%s",
+    async (photo) => {
+      const teacher = demoRepository.read().teachers[0];
+      teacher.photo = photo;
+      const originalPhoto = photo || defaultAvatarSource(teacher.name);
+      mount(`/teachers/${teacher.id}`);
+      await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑资料" })); });
+      const dialog = within(screen.getByRole("dialog"));
+      for (const name of ["M", "Mi", "Miya"]) {
+        await testAct(async () => { fireEvent.change(dialog.getByPlaceholderText("输入老师姓名"), { target: { value: name } }); });
+        expect(dialog.getByAltText(`${name}的头像`).getAttribute("src")).toBe(originalPhoto);
+        if (originalPhoto.startsWith("/avatars/")) {
+          const selected = dialog.getAllByRole("button", { name: /^默认头像 / }).filter(button => button.getAttribute("aria-pressed") === "true");
+          expect(selected).toHaveLength(1);
+          expect(selected[0].querySelector("img")?.getAttribute("src")).toBe(originalPhoto);
+        }
+      }
+      await testAct(async () => { fireEvent.click(dialog.getByRole("button", { name: "保存老师" })); });
+      expect(demoRepository.read().teachers.find(item => item.id === teacher.id)?.photo).toBe(originalPhoto);
+      expect(screen.getByAltText("Miya的头像").getAttribute("src")).toBe(originalPhoto);
+    },
+  );
   it("新建预选默认头像，保存后可编辑更换并同步详情", async () => {
     mount("/teachers");
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /新建老师/ })); });
@@ -229,16 +308,23 @@ describe("老师详情资料与培训", () => {
   it("保存头像、独立开课日期、证书、标签与备注并展示", async () => {
     mount("/teachers/t1");
     expect(
-      within(screen.getByLabelText("老师基本资料")).queryByText("英文名"),
+      within(screen.getByLabelText("基本信息")).queryByText("英文名"),
     ).toBeNull();
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑资料" })); });
     const dialog = within(screen.getByRole("dialog", { name: "编辑老师" }));
+    if(dialog.queryByRole("button",{name:"按星期填写"})) fireEvent.click(dialog.getByRole("button",{name:"按星期填写"}));
     await testAct(async () => { fireEvent.click(dialog.getByRole("checkbox", { name: "TEFL" })); });
     await testAct(async () => { fireEvent.click(dialog.getByRole("checkbox", { name: "TESOL" })); });
-    await testAct(async () => { fireEvent.change(dialog.getByLabelText("老师标签"), {
-      target: { value: "耐心、商务英语" },
-    }); });
-    await testAct(async () => { fireEvent.change(dialog.getByLabelText("备注"), {
+    await testAct(async () => { fireEvent.click(dialog.getByRole("button", {name:"移除标签 口音好"})); });
+    await testAct(async () => { fireEvent.click(dialog.getByRole("checkbox", {name:/会唱歌/})); });
+    expect(dialog.queryByLabelText("老师介绍")).toBeNull();
+    expect(dialog.getAllByRole("heading", {level:3}).map(el=>el.textContent)).toEqual(["基本信息","教学信息","对外介绍","排课信息","培训与内部记录"]);
+    await testAct(async () => {
+      fireEvent.change(dialog.getByLabelText("教育背景"), {target:{value:"化学工程学士 Bachelor of Science"}});
+      fireEvent.change(dialog.getByLabelText("教学经验"), {target:{value:"五年教学经验"}});
+      fireEvent.change(dialog.getByLabelText("教师寄语与教学特色"), {target:{value:"用游戏陪伴孩子学习"}});
+    });
+    await testAct(async () => { fireEvent.change(dialog.getByLabelText("内部备注"), {
       target: { value: "优先安排晚间课程" },
     }); });
     await testAct(async () => { fireEvent.change(dialog.getByLabelText("开课日期"), {
@@ -250,14 +336,18 @@ describe("老师详情资料与培训", () => {
       },
     }); });
     await waitFor(() =>
-      expect(dialog.getByRole("button", { name: "使用默认头像" })).toBeTruthy(),
+      expect(dialog.getByRole("button", { name: "更换头像" })).toBeTruthy(),
     );
+    expect(dialog.queryByRole("button", { name: "使用默认头像" })).toBeNull();
     await testAct(async () => { fireEvent.click(dialog.getByRole("button", { name: "保存老师" })); });
     const saved = demoRepository.read().teachers[0];
     expect(saved).toMatchObject({
       certificates: "TEFL、TESOL",
-      tags: ["耐心", "商务英语"],
+      tags: ["tt-34", "tt-48"],
       notes: "优先安排晚间课程",
+      educationBackground: "化学工程学士 Bachelor of Science",
+      teachingExperience: "五年教学经验",
+      teachingPhilosophy: "用游戏陪伴孩子学习",
       startDate: "2026-11-10",
       availabilityFrom: "",
     });
@@ -268,11 +358,16 @@ describe("老师详情资料与培训", () => {
       photo: saved.photo,
       certificates: "TEFL、TESOL",
       notes: "优先安排晚间课程",
+      educationBackground: "化学工程学士 Bachelor of Science",
+      teachingExperience: "五年教学经验",
+      teachingPhilosophy: "用游戏陪伴孩子学习",
       startDate: "2026-11-10",
     });
     expect(saved.photo).toMatch(/^data:image\/png;base64,/);
     expect(screen.getByText("TEFL、TESOL")).toBeTruthy();
     expect(screen.getByText("优先安排晚间课程")).toBeTruthy();
+    expect(screen.getByText("五年教学经验")).toBeTruthy();
+    expect(screen.getByText("用游戏陪伴孩子学习")).toBeTruthy();
     expect(screen.getAllByAltText("T. Carol的头像")).toHaveLength(1);
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑资料" })); });
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "默认头像 3" })); });
@@ -292,7 +387,8 @@ describe("老师详情资料与培训", () => {
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑培训记录" })); });
     expect(screen.getByRole("dialog", { name: "编辑培训记录" }).classList.contains("modal")).toBe(true);
     const dialog = within(screen.getByRole("dialog", { name: "编辑培训记录" }));
-    expect(dialog.queryByLabelText("备注")).toBeNull();
+    if(dialog.queryByRole("button",{name:"按星期填写"})) fireEvent.click(dialog.getByRole("button",{name:"按星期填写"}));
+    expect(dialog.queryByLabelText("内部备注")).toBeNull();
     expect(dialog.queryByText("每周常规可用时间")).toBeNull();
     await testAct(async () => { fireEvent.change(dialog.getByLabelText("quiz 成绩"), {
       target: { value: "101" },
@@ -377,6 +473,7 @@ describe("教师常规可用时间表单", () => {
     mount("/teachers");
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /新建老师/ })); });
     const dialog = within(screen.getByRole("dialog", { name: "新建老师" }));
+    if(dialog.queryByRole("button",{name:"按星期填写"})) fireEvent.click(dialog.getByRole("button",{name:"按星期填写"}));
     await testAct(async () => { fireEvent.change(dialog.getByLabelText("英文名"), {
       target: { value: "T. Weekdays" },
     }); });
@@ -444,6 +541,7 @@ describe("教师常规可用时间表单", () => {
     mount("/teachers");
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /新建老师/ })); });
     const dialog = within(screen.getByRole("dialog", { name: "新建老师" }));
+    if(dialog.queryByRole("button",{name:"按星期填写"})) fireEvent.click(dialog.getByRole("button",{name:"按星期填写"}));
     expect(dialog.getByText(/尚未填写常规可用时间/)).toBeTruthy();
     await testAct(async () => { fireEvent.change(dialog.getByLabelText("英文名"), {
       target: { value: "T. Time Test" },
@@ -465,9 +563,7 @@ describe("教师常规可用时间表单", () => {
     await testAct(async () => { fireEvent.change(dialog.getByLabelText("周一 结束时间 2"), {
       target: { value: "21:55" },
     }); });
-    await testAct(async () => { fireEvent.change(dialog.getByLabelText("开始使用日期（选填）"), {
-      target: { value: "2026-11-02" },
-    }); });
+    expect(dialog.queryByLabelText("开始使用日期（选填）")).toBeNull();
     await testAct(async () => { fireEvent.change(dialog.getByLabelText("时间说明（选填）"), {
       target: { value: "周五休息，临时安排先联系" },
     }); });
@@ -481,7 +577,7 @@ describe("教师常规可用时间表单", () => {
         { day: 1, start: "17:00", end: "18:00" },
         { day: 1, start: "19:30", end: "21:55" },
       ],
-      availabilityFrom: "2026-11-02",
+      availabilityFrom: "",
       availabilityNote: "周五休息，临时安排先联系",
       availabilitySource: "entered",
     });
@@ -491,6 +587,7 @@ describe("教师常规可用时间表单", () => {
     mount("/teachers");
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /新建老师/ })); });
     const dialog = within(screen.getByRole("dialog", { name: "新建老师" }));
+    if(dialog.queryByRole("button",{name:"按星期填写"})) fireEvent.click(dialog.getByRole("button",{name:"按星期填写"}));
     await testAct(async () => { fireEvent.change(dialog.getByLabelText("英文名"), {
       target: { value: "T. Overlap" },
     }); });
@@ -584,6 +681,7 @@ describe("教师常规可用时间表单", () => {
         run={run}
       />,
     );
+    fireEvent.click(screen.getByRole("button",{name:"By day"}));
     await testAct(async () => { fireEvent.change(screen.getByLabelText("Mon end 1"), {
       target: { value: "17:55" },
     }); });
@@ -636,7 +734,7 @@ describe("老师中心普通筛选", () => {
       target: { value: "不存在的老师" },
     }); });
     expect(screen.getByText("没有符合条件的老师")).toBeTruthy();
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "清除筛选" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "清除全部筛选" })); });
     expect(screen.getByText(`共 ${data.teachers.length} 位老师`)).toBeTruthy();
   });
   it("旧排课链接转为可见普通条件，清除恢复全部", async () => {
@@ -660,6 +758,7 @@ it("证书多选回显旧证书，允许增选 CELTA 及取消其他", async () 
   mount("/teachers/t1");
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑资料" })); });
   const dialog = within(screen.getByRole("dialog", { name: "编辑老师" }));
+    if(dialog.queryByRole("button",{name:"按星期填写"})) fireEvent.click(dialog.getByRole("button",{name:"按星期填写"}));
   expect((dialog.getByRole("checkbox", { name: "TEFL" }) as HTMLInputElement).checked).toBe(true);
   expect((dialog.getByRole("checkbox", { name: "其他" }) as HTMLInputElement).checked).toBe(true);
   expect(dialog.getByText("其他证书：旧资格证")).toBeTruthy();
@@ -675,7 +774,7 @@ it("证书多选回显旧证书，允许增选 CELTA 及取消其他", async () 
   expect(demoRepository.read().teachers[0].certificates).toBe("");
 });
 
-it("业务版新建老师不显示ClassIn绑定，详情编辑仍可绑定", async () => {
+it("业务版新建老师不显示ClassIn绑定，详情页独立入口绑定", async () => {
   vi.spyOn(sharedReact, "businessMode").mockReturnValue(true);
   const view = mount("/teachers");
   fireEvent.click(await screen.findByRole("button", {name:/新建老师/}));
@@ -686,8 +785,15 @@ it("业务版新建老师不显示ClassIn绑定，详情编辑仍可绑定", asy
   mount("/teachers/" + demoRepository.read().teachers[0].id);
   fireEvent.click(await screen.findByRole("button", {name:"编辑资料"}));
   const edit = within(screen.getByRole("dialog", {name:"编辑老师"}));
-  expect(edit.getByLabelText("ClassIn 新账号初始密码")).toBeTruthy();
-  expect(edit.getByRole("button", {name:"注册/获取老师 UID"})).toBeTruthy();
+  expect(edit.queryByLabelText("ClassIn 新账号初始密码")).toBeNull();
+  fireEvent.click(edit.getByRole("button",{name:"取消"}));
+  fireEvent.click(screen.getByRole("button",{name:"关联账号"}));
+  const binding=within(screen.getByRole("dialog",{name:"关联 ClassIn 账号"}));
+  expect(binding.queryByLabelText("ClassIn UID")).toBeNull();
+  expect(binding.getByLabelText("ClassIn 账号")).toBeTruthy();
+  expect(binding.queryByLabelText("新账号初始密码")).toBeNull();
+  expect(binding.queryByLabelText("新账号初始密码")).toBeNull();
+  expect(binding.getByText(/请填写已注册的 ClassIn 手机号或邮箱/)).toBeTruthy();
 });
 
 it("新建老师默认在职，任职状态仅含在职和已离职", async () => {

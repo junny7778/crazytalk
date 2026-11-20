@@ -1,7 +1,8 @@
 import { businessMode } from "./businessClient";
 import { useBusiness } from "./businessReact";
+export { useBusiness } from "./businessReact";
 export { BusinessProvider, type BusinessLoginProps } from "./businessReact";
-export { businessRequest, businessMode, businessHeaders, businessAccountId } from "./businessClient";
+export { businessRequest, businessMode, businessHeaders, businessAccountId, waitForBusinessOperation } from "./businessClient";
 import { sharedBalanceGroup } from "./packageBalances";
 import { withScopedReservations } from "./scheduleCredits";
 import { studentInScope, scopeLabel } from "./organization";

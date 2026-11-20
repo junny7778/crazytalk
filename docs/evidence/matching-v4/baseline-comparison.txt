@@ -1,0 +1,15 @@
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  apps/admin/src/__tests__/lesson-sync-navigation.test.tsx > 统一同步入口 > 只读账号可查看但不能重试
+ FAIL  apps/admin/src/__tests__/lesson-sync-navigation.test.tsx > 统一同步入口 > 没有ClassIn查看权限不提供跳转
+ FAIL  apps/admin/src/__tests__/lesson-sync-navigation.test.tsx > 统一同步入口 > 同步管理遵循角色项目数据范围
+ FAIL  apps/admin/src/__tests__/student-courses-v3.test.tsx > 学员课程列表、日历与详情 > 只读角色可查看课程而没有更正、调课和取消入口
+ FAIL  apps/admin/src/__tests__/student-forms-v4.test.tsx > 受限编辑读取脱敏手机号，修改姓名不覆盖真实手机号
+ FAIL  apps/admin/src/__tests__/student-independent.test.tsx > 独立学员数字化验收 > 完整档案展示画像和历史月度，服务记录可进入真实反馈详情
+ FAIL  apps/admin/src/__tests__/student-independent.test.tsx > 独立学员数字化验收 > 导入未知余额显示未核实，录入0余额必须带核实说明并产生独立流水
+ FAIL  apps/admin/src/__tests__/student-independent.test.tsx > 独立学员数字化验收 > 列表按唯一 ID 搜索和订单状态筛选，未知余额保持未核实
+ FAIL  apps/admin/src/__tests__/student-independent.test.tsx > 独立学员数字化验收 > 实际导出47列客服原表，保留学员ID、零课时和年龄原文
+ FAIL  apps/admin/src/__tests__/student-independent.test.tsx > 独立学员数字化验收 > 导入学员可录入负期初余额，续费累加到该课包
+ FAIL  apps/admin/src/__tests__/student-independent.test.tsx > 独立学员数字化验收 > 原表没有最后上课日期的在读学员不误列为两周没上课
+ FAIL  apps/admin/src/__tests__/student-tasks-v3.test.tsx > 学员待办简洁操作 > 只读人员可以查看任务但没有新增和完成操作
+ Test Files  5 failed (5)
+      Tests  12 failed | 31 passed (43)

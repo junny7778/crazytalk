@@ -265,9 +265,10 @@ describe("学员待办简洁操作", () => {
     expect(demoRepository.read().tasks[0].status).toBe("待处理");
   });
   it("只读人员可以查看任务但没有新增和完成操作", () => {
+    demoRepository.read().accounts.push({id:"task-reader",name:"财务只读",phone:"",roleId:"finance",enabled:true,scope:"全部"});
     function ReadOnlyPage() {
       const { setRole, roleId } = useDemo();
-      useEffect(() => setRole("finance"), [setRole]);
+      useEffect(() => setRole("finance",false,"task-reader"), [setRole]);
       return roleId === "finance" ? <TaskPage /> : null;
     }
     const data = demoRepository.read();

@@ -217,8 +217,10 @@
   position: sticky;
   top: 24px;
   gap: 24px;
-  padding: 8px 16px 24px 0;
-  border-right: 1px solid var(--ct-gray-200);
+  padding: 20px 12px;
+  background: #fff;
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 12px;
 }
 .settings-nav-group {
   display: flex;
@@ -231,12 +233,6 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--ct-gray-500);
-}
-.settings-navigation button:hover {
-  background: var(--ct-gray-100);
-}
-.settings-navigation button.active:hover {
-  background: var(--ct-brand-50);
 }
 .settings-navigation button:focus-visible {
   outline: 2px solid var(--ct-gray-500);
@@ -252,13 +248,16 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
-    padding: 0 0 20px;
-    border-right: 0;
-    border-bottom: 1px solid var(--ct-gray-200);
+    padding: 16px 12px;
   }
 }
 
 .settings-navigation button {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -514,7 +513,7 @@
 .teacher-profile-identity {
   flex: 1;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
 }
 .teacher-profile-identity > img,
 .teacher-profile-identity > .avatar {
@@ -1072,4 +1071,35 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+}
+
+.teacher-form-section-title { margin: 16px 0 0; padding-top: 20px; border-top: 1px solid var(--ct-gray-200); }
+.teacher-form-section-title.is-first-section { margin-top: 0; padding-top: 0; border-top: 0; }
+.teacher-form-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.teacher-detail-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--ct-gray-200); }
+.teacher-detail-section h3 { margin: 0 0 12px; }
+.teacher-detail-section dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.teacher-detail-section .teacher-profile-grid { margin-top: 0; padding-top: 0; border-top: 0; }
+.teacher-profile-grid > .teacher-profile-full { grid-column: 1 / -1; }
+.teacher-profile-grid > .teacher-profile-long-label { grid-template-columns: 140px minmax(0, 1fr); }
+@media (max-width: 640px) {
+  .teacher-profile-grid > .teacher-profile-full { grid-template-columns: 1fr; gap: 4px; }
+}
+
+.teacher-profile-identity h1 { display: flex; align-items: center; gap: 8px; margin: 0; }
+
+.teacher-profile-grid.teacher-scheduling-summary { border-top: 0; margin-top: 0; padding-top: 0; }
+
+
+.classin-log-table {
+  table-layout: fixed;
+  min-width: 820px;
+}
+.classin-log-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.classin-log-table td:first-child {
+  white-space: nowrap;
 }

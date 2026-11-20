@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom";
 export function OrganizationFilters({data}: {data: DemoState}) {
   const [params, setParams] = useSearchParams();
   const team = params.get("team") || "";
-  const memberships = data.students.map(s => studentOrganization(data.accounts,s.owner,s.roster));
+  const memberships = data.students.map(s => studentOrganization(data.accounts,s.owner,s.roster,s.ownerAccountId));
   const teams = [...new Set(["A队","B队",...memberships.map(m => m.team)])].sort();
   const groups = [...new Set([...data.accounts.filter(a=>a.team===team && a.group).map(a=>a.group!),...memberships.filter(m => m.team === team).map(m => m.group)])].sort();
   function update(key:"team"|"group", value:string) {

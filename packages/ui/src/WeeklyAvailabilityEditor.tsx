@@ -1,6 +1,5 @@
 import { TimePicker } from "./TimePicker";
-import { useRef, useState } from "react";
-import { DatePicker } from "./DatePicker";
+import { useEffect, useRef, useState } from "react";
 import { Copy, Plus, X } from "lucide-react";
 import "./weekly-availability.css";
 
@@ -54,6 +53,7 @@ export function WeeklyAvailabilityEditor({
   const remembered = useRef<Record<number, AvailabilityValue["availability"]>>(
     {},
   );
+  const [mode, setMode] = useState<"day" | "grid">("grid");
   const [copyDay, setCopyDay] = useState<number | null>(null);
   const [targets, setTargets] = useState<number[]>([]);
   const week = [1, 2, 3, 4, 5, 6, 0];
@@ -61,6 +61,39 @@ export function WeeklyAvailabilityEditor({
   const days = english
     ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     : ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  const gridRange = (range: AvailabilityValue["availability"][number]) =>
+    range.start >= "07:00" && range.end <= "22:00" && range.start < range.end &&
+    /^(?:[01]\d|2[0-3]):(?:00|30)$/.test(range.start) && /^(?:[01]\d|2[0-3]):(?:00|30)$/.test(range.end);
+  const exactRanges = value.availability.filter(range => !gridRange(range));
+  const drag = useRef<{day:number;row:number;select:boolean;base:AvailabilityValue} | null>(null);
+  useEffect(() => {
+    const stop = () => { drag.current = null; };
+    window.addEventListener("mouseup", stop);
+    window.addEventListener("blur", stop);
+    return () => { window.removeEventListener("mouseup", stop); window.removeEventListener("blur", stop); };
+  }, []);
+  const clock = (row:number) => String(7 + Math.floor(row / 2)).padStart(2,"0") + (row % 2 ? ":30" : ":00");
+  function paint(day:number,row:number) {
+    const selection=drag.current;
+    if(!selection) return;
+    const base=selection.base;
+    const exact=base.availability.filter(range=>!gridRange(range));
+    const next:AvailabilityValue["availability"]=[...exact];
+    for(const d of week) {
+      for(let r=0;r<30;r++) {
+        const start=clock(r),end=clock(r+1);
+        if(exact.some(range=>range.day===d && range.start<end && range.end>start)) continue;
+        let selected=base.availability.some(range=>gridRange(range) && range.day===d && range.start<=start && range.end>=end);
+        if(week.indexOf(d)>=Math.min(week.indexOf(day),week.indexOf(selection.day)) && week.indexOf(d)<=Math.max(week.indexOf(day),week.indexOf(selection.day)) && r>=Math.min(row,selection.row) && r<=Math.max(row,selection.row)) selected=selection.select;
+        if(selected) {
+          const previous=next[next.length-1];
+          if(previous && gridRange(previous) && previous.day===d && previous.end===start) previous.end=end;
+          else next.push({day:d,start,end});
+        }
+      }
+    }
+    onChange({...base,availability:next.sort((a,b)=>a.day-b.day || a.start.localeCompare(b.start))});
+  }
   const updateRange = (
     index: number,
     change: { start?: string; end?: string },
@@ -73,47 +106,39 @@ export function WeeklyAvailabilityEditor({
     });
   return (
     <div className="weekly-availability">
-      <div className="weekly-availability-meta">
-        <label>
-          {english ? "Effective from (optional)" : "开始使用日期（选填）"}
-          <DatePicker
-            placeholder={
-              english ? "Effective from (optional)" : "开始使用日期（选填）"
-            }
-            mode="date"
-            language={language}
-            value={value.availabilityFrom}
-            disabled={disabled}
-            onValueChange={(nextValue) =>
-              onChange({ ...value, availabilityFrom: nextValue })
-            }
-          />
-        </label>
-      </div>
       {heading && <h2 className="weekly-availability-heading">{heading}</h2>}
-      <p className="weekly-availability-hint">
-        {english
-          ? "Set your usual teaching hours for each day."
-          : "按星期填写常规授课时间，每天可添加多段。"}
-      </p>
-      <details className="weekly-calendar-picker"><summary>{english?"Weekly time grid":"按周历勾选时段"}</summary><div className="weekly-slot-grid"><table><thead><tr><th>{english?"Time":"时间"}</th>{week.map(d=><th key={d}>{days[d]}</th>)}</tr></thead>
-      <tbody>{Array.from({length:30},(_,i)=>{
-        const clock=(n:number)=>String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
-        const start=clock(7*60+i*30),end=clock(7*60+(i+1)*30);
-        return <tr key={start}><th>{start}</th>{week.map(day=>{
-          const ranges=value.availability.filter(r=>r.day===day && r.start<end && r.end>start);
-          const covered=ranges.some(r=>r.start<=start && r.end>=end);
-          return <td key={day}><label><input type="checkbox" aria-label={days[day]+" "+start} checked={covered} disabled={disabled} onChange={()=>{
-            const next=value.availability.filter(r=>!ranges.includes(r));
-            for(const r of ranges){if(r.start<start)next.push({...r,end:start});if(r.end>end)next.push({...r,start:end});}
-            if(!covered)next.push({day,start,end});
-            const merged:AvailabilityValue["availability"]=[];
-            for(const r of next.sort((a,b)=>a.day-b.day || a.start.localeCompare(b.start))){
-              const prev=merged[merged.length-1];if(prev?.day===r.day && prev.end===r.start)prev.end=r.end;else merged.push({...r});
-            }
-            onChange({...value,availability:merged});
-          }}/></label></td>})}</tr>
-      })}</tbody></table></div></details>
+      <div className="weekly-availability-modes" role="group" aria-label={english ? "Availability entry mode" : "时间填写方式"}>
+        <button type="button" aria-pressed={mode === "grid"} onClick={() => {setMode("grid");setCopyDay(null);}}>{english ? "Weekly grid" : "周历勾选"}</button>
+        <button type="button" aria-pressed={mode === "day"} onClick={() => setMode("day")}>{english ? "By day" : "按星期填写"}</button>
+      </div>
+      <p className="weekly-availability-hint">{mode === "day"
+        ? english ? "Set your usual teaching hours for each day." : "按星期填写常规授课时间，每天可添加多段。"
+        : english ? "Click or drag to select 30-minute slots. Drag from a selected cell to clear." : "点击或拖动选择半小时时段；从已选格子开始拖动可批量取消。"}</p>
+      {mode === "grid" ? <section className="weekly-calendar-picker" aria-label={english ? "Weekly availability grid" : "每周可用时间周历"}>
+        {exactRanges.length > 0 && <div className="weekly-exact-ranges">
+          <strong>{english ? "Exact time ranges" : "精确时段"}</strong>
+          <p>{english ? "These ranges are preserved unchanged. Overlapping grid cells are locked; use By day to edit them." : "以下时段保持原样，重叠的周历格子已锁定；请切换「按星期填写」调整。"}</p>
+          <ul>{exactRanges.map((range,index)=><li key={index}>{days[range.day]} {range.start}–{range.end}</li>)}</ul>
+        </div>}
+        <div className="weekly-slot-grid"><table><thead><tr><th>{english ? "Time" : "时间"}</th>{week.map(day=><th key={day}>{days[day]}</th>)}</tr></thead>
+          <tbody>{Array.from({length:30},(_,i)=>{
+            const clock=(n:number)=>String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
+            const start=clock(7*60+i*30),end=clock(7*60+(i+1)*30);
+            return <tr key={start}><th>{start}</th>{week.map(day=>{
+              const ranges=value.availability.filter(range=>gridRange(range) && range.day===day && range.start<end && range.end>start);
+              const protectedCell=exactRanges.some(range=>range.day===day && range.start<end && range.end>start);
+              const covered=ranges.some(range=>range.start<=start && range.end>=end);
+              return <td key={day}><button type="button" className="weekly-slot-cell" aria-label={days[day]+" "+start} aria-pressed={covered} disabled={disabled || protectedCell}
+                title={protectedCell ? english ? "Edit this exact range in By day" : "请在按星期填写中调整精确时段" : undefined}
+                onMouseDown={event=>{if(event.button!==0)return;event.preventDefault();drag.current={day,row:i,select:!covered,base:value};paint(day,i);}}
+                onMouseEnter={()=>{if(drag.current)paint(day,i);}}
+                onClick={event=>{if(event.detail===0){drag.current={day,row:i,select:!covered,base:value};paint(day,i);drag.current=null;}}}
+              >{covered ? "✓" : ""}</button></td>;
+
+            })}</tr>;
+          })}</tbody>
+        </table></div>
+      </section> : <>
       <div
         className="weekly-availability-weekdays"
         role="group"
@@ -366,6 +391,7 @@ export function WeeklyAvailabilityEditor({
             );
           })}
       </div>
+      </>}
       <div className="weekly-availability-meta">
         <label>
           {english ? "Notes (optional)" : "时间说明（选填）"}

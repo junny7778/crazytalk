@@ -1,5 +1,7 @@
+import ClassInOperationFeedback from "../ClassInOperationFeedback";
+import ClassInBookingPreview from "./ClassInBookingPreview";
 import { useScheduleCredits } from "./useScheduleCredits";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
@@ -37,8 +39,11 @@ export function FixedPlanCalendar({
 }) {
   const { data, act, can, preview } = useDemo();
   const toast = useToast();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const student = data.students.find((s) => s.id === studentId);
   const [rows, setRows] = useState<Row[]>(plan.slots);
+  const unchangedRecommendation = JSON.stringify(rows.map(({date,time,teacherId})=>({date,time,teacherId}))) === JSON.stringify(plan.slots.map(({date,time,teacherId})=>({date,time,teacherId})));
   const [week, setWeek] = useState(monday(intent.startDate));
   const [editing, setEditing] = useState<string | null>(null);
   const [extra, setExtra] = useState<{ date: string; time: string } | null>(
@@ -210,12 +215,19 @@ export function FixedPlanCalendar({
     );
     setMessage("");
   }
+  const [scheduleRevision] = useState(() => data.students.find(s => s.id === studentId)?.scheduleRevision ?? 0);
   const credits = useScheduleCredits(studentId, intent.duration, ready.length);
+  const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
   async function submit() {
+    if (submitLock.current) return;
+    submitLock.current = true; setSubmitting(true);
     try {
       if (!ready.length) return;
       const result = await act({
         type: "lesson.schedule",
+        scheduleRevision,
+        selectionMode: unchangedRecommendation ? "recommended" : "manual",
         plannedUnits: credits.units,
         studentId,
         teacherId: plan.primaryTeacherId,
@@ -224,6 +236,7 @@ export function FixedPlanCalendar({
         kind: "固定课",
         material: student?.material || "",
       });
+      if (!mounted.current) return;
       toast(result.message);
       if (ready.length === editable.length) {
         onComplete(ready.length, teacherSummary);
@@ -246,14 +259,16 @@ export function FixedPlanCalendar({
       }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "提交失败，请重试");
-    }
+    } finally { submitLock.current = false; setSubmitting(false); }
   }
   return (
     <div className="fixed-plan stack">
+      <ClassInOperationFeedback studentId={studentId}/>
+      <fieldset disabled={submitting} className="stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
       <section className="fixed-plan-summary">
         <div className="row between">
           <h3>{student?.name} 的固定课表</h3>
-          <span className="fixed-draft-badge">方案预览 · 尚未确认</span>
+          <span className="fixed-draft-badge">{unchangedRecommendation ? "系统推荐方案" : "教务手动调整"} · 尚未确认</span>
         </div>
         <p>
           {plan.positions.map((p) => `${days[p.day]} ${p.time}`).join("、")} ·
@@ -594,7 +609,9 @@ export function FixedPlanCalendar({
         </Modal>
       )}
       {message && !focused && <p role="alert">{message}</p>}
+      <ClassInBookingPreview studentId={studentId} teacherIds={ready.map(row => row.teacherId)}/>
       {credits.node}
+      </fieldset>
       <div className="fixed-plan-footer">
         <span>
           尚未保存 · 本次可确认 {ready.length} 节
@@ -602,7 +619,7 @@ export function FixedPlanCalendar({
             ? `，剩余 ${editable.length - ready.length} 节待处理`
             : ""}
         </span>
-        <Button onClick={onClose}>返回方案</Button>
+        <Button onClick={onClose}>{submitting ? "关闭" : "返回方案"}</Button>
         <Button
           variant="primary"
           disabled={
@@ -611,9 +628,10 @@ export function FixedPlanCalendar({
             preview ||
             !can("schedule.create")
           }
-          onClick={submit}
+          loading={submitting}
+            onClick={submit}
         >
-          {ready.length === editable.length && !missingTimeCount
+          {submitting ? "正在排课" : ready.length === editable.length && !missingTimeCount
             ? "确认排课"
             : `确认已安排的 ${ready.length} 节`}
         </Button>

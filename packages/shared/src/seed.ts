@@ -1,4 +1,5 @@
-import { assignSampleTeams, migrateTeamCatalog, migrateProjectChannels } from "./organization";
+import { initializeTeacherTags } from "./teacherTags";
+import { assignSampleTeams, migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "./organization";
 import { initializePayroll } from "./payroll";
 import { migrateFeedbackCatalog } from "./feedbackCatalog";
 import { emptyStudentProfile } from "./model";
@@ -84,7 +85,7 @@ export function createSeed(): DemoState {
     trained: i !== 7,
     needConfirm: i === 1,
     phone: `1390000120${i}`,
-    bio: "耐心、有亲和力，善于通过互动引导学员表达。拥有三年以上线上教学经验。",
+    teachingPhilosophy: "耐心、有亲和力，善于通过互动引导学员表达。拥有三年以上线上教学经验。",
     rate: 180 + i * 10,
     availability: teacherAvailability[i],
     availabilityFrom: "",
@@ -93,7 +94,7 @@ export function createSeed(): DemoState {
         ? "原表：周一至周四、周日18:00–22:00，20号开始，具体日期待核实"
         : "",
     availabilitySource: i === 7 ? "entered" : "reference",
-    tags: i % 2 ? ["活泼", "互动性强"] : ["耐心", "发音清晰"],
+    tags: i % 2 ? ["tt-32", "tt-27"] : ["tt-34", "tt-18"],
   }));
   const names = [
     "Jayden",
@@ -675,9 +676,11 @@ export function createSeed(): DemoState {
       payroll.opening.source = "按汇总金额扣除可追溯课酬后计入期初。";
     }
   }
+  initializeTeacherTags(seed);
   assignSampleTeams(seed);
   migrateTeamCatalog(seed);
   migrateProjectChannels(seed);
+  migrateStudentOwners(seed);
   return seed;
 }
 

@@ -1,0 +1,2 @@
+PASS 16 MB streaming upload, authorized video range, anonymous access denied
+PASS matching tag library persisted, custom tag and teacher IDs roundtrip, automatic risk blocked, manual selection allowed, occupied slot rejected

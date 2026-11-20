@@ -31,7 +31,8 @@ function fixture(permissions?: string[], scope = "全部") {
   });
   data.lessons[0].date = "2020-01-01";
   data.lessons[1].date = "2099-01-01";
-  if (permissions)
+  if (permissions) {
+    data.accounts.push({id:"sync-reader-account",name:"同步查看账号",phone:"",roleId:"sync-reader",enabled:true,scope,team:"B队",group:"一组"});
     data.roles.push({
       id: "sync-reader",
       name: "同步查看员",
@@ -39,6 +40,7 @@ function fixture(permissions?: string[], scope = "全部") {
       permissions,
       scope,
     });
+  }
   localStorage.setItem(
     `${DEMO_STORAGE_KEY}:nancy-sync-notice-2026-11-05`,
     "done",
@@ -74,7 +76,7 @@ async function becomeReader() {
     });
   }
   await testAct(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "同步查看员" }));
+    fireEvent.click(screen.getByRole("button", { name: /^同步查看账号 ·/ }));
   });
 }
 beforeEach(() => {
@@ -104,7 +106,7 @@ afterEach(() => {
 });
 
 describe("统一同步入口", () => {
-  it("同步管理直接列出异常，列表只提供按课程跳转", async () => {
+  it("课程入口跳转对应日志，日志不提供重试工作台", async () => {
     fixture();
     const router = mount("/lessons?tab=all&view=unsynced");
     expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull();
@@ -120,33 +122,23 @@ describe("统一同步入口", () => {
     expect(
       await screen.findByRole("heading", { name: "ClassIn 同步管理" }),
     ).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "重新同步" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull();
+    expect(screen.getByRole("heading", {name:"同步日志"})).toBeTruthy();
     await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "查看全部同步异常" }));
+      fireEvent.click(screen.getByRole("button", { name: "查看全部同步日志" }));
     });
-    expect(screen.getAllByRole("button", { name: "重新同步" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull();
   });
-  it("重试集中处理，成功后移除任务", async () => {
+  it("同步管理只保留日志，已完成和失败均可查，不改变业务状态", async () => {
     fixture();
     mount();
-    const retry = (
-      await screen.findAllByRole("button", { name: "重新同步" })
-    )[0];
-    await testAct(async () => {
-      fireEvent.click(retry);
-    });
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "重新同步" })).toHaveLength(
-        1,
-      ),
-    );
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "重新同步" }));
-    });
-    expect(await screen.findByText("暂无同步异常")).toBeTruthy();
-    expect(
-      demoRepository.read().lessons.filter((l) => l.sync === "未同步"),
-    ).toHaveLength(0);
+    expect(await screen.findByRole("heading",{name:"同步日志"})).toBeTruthy();
+    expect(screen.queryByRole("heading",{name:"待核实的外部结果"})).toBeNull();
+    expect(screen.queryByRole("heading",{name:"班级同步事项"})).toBeNull();
+    expect(screen.queryByRole("heading",{name:"同步异常处理"})).toBeNull();
+    expect(screen.queryByRole("button",{name:/重试/})).toBeNull();
+    expect(screen.getAllByText("已同步").length).toBeGreaterThan(0);
+    expect(demoRepository.read().lessons.filter(l=>l.sync==="未同步")).toHaveLength(2);
   });
   it("看板跳转统一管理", async () => {
     fixture();
@@ -165,7 +157,7 @@ describe("统一同步入口", () => {
     const router = mount();
     await becomeReader();
     await act(async () => {
-      await router.navigate("/settings?tab=classin");
+      await router.navigate("/settings?tab=classin&lesson="+demoRepository.read().lessons[0].id);
     });
     expect(await screen.findByText("课程取消尚未同步到 ClassIn")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull();
@@ -175,10 +167,10 @@ describe("统一同步入口", () => {
     const router = mount();
     await becomeReader();
     await act(async () => {
-      await router.navigate("/settings?tab=classin");
+      await router.navigate("/settings?tab=classin&lesson="+demoRepository.read().lessons[0].id);
     });
     expect(
-      await screen.findByText("当前账号没有课程查看权限，请联系管理员。"),
+      await screen.findByText("当前账号没有课程查看权限。"),
     ).toBeTruthy();
     expect(screen.queryByText("课程取消尚未同步到 ClassIn")).toBeNull();
     expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull();
@@ -195,21 +187,21 @@ describe("统一同步入口", () => {
     ).toHaveLength(2);
     expect(screen.queryByRole("link", { name: "同步异常" })).toBeNull();
   });
-  it("同步管理遵循角色项目数据范围", async () => {
-    fixture(["classin.view", "lesson.view"], "K12");
+  it("同步管理遵循账号队组数据范围", async () => {
+    fixture(["classin.view", "lesson.view"], "本组");
     const data = structuredClone(demoRepository.read());
     data.lessons[0].studentId = data.students.find(
-      (s) => s.project === "K12",
+      (s) => s.ownerAccountId === "u3",
     )!.id;
     data.lessons[1].studentId = data.students.find(
-      (s) => s.project !== "K12",
+      (s) => s.ownerAccountId === "u2",
     )!.id;
     localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data));
     demoRepository.refresh();
     const router = mount();
     await becomeReader();
     await act(async () => {
-      await router.navigate("/settings?tab=classin");
+      await router.navigate("/settings?tab=classin&lesson="+demoRepository.read().lessons[0].id);
     });
     expect(await screen.findByText("共 1 条 · 每页 25 条")).toBeTruthy();
     expect(screen.getAllByRole("row")).toHaveLength(2);

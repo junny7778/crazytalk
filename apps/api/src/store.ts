@@ -1,4 +1,5 @@
-import { migrateTeamCatalog, migrateProjectChannels } from "../../../packages/shared/src/organization";
+import { initializeTeacherTags } from "../../../packages/shared/src/teacherTags";
+import { migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "../../../packages/shared/src/organization";
 import { isDeepStrictEqual } from "node:util";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
@@ -65,9 +66,11 @@ export async function readState(
   }
   const state = stateSchema.parse(result);
   const before = structuredClone(state);
+  const tagsChanged = initializeTeacherTags(state);
   const teamsChanged = migrateTeamCatalog(state);
   const projectsChanged = migrateProjectChannels(state);
-  if (teamsChanged || projectsChanged) await writeState(tx, state, before);
+  const ownersChanged = migrateStudentOwners(state);
+  if (teamsChanged || projectsChanged || tagsChanged || ownersChanged) await writeState(tx, state, before);
   return state;
 }
 export async function writeState(

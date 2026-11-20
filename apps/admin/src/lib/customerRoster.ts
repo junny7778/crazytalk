@@ -189,7 +189,7 @@ export function rosterValues(
   data: DemoState,
 ): Record<string, string | number> {
   const raw = s.roster?.fields ?? {};
-  const org = studentOrganization(data.accounts, s.owner, s.roster);
+  const org = studentOrganization(data.accounts, s.owner, s.roster, s.ownerAccountId);
   return {
     ...raw,
     学生: raw["学生"] || s.name,

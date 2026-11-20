@@ -431,8 +431,7 @@ it("independent: suspended student cannot change teacher or move a lesson; compe
     transition(d, {
       type: "lesson.changeTeacher",
       studentId: s.id,
-      teacherId: d.teachers[1].id,
-      from: "2026-11-02",
+      originalTeacherId: d.teachers[1].id,
       reason: "更换",
     }),
   ).toThrow(/复课/);

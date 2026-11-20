@@ -1,11 +1,14 @@
+import ClassInOperationFeedback from "../ClassInOperationFeedback";
+import ClassInBookingPreview from "./ClassInBookingPreview";
 import { useScheduleCredits } from "./useScheduleCredits";
 import { z } from "zod";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
   addDays,
   DEMO_TODAY,
   isAvailable,
+  teacherFit, compareTeacherFit,
   isRegularTime,
   minutes,
   type Lesson,
@@ -14,6 +17,7 @@ import { Button, Field, Select, DatePicker, useToast } from "@crazytalk/ui";
 
 const draftSchema = z.object({
   studentId: z.string(),
+  scheduleRevision:z.number().default(0),
   kind: z.enum(["固定课", "临时课"]),
   duration: z.number(),
   expanded: z.boolean(),
@@ -39,6 +43,7 @@ export function CoursePlanEditor({
   kind: initialKind,
   duration: initialDuration,
   generated,
+  recommended = false,
   onClose,
   onComplete,
 }: {
@@ -48,6 +53,7 @@ export function CoursePlanEditor({
   kind: Lesson["kind"];
   duration: number;
   generated: boolean;
+  recommended?: boolean;
   onClose: () => void;
   onComplete: (
     studentId: string,
@@ -58,6 +64,8 @@ export function CoursePlanEditor({
 }) {
   const { data, act, can, preview, accountId } = useDemo();
   const toast = useToast();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [studentId, setStudent] = useState(initialStudent);
   const [kind, setKind] = useState(initialKind);
   const [material, setMaterial] = useState(
@@ -73,6 +81,9 @@ export function CoursePlanEditor({
       confirmedTeacher: false,
     })),
   );
+  const unchangedRecommendation = recommended && studentId === initialStudent && kind === initialKind && duration === initialDuration &&
+    JSON.stringify(rows.map(({date,time,teacherId})=>({date,time,teacherId}))) ===
+    JSON.stringify(slots.map(s=>({date:s.date,time:s.time,teacherId:s.teacherId ?? teacherId})));
   const [selected, setSelected] = useState<number[]>([]);
   const [batchTeacher, setBatchTeacher] = useState(teacherId);
   const [confirmationNote, setConfirmationNote] = useState("");
@@ -83,13 +94,16 @@ export function CoursePlanEditor({
   const [calendarStart, setCalendarStart] = useState(
     slots[0]?.date || DEMO_TODAY,
   );
-  const draftKey = `crazytalk-course-plan:${accountId || "demo"}:${initialStudent || "new"}:${initialKind}`;
+  const [scheduleRevisions] = useState(() => Object.fromEntries(data.students.map(s=>[s.id,s.scheduleRevision ?? 0])));
+  const draftRevision = scheduleRevisions[initialStudent] ?? 0;
+  const scheduleRevision = scheduleRevisions[studentId] ?? 0;
+  const draftKey = `crazytalk-course-plan:${accountId || "demo"}:${initialStudent || "new"}:${initialKind}:${draftRevision}`;
   const [savedDraft, setSavedDraft] = useState(() => {
     try {
       const parsed = draftSchema.safeParse(
         JSON.parse(localStorage.getItem(draftKey) || "null"),
       );
-      return parsed.success ? parsed.data : null;
+      return parsed.success && parsed.data.scheduleRevision === (scheduleRevisions[parsed.data.studentId] ?? 0) ? parsed.data : null;
     } catch {
       return null;
     }
@@ -97,9 +111,9 @@ export function CoursePlanEditor({
   useEffect(() => {
     localStorage.setItem(
       draftKey,
-      JSON.stringify({ studentId, kind, duration, expanded, rows }),
+      JSON.stringify({ studentId, scheduleRevision, kind, duration, expanded, rows }),
     );
-  }, [draftKey, studentId, kind, duration, expanded, rows]);
+  }, [draftKey, studentId, scheduleRevision, kind, duration, expanded, rows]);
   const student = data.students.find((s) => s.id === studentId);
   const eligible = data.teachers.filter(
     (t) =>
@@ -189,11 +203,17 @@ export function CoursePlanEditor({
     setRows(next);
   }
   const credits = useScheduleCredits(studentId, duration, ready.length);
+  const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
   async function submit() {
+    if (submitLock.current) return;
+    submitLock.current = true; setSubmitting(true);
     try {
       if (!student) throw new Error("请选择学员");
       const result = await act({
         type: "lesson.schedule",
+        scheduleRevision,
+        selectionMode: unchangedRecommendation ? "recommended" : "manual",
         plannedUnits: credits.units,
         studentId,
         teacherId,
@@ -203,6 +223,7 @@ export function CoursePlanEditor({
         material: material || student.material,
         confirmationNote,
       });
+      if (!mounted.current) return;
       toast(result.message);
       if (ready.length === rows.length) {
         localStorage.removeItem(draftKey);
@@ -226,10 +247,13 @@ export function CoursePlanEditor({
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "排课失败，请重试");
-    }
+    } finally { submitLock.current = false; setSubmitting(false); }
   }
   return (
     <div className="stack course-plan">
+      <ClassInOperationFeedback studentId={studentId}/>
+      <fieldset disabled={submitting} className="stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
+      <p>{unchangedRecommendation ? "系统推荐方案，保存时重新核对推荐条件。" : "教务手动安排：自主选择老师，保留时间冲突检查。"}</p>
       {savedDraft && (
         <div className="row wrap">
           <span>有尚未完成的排课草稿</span>
@@ -509,16 +533,24 @@ export function CoursePlanEditor({
                 onValueChange={(teacherId) => update(i, { teacherId })}
               >
                 <option value="">待安排</option>
-                {eligible.map((t) => {
+                {[...eligible].sort((a,b)=>
+                  Number(!!reason({...r,teacherId:a.id},i,true))-Number(!!reason({...r,teacherId:b.id},i,true)) ||
+                  (student ? compareTeacherFit(data,student,a,b) : 0)
+                ).map((t) => {
                   const why = reason({ ...r, teacherId: t.id }, i, true);
                   return (
                     <option key={t.id} value={t.id} disabled={Boolean(why)}>
                       {t.name}
-                      {why ? ` · ${why}` : ""}
+                      {why ? ` · ${why}` : student ? ` · 匹配 ${teacherFit(data,student,t).matchedPrimary.length} 项一级标签` : ""}
                     </option>
                   );
                 })}
               </Select>
+              {student && r.teacherId && (() => {
+                const teacher=data.teachers.find(t=>t.id===r.teacherId)!;
+                const fit=teacherFit(data,student,teacher);
+                return <small>匹配：{[...fit.matchedPrimary,...fit.matchedSecondary].join("、") || "暂无"}；提醒：{[...fit.blocked,...fit.warnings].join("；") || "无"}（手动选择不受标签限制）</small>;
+              })()}
               <Button
                 size="sm"
                 variant="ghost"
@@ -640,9 +672,11 @@ export function CoursePlanEditor({
         </Field>
       )}
       {error && <p role="alert">{error}</p>}
+      <ClassInBookingPreview studentId={studentId} teacherIds={ready.map(row => row.teacherId)}/>
       {credits.node}
+      </fieldset>
       <div className="row wrap">
-        <Button onClick={onClose}>返回调整</Button>
+        <Button onClick={onClose}>{submitting ? "关闭" : "返回调整"}</Button>
         {kind === "固定课" && !expanded ? (
           <Button
             variant="primary"
@@ -673,9 +707,10 @@ export function CoursePlanEditor({
               preview ||
               !can("schedule.create")
             }
+            loading={submitting}
             onClick={submit}
           >
-            {ready.length === rows.length || !ready.length
+            {submitting ? "正在排课" : ready.length === rows.length || !ready.length
               ? "确认排课"
               : `确认已安排的 ${ready.length} 节`}
           </Button>

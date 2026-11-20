@@ -1,10 +1,11 @@
 import type { DemoState } from "./model";
+import { accountBalanceAlignmentIssue } from "./packageBalances";
 
 export function scheduleUnits(duration: number, manualUnits?: number) {
   return duration === 25 ? 1 : duration === 50 ? 2 : manualUnits;
 }
 function isPending(lesson: DemoState["lessons"][number]) {
-  return !lesson.deducted && ["未开始", "待确认", "缺席"].includes(lesson.status);
+  return !lesson.deducted && (["未开始", "待确认", "缺席"].includes(lesson.status) || lesson.status === "已取消" && !!lesson.syncState && lesson.syncState !== "completed");
 }
 
 export function withScopedReservations(data: DemoState, visible: DemoState): DemoState {
@@ -57,6 +58,7 @@ export function getScheduleCredits(
   const required = Number((count * unitsPerLesson).toFixed(8));
   let error = "";
   if (!student) error = "请选择学员";
+  else if (accountBalanceAlignmentIssue(data, studentId)) error = accountBalanceAlignmentIssue(data, studentId);
   else if (!useOrders && !student.balanceKnown) error = "请先核实并录入剩余课时";
   else if (
     !Number.isFinite(unitsPerLesson) ||

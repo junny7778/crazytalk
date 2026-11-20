@@ -538,65 +538,6 @@
   min-height: 36px;
   font-size: 12px;
 }
-.free-preview {
-  background: var(--ct-white);
-  padding: 24px;
-}
-.free-brand {
-  font-size: 22px;
-  color: var(--ct-brand-700);
-  font-weight: 600;
-  border-bottom: 1px solid var(--ct-brand-200);
-  padding-bottom: 20px;
-  margin-bottom: 24px;
-}
-.free-brand span {
-  display: block;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ct-gray-500);
-  margin-top: 4px;
-}
-.free-preview h2 {
-  font-size: 22px;
-}
-.free-preview p {
-  color: var(--ct-gray-700);
-  font-size: 12px;
-  margin-top: 4px;
-}
-.free-bio {
-  line-height: 1.8;
-  margin: 20px 0 !important;
-}
-.free-days {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 8px;
-  margin: 16px 0 20px;
-}
-.free-days > div {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-.free-days strong {
-  font-size: 12px;
-}
-.free-days small {
-  font-size: 10px;
-  margin-bottom: 6px;
-}
-.free-days span {
-  padding: 4px 8px;
-  background: var(--ct-brand-50);
-  color: var(--ct-brand-800);
-  border-radius: 4px;
-  font-size: 11px;
-  width: 100%;
-}
 .no-columns {
   grid-column: 2;
   grid-row: 2 / span 26;
@@ -656,15 +597,6 @@
   }
   .schedule-date strong {
     min-width: 150px;
-  }
-  .free-preview {
-    padding: 8px;
-  }
-  .free-days {
-    gap: 4px;
-  }
-  .free-days span {
-    padding: 4px 1px;
   }
   .schedule-page > .page-heading {
     flex-wrap: wrap;

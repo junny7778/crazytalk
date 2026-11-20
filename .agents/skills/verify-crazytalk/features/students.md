@@ -15,3 +15,11 @@
 ## Gotchas
 
 姓名及数字会随演示操作改变。截图与断言基于本次操作前的值。导入按当前客服原表模板解析，当前导出含47列；姓名显示中文名，稳定学员ID用于更新，不能以同名或同手机号合并孩子。
+
+
+## ClassIn 账号共享余额（2026-11-20）
+
+以同一 UID 为共享单位：在关联账号先核实 UID，查看成员和余额，再确认共享；加课时无独立共享入口。
+验证两名学员绑定后显示同一余额；重复绑定不加余额；从任一成员充值、扣课和更正后另一成员同步；预约占用与取消释放不重复计算。
+历史导入多份余额不自动求和，成员不一致先核实；禁止单独带走共享余额。正式退费影响同账号全部成员，个人课程与购买流水仍可追溯。
+相关测试：studentAccount、sharedOrder、packageLifecycle.acceptance、scheduleCredits、businessEffects，以及 student-forms-v2、shared-credit-detail、schedule-workflows。

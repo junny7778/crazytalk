@@ -46,6 +46,8 @@ export async function verifyModules(origin: string, headers: Record<string, stri
   const teacherB = { ...sourceTeacher, id: randomUUID(), name: "专项老师乙", phone: "13911110002", classInUid: "99112", status: "在职" };
   await send({ type: "teacher.save", teacher: teacherA });
   await send({ type: "teacher.save", teacher: teacherB });
+  const bookingOwner = state.accounts.find(a=>a.roleId === "ops" && a.classInUid)!;
+  await send({type:"student.details.update",id:opening.id,patch:{owner:bookingOwner.name,ownerAccountId:bookingOwner.id},expected:{owner:opening.owner,ownerAccountId:opening.ownerAccountId}});
   await send({ type: "student.bindClassIn", id: opening.id, phone: "13911110003", uid: "99113" });
   await send({ type: "lesson.schedule", studentId: opening.id, teacherId: teacherA.id, slots: [{ date: "2026-12-21", time: "10:00" }], duration: 25, kind: "临时课", material: "专项教材", confirmedTeacher: true });
   let lesson = (await read()).lessons.find(l => l.studentId === opening.id)!;
@@ -53,18 +55,18 @@ export async function verifyModules(origin: string, headers: Record<string, stri
   lesson = (await read()).lessons.find(l => l.id === lesson.id)!;
   assert.equal(lesson.date, "2026-12-22");
   assert.equal(lesson.sync, "处理中");
-  await send({ type: "lesson.changeTeacher", studentId: opening.id, teacherId: teacherB.id, from: "2026-12-22", reason: "换师专项", confirmedTeacher: true });
-  assert.equal((await read()).lessons.find(l => l.id === lesson.id)!.teacherId, teacherB.id);
-  await send({ type: "teacher.leave", teacherId: teacherB.id, start: "2026-12-22T00:00", end: "2026-12-22T23:59", reason: "请假专项", cancelLessons: false });
+  await send({ type: "teacher.leave", teacherId: teacherA.id, start: "2026-12-22T00:00", end: "2026-12-22T23:59", reason: "请假专项", cancelLessons: false });
   state = await read();
-  assert.ok(state.leaves.some(l => l.teacherId === teacherB.id));
+  assert.ok(state.leaves.some(l => l.teacherId === teacherA.id));
   assert.equal(state.lessons.find(l => l.id === lesson.id)!.leaveFlag, true);
-  await send({ type: "teacher.offboard", teacherId: teacherB.id, confirmName: teacherB.name, reason: "离职专项" });
-  state = await read();
-  assert.equal(state.teachers.find(t => t.id === teacherB.id)!.status, "已离职");
-  assert.equal(state.lessons.find(l => l.id === lesson.id)!.status, "已取消");
-  assert.equal(state.students.find(s => s.id === opening.id)!.balance, 12);
-  for (const body of [{ phone: "13911110003", password: "Testing123!", consent: false, role: "student" }, { phone: "13911110003", consent: true, role: "student" }]) {
+  await send({type:"lesson.changeTeacher",studentId:opening.id,originalTeacherId:teacherA.id,reason:"换师专项"});
+  assert.equal((await read()).lessons.find(l=>l.id===lesson.id)!.status,"已取消");
+  assert.equal((await read()).lessons.find(l=>l.id===lesson.id)!.teacherId,teacherA.id);
+  await send({ type: "teacher.offboard", teacherId: teacherA.id, reason: "离职专项" });
+  state=await read();
+  assert.equal(state.teachers.find(t=>t.id===teacherA.id)!.status,"已离职");
+  assert.equal(state.students.find(s=>s.id===opening.id)!.balance,12);
+  for (const body of [{ phone: "invalid", name: "学员", role: "student" }, { phone: "13911110003", role: "student" }]) {
     const response = await fetch(origin + "/api/classin-account", { method: "POST", headers, body: JSON.stringify(body) });
     assert.equal(response.status, 400);
   }
@@ -90,18 +92,18 @@ export async function verifyModules(origin: string, headers: Record<string, stri
   state = await read();
   assert.equal(state.students.find(s => s.id === student.id)!.legacyComplaints, "历史投诉已核对");
   assert.ok(state.events.some(e => e.studentId === student.id && JSON.stringify(e).includes("导入历史更正")));
-  const lock = { type: "slot.lock", studentId: opening.id, slots: [{ teacherId: teacherA.id, date: "2026-12-28", time: "10:00" }], duration: 25, expiresAt: new Date(Date.now() + 1200).toISOString() };
+  const lock = { type: "slot.lock", studentId: opening.id, slots: [{ teacherId: teacherB.id, date: "2026-12-28", time: "10:00" }], duration: 25, expiresAt: new Date(Date.now() + 1200).toISOString() };
   await send(lock);
   await send({ ...lock, studentId: student.id }, 400);
   await new Promise(resolve => setTimeout(resolve, 1250));
   await send({ ...lock, studentId: student.id, expiresAt: new Date(Date.now() + 60000).toISOString() });
   state = await read();
-  assert.equal(state.slotLocks?.filter(l => l.teacherId === teacherA.id && l.date === "2026-12-28").length, 1);
-  assert.equal(state.slotLocks?.find(l => l.teacherId === teacherA.id && l.date === "2026-12-28")?.studentId, student.id);
+  assert.equal(state.slotLocks?.filter(l => l.teacherId === teacherB.id && l.date === "2026-12-28").length, 1);
+  assert.equal(state.slotLocks?.find(l => l.teacherId === teacherB.id && l.date === "2026-12-28")?.studentId, student.id);
   await send({ type: "slot.release", studentId: student.id });
   assert.equal((await read()).slotLocks?.some(l => l.studentId === student.id), false);
-  await send({ type: "teacher.save", teacher: { ...(await read()).teachers.find(t => t.id === teacherA.id), availabilityNote: "老师可用时间专项", availability: [{ day: 1, start: "09:00", end: "18:00" }] } });
-  assert.equal((await read()).teachers.find(t => t.id === teacherA.id)!.availabilityNote, "老师可用时间专项");
+  await send({ type: "teacher.save", teacher: { ...(await read()).teachers.find(t => t.id === teacherB.id), availabilityNote: "老师可用时间专项", availability: [{ day: 1, start: "09:00", end: "18:00" }] } });
+  assert.equal((await read()).teachers.find(t => t.id === teacherB.id)!.availabilityNote, "老师可用时间专项");
   const own: DemoState = await (await fetch(origin + "/api/state", { headers: teacherHeaders })).json();
   const ownTeacher = own.teachers[0];
   const savedAvailability = await fetch(origin + "/api/commands", { method: "POST", headers: teacherHeaders, body: JSON.stringify({ requestId: randomUUID(), command: { type: "teacher.save", teacher: { ...ownTeacher, availabilityNote: "老师自助提交专项" } } }) });

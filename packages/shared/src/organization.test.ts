@@ -91,16 +91,16 @@ it("已有本地学员随负责教务补齐队组，筛选命中且刷新后保�
 
 it("普通账号旧范围不再授权，管理员仍可访问全部，项目只筛选授权结果", () => {
  const data=createSeed(), account=data.accounts.find(a=>a.id==="u2")!;
- const student={...data.students[0], owner:account.name, project:"K12"};
+ const student={...data.students[0], owner:account.name, ownerAccountId:account.id, project:"K12"};
  for(const scope of ["本人负责", "K12", "project:pr0", "project-all:pr0"]){
    expect(studentInScope(data,student,scope,account)).toBe(false);
    expect(()=>transition(data,{type:"account.save",account:{...account,scope}})).toThrow("数据范围");
  }
  expect(studentInScope(data,student,"全部",data.accounts[0])).toBe(true);
- expect(studentInScope(data,{...student,owner:"Roma"},"全部",account)).toBe(true);
+ expect(studentInScope(data,{...student,owner:"Roma",ownerAccountId:"u3"},"全部",account)).toBe(true);
  expect(()=>transition(data,{type:"account.save",account:{...account,scope:"全部"}})).not.toThrow();
  expect(()=>transition(data,{type:"account.save",account:{...account,team:"",group:""}})).toThrow("分配");
- const rows=[student,{...student,project:"乐说"},{...student,owner:"Roma"}];
+ const rows=[student,{...student,project:"乐说"},{...student,owner:"Roma",ownerAccountId:"u3"}];
  const authorized=rows.filter(s=>studentInScope(data,s,"本组",account));
  expect(authorized).toHaveLength(2);
  expect(authorized.filter(s=>s.project==="K12")).toEqual([student]);
@@ -109,7 +109,7 @@ it("普通账号旧范围不再授权，管理员仍可访问全部，项目只�
 
 it("导入名册按名册队组隔离，Demo旧账号范围刷新后更新", () => {
  const data=createSeed(), account=data.accounts.find(a=>a.id==="u2")!;
- const student={...data.students[0],owner:account.name,roster:{key:"scope-test",row:1,fields:{"教务":account.name,"队别":"B队","组别":account.group!}}};
+ const student={...data.students[0],owner:account.name,ownerAccountId:undefined,roster:{key:"scope-test",row:1,fields:{"教务":account.name,"队别":"B队","组别":account.group!}}};
  expect(studentInScope(data,student,"本组",account)).toBe(false);
  student.roster.fields["队别"]=account.team!;
  expect(studentInScope(data,student,"本组",account)).toBe(true);

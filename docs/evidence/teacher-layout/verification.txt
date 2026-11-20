@@ -1,0 +1,2 @@
+PASS five sections and compact tag selection; grid/day modes mutually exclusive and preserve 10:00-11:00
+PASS create-save-edit fields roundtrip; edit-save-refresh retains detail, notes, tags, schedule

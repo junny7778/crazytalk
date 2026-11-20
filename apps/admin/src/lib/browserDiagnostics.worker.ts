@@ -5,6 +5,7 @@ export type BrowserDiagnostic = {
   updateSequence: number;
   pendingRequests: number;
   interaction: { blocked: boolean; dialogs: number; overlays: number };
+  errorCode?: "dom-remove-child" | "dom-insert-before" | "business-context-missing" | "update-depth" | "duplicate-root" | "other";
   errorKind?: "uncaught" | "rejection" | "update-depth" | "duplicate-root" | "react-boundary" | "console-error";
   frames?: { file: string; line: number; column: number }[];
   request?: { id: string; endpoint: "/api/me" | "/api/state"; phase: "start" | "response" | "rejected"; status?: number; elapsedMs?: number };

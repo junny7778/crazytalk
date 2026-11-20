@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
+import { commandSchema } from "./commandSchema";
 import { DEMO_TODAY, stateSchema, addDays } from "./model";
 
 describe("学员跟进自动关联", () => {
@@ -82,12 +83,12 @@ describe("学员跟进自动关联", () => {
   it("老师离职自动关联受影响课程，不额外扣减余额", () => {
     const before = createSeed();
     const teacher = before.teachers[0];
-    const changed = transition(before, {
+    const command = commandSchema.parse({
       type: "teacher.offboard",
       teacherId: teacher.id,
-      confirmName: teacher.name,
       reason: "离职",
-    }).data;
+    });
+    const changed = transition(before, command).data;
     expect(
       changed.tasks.some(
         (task) => task.sourceType === "teacher" && task.title.includes("离职"),

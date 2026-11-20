@@ -1,0 +1,10 @@
+.profile-card-layout { display:grid; gap:16px; }
+.profile-card-layout textarea { width:100%; }
+.profile-card-preview { padding:28px; border:1px solid var(--border, #ddd); background:white; color:#25313a; border-radius:12px; }
+.profile-card-preview p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; }
+.profile-card-preview img { width:160px; height:160px; object-fit:contain; }
+.teacher-card-image { display:block; width:100%; max-width:600px; height:auto; margin:0 auto; }
+
+.student-profile-content { display: grid; gap: 16px; }
+.student-profile-copy-row { display: flex; align-items: center; gap: 8px; }
+.student-profile-content textarea.student-profile-text { width: 100%; padding: 12px; border: 1px solid var(--ct-gray-200); border-radius: 8px; background: white; line-height: 1.65; color: var(--ct-gray-700); resize: vertical; }

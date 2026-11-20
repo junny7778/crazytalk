@@ -44,14 +44,7 @@ function mount(path = "/schedule?student=s4&teacher=t1&date=2026-11-02") {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
-  demoRepository.read().classInAccounts = [
-    {
-      id: "verified-test-account",
-      phone: "13800000000",
-      uid: "123456",
-      studentIds: demoRepository.read().students.map((student) => student.id),
-    },
-  ];
+  demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
   const fixture = demoRepository.read();
   fixture.students[2].name = "排课测试学员";
   fixture.students[2].chineseName = "排课测试学员";
@@ -205,14 +198,7 @@ describe("独立验收：教师时间与排课", () => {
 
   it("旧数据迁移保留余额、课程与原有分钟时段，不把新时间覆盖旧设置", () => {
     const data = createSeed();
-    data.classInAccounts = [
-      {
-        id: "verified-test-account",
-        phone: "13800000000",
-        uid: "123456",
-        studentIds: data.students.map((student) => student.id),
-      },
-    ];
+    data.classInAccounts = data.students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
     const teacher = data.teachers[0];
     const {
       availability: _a,
@@ -238,14 +224,7 @@ describe("独立验收：教师时间与排课", () => {
 
   it("老师已确认也不能把临时课安排到部分请假区间", () => {
     const data = createSeed();
-    data.classInAccounts = [
-      {
-        id: "verified-test-account",
-        phone: "13800000000",
-        uid: "123456",
-        studentIds: data.students.map((student) => student.id),
-      },
-    ];
+    data.classInAccounts = data.students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
     data.lessons = [];
     const teacher = data.teachers[0];
     teacher.availability = [];

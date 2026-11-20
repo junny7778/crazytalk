@@ -1,3 +1,7 @@
+import { useToast } from "@crazytalk/ui";
+import ClassInOperationFeedback from "../../components/ClassInOperationFeedback";
+import ClassInHandoverPreview from "../../components/ClassInHandoverPreview";
+import ClassInLinkForm from "../../components/ClassInLinkForm";
 import TeamGroupTree from "./TeamGroupTree";
 import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import AccountPasswordModal from "../../components/AccountPasswordModal";
@@ -108,7 +112,8 @@ const settingGroups = [
   { label: "系统管理", tabs: ["classin", "audit"] },
 ];
 export default function Settings() {
-  const { data, can, accountId } = useDemo();
+  const toast = useToast();
+  const { data, can, accountId, act } = useDemo();
   const navigate = useNavigate();
   const run = useBusinessAction();
   const [params, setParams] = useSearchParams();
@@ -137,6 +142,8 @@ export default function Settings() {
   const [draftRole, setDraftRole] = useState<Role | null>(null);
   const [roleConfirm, setRoleConfirm] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
+  const [classInTargetId, setClassInTargetId] = useState("");
+  const classInTarget = data.accounts.find(a => a.id === classInTargetId);
   const [initialPassword, setInitialPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordTarget, setPasswordTarget] = useState<Account | null>(null);
@@ -435,6 +442,7 @@ export default function Settings() {
                 </Button>
               }
             >
+              <ClassInOperationFeedback/>
               <div className="toolbar">
                 <SearchInput
                   value={query}
@@ -449,6 +457,7 @@ export default function Settings() {
                       <th>姓名</th>
                       <th>登录账号</th>
                       <th>角色</th><th>数据范围</th><th>队伍</th><th>组别</th>
+                      <th>ClassIn 账号</th>
                       <th>负责学员</th>
                       <th>状态</th>
                       <th />
@@ -472,6 +481,19 @@ export default function Settings() {
                                 ? "全部数据"
                                 : scopeLabel(data.catalog, a.scope)}
                           </td><td>{a.team || "—"}</td><td>{a.group || "—"}</td>
+                          <td>
+                            {["ops", "tm"].includes(a.roleId) ? a.classInUid ? (
+                              <div className="stack" style={{ gap: 4 }}>
+                                <span className="muted">已关联</span>
+                                <span>{a.classInAccount || "账号已关联"}</span>
+                              </div>
+                            ) : (
+                              <div className="row">
+                                <span className="muted">未关联</span>
+                                <Button size="xs" variant="ghost" disabled={!a.enabled} onClick={() => setClassInTargetId(a.id)}>关联</Button>
+                              </div>
+                            ) : "—"}
+                          </td>
                           <td>
                             {
                               data.students.filter((s) => s.owner === a.name)
@@ -850,10 +872,10 @@ export default function Settings() {
                 <Tabs
                   value={catalogType}
                   onChange={(v) => {
-                    if (v === "教材" || v === "反馈分类" || v === "SO" || v === "队伍")
+                    if (v === "教材" || v === "反馈分类" || v === "SO" || v === "队伍" || v === "老师标签")
                       setCatalogType(v);
                   }}
-                  items={["教材", "反馈分类", "SO", "队伍"].map((v) => ({
+                  items={["教材", "反馈分类", "SO", "队伍", "老师标签"].map((v) => ({
                     value: v,
                     label: v === "队伍" ? "队伍与组别" : v,
                   }))}
@@ -866,7 +888,12 @@ export default function Settings() {
                   placeholder="搜索名称"
                 />
               </div>
-              {tab === "basics" && catalogType === "队伍" ? (
+              {tab === "basics" && catalogType === "老师标签" ? (
+                <div className="stack" aria-label="老师标签库">{data.catalog.filter(t=>t.type==="老师标签" && t.name.includes(query)).map(tag=><article key={tag.id} className="inset">
+                  <div className="row wrap"><strong>{tag.name}</strong><span>{tag.tagCategory || "其他"}</span><span>{({green:"绿色 · 优势",yellow:"黄色 · 需关注",red:"红色 · 风险",purple:"紫色 · 特色"})[tag.tagColor || "green"]}</span><Badge tone={tag.enabled ? "success" : "neutral"}>{tag.enabled ? "启用" : "已停用"}</Badge><Button size="sm" onClick={()=>openEntry({...tag})}>编辑</Button><Button size="sm" onClick={()=>run({type:"catalog.save",entry:{...tag,enabled:!tag.enabled}})}>{tag.enabled ? "停用" : "启用"}</Button></div>
+                  <p>{tag.tagMeaning || "未填写释义"}</p><p>{tag.tagExample}</p><small>{tag.tagAdvice}</small>
+                </article>)}</div>
+              ) : tab === "basics" && catalogType === "队伍" ? (
                 <TeamGroupTree catalog={data.catalog} query={query}
                   onEdit={value => openEntry({...value})}
                   onAdd={team => openEntry({id: `c${Date.now()}`, type: "组别", parentId: team.id, name: "", detail: "", enabled: true})}
@@ -1187,10 +1214,29 @@ export default function Settings() {
       >
         <p>离开后，本次尚未保存的修改会丢失。</p>
       </Modal>
+      {classInTarget && <Modal
+        open
+        title="关联 ClassIn 账号"
+        width={480}
+        onClose={() => setClassInTargetId("")}
+      >
+        <ClassInLinkForm
+          key={classInTarget.id}
+          role="staff"
+          targetId={classInTarget.id}
+          name={classInTarget.name}
+          phone={classInTarget.classInAccount || classInTarget.phone}
+          roleLabel={data.roles.find(r => r.id === classInTarget.roleId)?.name || "团队成员"}
+          onSave={async (classInUid, classInAccount) => {
+            await act({type:"account.save", account:{...classInTarget, classInUid, classInAccount}});
+            setClassInTargetId(current => current === classInTarget.id ? "" : current);
+          }}
+        />
+      </Modal>}
       {passwordTarget && <AccountPasswordModal key={passwordTarget.id} id={passwordTarget.id} name={passwordTarget.name} onClose={() => setPasswordTarget(null)} />}
       <Modal
         open={!!account}
-        onClose={() => requestClose(() => setAccount(null), accountDirty)}
+        onClose={() => passwordSaving ? setAccount(null) : requestClose(() => setAccount(null), accountDirty)}
         title={
           data.accounts.some((a) => a.id === account?.id)
             ? "编辑团队账号"
@@ -1199,19 +1245,20 @@ export default function Settings() {
         footer={
           <>
             <Button
-              onClick={() => requestClose(() => setAccount(null), accountDirty)}
+              onClick={() => passwordSaving ? setAccount(null) : requestClose(() => setAccount(null), accountDirty)}
             >
               取消
             </Button>
             <Button
               variant="primary"
+              loading={passwordSaving}
               disabled={
                 passwordSaving ||
                 (!savedAccount && !!passwordError(initialPassword, confirmPassword)) ||
                 !account?.name.trim() ||
                 !account.phone.trim() ||
                 (!account.enabled &&
-                  (data.students.some((s) => s.owner === account.name) ||
+                  (data.students.some((s) => s.ownerAccountId === account.id) ||
                     data.feedback.some(
                       (f) => f.owner === account.name && f.status !== "已完成",
                     )) &&
@@ -1222,20 +1269,20 @@ export default function Settings() {
                 setPasswordSaving(true); setPasswordSaveError("");
                 try {
                   if (!savedAccount && !businessMode()) await setDemoPassword(account.id, initialPassword);
-                  await run({ type: "account.save", account, ...(businessMode() && !savedAccount ? { initialPassword } : {}), handoverTo: handover || undefined }, () => {
-                    setAccount(null); setInitialPassword(""); setConfirmPassword("");
-                  });
+                  const result = await act({ type: "account.save", account, ...(businessMode() && !savedAccount ? { initialPassword } : {}), handoverTo: handover || undefined });
+                  toast(result.message);
+                  setAccount(null); setInitialPassword(""); setConfirmPassword("");
                 } catch (cause) { setPasswordSaveError(cause instanceof Error ? cause.message : "设置密码失败"); }
                 finally { setPasswordSaving(false); }
               }}
             >
-              保存账号
+              {passwordSaving ? (handover ? "正在交接" : "正在保存") : "保存账号"}
             </Button>
           </>
         }
       >
         {account && (
-          <div className="stack">
+          <div {...(passwordSaving ? {inert:""}: {})} className="stack">
             <div className="form-grid">
               <Field label="姓名" required>
                 <input
@@ -1304,7 +1351,7 @@ export default function Settings() {
               启用账号
             </label>
             {!account.enabled &&
-              (data.students.some((s) => s.owner === account.name) ||
+              (data.students.some((s) => s.ownerAccountId === account.id) ||
                 data.feedback.some(
                   (f) => f.owner === account.name && f.status !== "已完成",
                 )) && (
@@ -1313,7 +1360,7 @@ export default function Settings() {
                     <AlertTriangle size={18} />
                     仍负责{" "}
                     {
-                      data.students.filter((s) => s.owner === account.name)
+                      data.students.filter((s) => s.ownerAccountId === account.id)
                         .length
                     }{" "}
                     位学员、
@@ -1325,6 +1372,7 @@ export default function Settings() {
                     }{" "}
                     条处理中的反馈，请先选择接手人。
                   </div>
+                  <ClassInHandoverPreview studentIds={data.students.filter(s=>s.ownerAccountId===account.id).map(s=>s.id)} ownerId={handover}/>
                   <Field label="转交给" required>
                     <Select
                       value={handover}
@@ -1332,9 +1380,9 @@ export default function Settings() {
                     >
                       <option value="">选择接手人</option>
                       {data.accounts
-                        .filter((a) => a.id !== account.id && a.enabled)
+                        .filter((a) => a.id !== account.id && a.enabled && a.roleId === "ops")
                         .map((a) => (
-                          <option key={a.id} value={a.name}>
+                          <option key={a.id} value={a.id}>
                             {a.name}
                           </option>
                         ))}
@@ -1601,6 +1649,13 @@ export default function Settings() {
                 </Select>
               </Field>
             )}
+            {entry.type === "老师标签" && <>
+              <Field label="标签分类"><input value={entry.tagCategory || ""} onChange={e=>setEntry({...entry,tagCategory:e.target.value})}/></Field>
+              <Field label="标签颜色"><Select value={entry.tagColor || "green"} onValueChange={value=>{const color=(["green","yellow","red","purple"] as const).find(c=>c===value);if(color)setEntry({...entry,tagColor:color});}}><option value="green">绿色 · 优势</option><option value="yellow">黄色 · 需关注</option><option value="red">红色 · 风险</option><option value="purple">紫色 · 特色</option></Select></Field>
+              <Field label="标签释义"><textarea value={entry.tagMeaning || ""} onChange={e=>setEntry({...entry,tagMeaning:e.target.value})}/></Field>
+              <Field label="具体表现"><textarea value={entry.tagExample || ""} onChange={e=>setEntry({...entry,tagExample:e.target.value})}/></Field>
+              <Field label="匹配处理说明" hint="说明供教务参考；自动匹配规则按标准标签执行，新建标签不会仅凭名称产生规则。"><textarea value={entry.tagAdvice || ""} onChange={e=>setEntry({...entry,tagAdvice:e.target.value})}/></Field>
+            </>}
             {entry.type === "组别" && <Field label="所属队伍"><input readOnly value={data.catalog.find(t => t.id === entry.parentId)?.name || ""}/></Field>}
             {entry.type === "反馈分类" && (
               <div className="settings-category-context">

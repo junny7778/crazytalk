@@ -236,12 +236,13 @@ describe("学员资料与历史分离 V4", () => {
 
 it("受限编辑读取脱敏手机号，修改姓名不覆盖真实手机号", async () => {
   const original = structuredClone(demoRepository.read().students[0]);
+  demoRepository.read().accounts.push({id:"masked-editor-account",name:"脱敏编辑",phone:"",roleId:"masked-editor",enabled:true,scope:"全部"});
   demoRepository.read().roles.push({ id: "masked-editor", name: "脱敏编辑", description: "专项验证", permissions: ["student.view", "student.edit"], scope: "全部" });
   function RestrictedEditor() {
     const { roleId, setRole } = useDemo();
     return roleId === "masked-editor"
       ? <StudentProfileEditor student={{ ...original, phone: original.phone ? `****${original.phone.slice(-4)}` : "" }} onClose={() => {}} />
-      : <button onClick={() => setRole("masked-editor")}>切换受限身份</button>;
+      : <button onClick={() => setRole("masked-editor",false,"masked-editor-account")}>切换受限身份</button>;
   }
   mount(<RestrictedEditor />);
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "切换受限身份" })); });

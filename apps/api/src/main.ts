@@ -1,3 +1,4 @@
+import { ClassInClassesController } from "./integrations/classes.controller";
 import "reflect-metadata";
 import "dotenv/config";
 import { config } from "dotenv";
@@ -66,6 +67,7 @@ let workerWork: Promise<void> | undefined;
     IntakeController,
     FilesController,
     ClassInAccountController,
+    ClassInClassesController,
     ClassInWebhookController,
   ],
 })

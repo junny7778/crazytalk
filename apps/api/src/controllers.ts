@@ -33,6 +33,7 @@ import { applyBusinessEffects } from "../../../packages/shared/src/businessEffec
 import { loadClassInConfiguration } from "./integrations/credentials";
 import { ClassInClient } from "./integrations/classin";
 import { retryClassInLesson } from "./integrations/worker";
+import { commandOperationResult, resumeCommandOperation } from "./integrations/operation-result";
 import { queueClassInChanges } from "./integrations/outbox";
 import { undoSchema, undoConfirmation } from "./undo";
 import {
@@ -332,6 +333,46 @@ export class BusinessController {
       { timeout: 30000 },
     );
   }
+  @Get("classin-operations") async operations(@Req() req: IncomingMessage) {
+    const identity = await requireIdentity(req);
+    const state = await readState();
+    const scoped = scopeState(state, identity);
+    const jobs = await database.classInJob.findMany({where:{operationId:{not:null},status:{notIn:["completed","superseded"]}}});
+    const ids = [...new Set([...jobs.map(j=>j.operationId!), ...state.students.flatMap(s=>s.classInChange?.operationId?[s.classInChange.operationId]:[])])];
+    const commands = await database.appliedCommand.findMany({where:{id:{in:ids},accountId:identity.accountId},orderBy:{createdAt:"desc"}});
+    const results = [];
+    for (const command of commands) {
+      const students = [...new Set([...jobs.filter(j=>j.operationId===command.id).flatMap(j=>{
+        const id = j.lessonId ? state.lessons.find(l=>l.id===j.lessonId)?.studentId : z.object({studentId:z.string()}).parse(j.payload).studentId;
+        return id?[id]:[];
+      }), ...state.students.filter(s=>s.classInChange?.operationId===command.id).map(s=>s.id)])];
+      if (!students.length || students.some(id=>!scoped.students.some(s=>s.id===id))) continue;
+      results.push({id:command.id, type:z.object({type:z.string()}).parse(command.command).type, studentIds:students, ...await commandOperationResult(database,command,state)});
+    }
+    return results;
+  }
+
+  @Post("commands/:id/continue") async continueOperation(@Req() req: IncomingMessage, @Param("id") id: string) {
+    const identity = await requireIdentity(req, true);
+    return database.$transaction(async tx=>{
+      await lockBusiness(tx);
+      const command=await tx.appliedCommand.findUnique({where:{id}});
+      if (!command || command.accountId!==identity.accountId) throw new ForbiddenException();
+      const state=await readState(tx);
+      try { await resumeCommandOperation(tx,command,state,identity); }
+      catch(error) { throw new BadRequestException(error instanceof Error?error.message:"无法继续操作"); }
+      return {operationId:id};
+    });
+  }
+
+  @Get("commands/:id") async commandResult(@Req() req: IncomingMessage, @Param("id") id: string) {
+    const identity = await requireIdentity(req);
+    const command = await database.appliedCommand.findUnique({ where: { id } });
+    if (!command || command.accountId !== identity.accountId) throw new ForbiddenException();
+    const state = await readState();
+    return { ...await commandOperationResult(database, command, state), data: await accountState(database, state, identity) };
+  }
+
   @Post("commands") async command(
     @Req() req: IncomingMessage,
     @Body() input: unknown,
@@ -362,7 +403,9 @@ export class BusinessController {
               !matchesStoredCommand(previous.command, command)
             )
               throw new ConflictException("请求标识已被其他操作使用");
+            await resumeCommandOperation(tx, previous, state, identity);
             return {
+              operationId: previous.id,
               message: previous.message,
               data: await accountState(tx, state, identity),
               undoToken:
@@ -373,6 +416,8 @@ export class BusinessController {
             };
           }
           assertCommandAccess(state, identity, command);
+          if (command.type === "lesson.changeTeacher" && state.lessons.some(l=>l.studentId===command.studentId && l.teacherId===command.originalTeacherId && l.status==="已取消" && l.syncState && l.syncState!=="completed"))
+            throw new BadRequestException("原老师部分课程尚未取消，请先完成原操作，暂时无法重新排课");
           if (command.type === "account.save") {
             if (
               command.account.roleId !== "admin" &&
@@ -476,7 +521,9 @@ export class BusinessController {
             const {
               phone,
               notes,
-              bio,
+              teachingPhilosophy,
+              educationBackground,
+              classInAccount,
               photo,
               photos,
               introVideo,
@@ -492,7 +539,9 @@ export class BusinessController {
                 ...appliedCommand.teacher,
                 phone,
                 notes,
-                bio,
+                teachingPhilosophy,
+              educationBackground,
+              classInAccount,
                 photo,
                 photos,
                 introVideo,
@@ -511,6 +560,10 @@ export class BusinessController {
             ...appliedCommand,
             operator: identity.name,
           });
+          if (command.type === "student.bindClassIn") {
+            const change = result.data.students.find(s => s.id === command.id)?.classInChange;
+            if (change) { change.requestedByAccountId = identity.accountId; change.operationId = parsed.data.requestId; }
+          }
           if (command.type === "lesson.retry") {
             const lesson = result.data.lessons.find(
               (item) => item.id === command.id,
@@ -520,7 +573,7 @@ export class BusinessController {
             result.message = "已加入同步队列";
           }
           applyBusinessEffects(result.data, { ...command, operator: identity.name });
-          await queueClassInChanges(tx, state, result.data);
+          await queueClassInChanges(tx, state, result.data, parsed.data.requestId);
           await writeState(tx, result.data, state);
           if (command.type === "account.save") {
             const account = result.data.accounts.find(
@@ -578,6 +631,7 @@ export class BusinessController {
             },
           });
           return {
+            operationId: (await tx.classInJob.count({where:{operationId:parsed.data.requestId}})) || result.data.students.some(s=>s.classInChange?.operationId===parsed.data.requestId) ? parsed.data.requestId : undefined,
             message: result.message,
             data: await accountState(tx, result.data, identity),
             undoToken:

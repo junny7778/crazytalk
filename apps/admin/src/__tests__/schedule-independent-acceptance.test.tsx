@@ -53,7 +53,7 @@ function fixture() {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
-  demoRepository.read().classInAccounts = [{ id: "verified-test-account", phone: "13800000000", uid: "123456", studentIds: demoRepository.read().students.map(student => student.id) }];
+  demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index) => ({id:"verified-"+student.id,phone:"",uid:String(990000+index),studentIds:[student.id]}));
   vi.stubGlobal(
     "ResizeObserver",
     class {

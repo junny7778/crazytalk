@@ -227,8 +227,7 @@ describe("student digital profiles", () => {
     const changed = transition(before, {
       type: "lesson.changeTeacher",
       studentId: learner.id,
-      teacherId: "t2",
-      from: "2026-11-01",
+      originalTeacherId: learner.teacherId,
       reason: "家长申请",
     }).data.students[0];
     expect(changed.originalTeacher).toBe("原表老师");

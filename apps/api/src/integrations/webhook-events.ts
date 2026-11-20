@@ -1,3 +1,4 @@
+import { applyClassInfoEvent } from "./class-info";
 import { z } from "zod";
 import { Transaction, readState, writeState } from "../store";
 import { transition } from "../../../../packages/shared/src/domain";
@@ -12,6 +13,9 @@ const memberSchema = z.object({
 const clock = (seconds: number) => new Date(seconds * 1000 + 8 * 3600000).toISOString().slice(11, 16);
 
 export async function applyClassInEvent(tx: Transaction, input: unknown) {
+  const command = z.object({Cmd:z.union([z.string(),z.number()])}).parse(input).Cmd;
+  if (command === "Test" || command === "test") return null;
+  if (["eeoCourseInfoChange","eeoClassInfoChange","eeoCourseStudentChange","eeoClassStudentChange"].includes(String(command))) return applyClassInfoEvent(tx,input);
   const event = eventSchema.parse(input);
   const mapping = await tx.classInLesson.findFirst({ where: { courseId: event.CourseID, classId: event.ClassID } });
   if (!mapping) return "待关联外部课节";

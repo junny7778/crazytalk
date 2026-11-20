@@ -45,7 +45,44 @@ async function persistMedia(value: unknown): Promise<unknown> {
   }
   return value;
 }
-export async function executeBusinessCommand(command: Command) {
-  const result = await businessRequest("/commands", "POST", { command: await persistMedia(command), requestId: crypto.randomUUID() });
-  return { message: z.string().parse(result.message), data: stateSchema.parse(result.data), undoToken: z.string().optional().parse(result.undoToken) };
+const commandFlights = new Map<string, Promise<CommandResult>>();
+type CommandResult = { message: string; data: z.infer<typeof stateSchema>; undoToken?: string };
+export async function waitForBusinessOperation(id: string, acceptState?: (data: z.infer<typeof stateSchema>) => void): Promise<CommandResult> {
+  const deadline = Date.now() + 120000;
+  while (true) {
+    let raw;
+    try { raw = await businessRequest("/commands/" + id, "GET", undefined, AbortSignal.timeout(15000)); }
+    catch { throw new Error("暂时无法获取处理结果，请稍后查看；已提交的操作会继续处理。"); }
+    const result = z.object({ status: z.enum(["processing", "completed", "failed"]), message: z.string(), data: stateSchema }).parse(raw);
+    acceptState?.(result.data);
+    if (result.status === "completed") return result;
+    if (result.status === "failed") throw new Error(result.message);
+    if (Date.now() >= deadline) throw new Error("操作仍在处理中，可以关闭页面，稍后查看结果。");
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+}
+export async function executeBusinessCommand(command: Command, acceptState?: (data: z.infer<typeof stateSchema>) => void) {
+  // Keep only a digest and request ID, never account passwords or command contents.
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(command))))).map(v => v.toString(16).padStart(2, "0")).join("");
+  const key = "crazytalk-operation:" + accountId + ":" + digest;
+  const flight = commandFlights.get(key);
+  if (flight) return flight;
+  const pending = (async () => {
+    const previousId = localStorage.getItem(key);
+    const requestId = previousId || crypto.randomUUID();
+    localStorage.setItem(key, requestId);
+    let result;
+    try { result = await businessRequest("/commands", "POST", { command: await persistMedia(command), requestId }, AbortSignal.timeout(30000)); }
+    catch (error) {
+      if (!previousId && error instanceof BusinessRequestError && error.status >= 400 && error.status < 500) localStorage.removeItem(key);
+      throw error;
+    }
+    const saved = { message: z.string().parse(result.message), data: stateSchema.parse(result.data), undoToken: z.string().optional().parse(result.undoToken) };
+    acceptState?.(saved.data);
+    const completed = result.operationId ? await waitForBusinessOperation(z.string().parse(result.operationId), acceptState) : saved;
+    localStorage.removeItem(key);
+    return { ...completed, undoToken: saved.undoToken };
+  })();
+  commandFlights.set(key, pending);
+  try { return await pending; } finally { commandFlights.delete(key); }
 }

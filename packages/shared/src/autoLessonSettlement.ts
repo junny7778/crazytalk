@@ -30,7 +30,7 @@ export function autoSettleLessons(
   for (const lesson of input.lessons) {
     if (!canAutoSettleLesson(lesson, now)) continue;
     const memberOrders = input.orders?.filter(order => order.studentIds.includes(lesson.studentId)) ?? [];
-    const order = lesson.orderId ? memberOrders.find(item => item.id === lesson.orderId)
+    const order = lesson.orderId ? input.orders?.find(item => item.id === lesson.orderId)
       : memberOrders.length === 1 ? memberOrders[0] : undefined;
     if (order) {
       const available = balances.get(order.id) ?? 0;

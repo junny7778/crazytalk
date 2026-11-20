@@ -34,7 +34,7 @@ export function demoClassInLookup(): Plugin {
             return reply(400, { error: "请填写有效的手机号或邮箱" });
 
           const hash = createHash("sha256").update(phone).digest();
-          return reply(200, { uid: `9${hash.readBigUInt64BE()}`, demo: true });
+          return reply(200, { uid: `9${hash.readBigUInt64BE()}`, addedToInstitution: false, demo: true });
         } catch {
           return reply(400, { error: "无效的查询请求" });
         }

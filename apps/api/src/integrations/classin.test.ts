@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { ClassInClient, ClassInUncertainError } from "./classin";
 const config = { CLASSIN_API_BASE: "https://api.eeo.cn", CLASSIN_SID: "test", CLASSIN_SECRET: "secret" };
@@ -11,23 +11,41 @@ describe("ClassIn boundary", () => {
     const request: typeof fetch = async () => new Response(JSON.stringify({ error_info: { errno: 102 } }));
     await expect(new ClassInClient(config, request).checkCredentials()).rejects.toThrow("机构凭证验证失败");
   });
-  it.each([1, 135, 461])("registers or obtains existing UID with official contract: %s", async errno => {
+  it.each([
+    ["teacher", 1, 135], ["teacher", 133, 461],
+    ["student", 1, 461], ["student", 133, 135],
+  ] as const)("links %s membership %s then obtains UID", async (role, membershipCode, uidCode) => {
+    const actions: string[] = [];
     const request: typeof fetch = async (url, init) => {
-      expect(String(url)).toBe("https://api.eeo.cn/partner/api/course.api.php?action=register");
+      const action = new URL(String(url)).searchParams.get("action")!;
+      actions.push(action);
       const body = new URLSearchParams(String(init?.body));
-      expect(body.get("email")).toBe("teacher@example.com");
-      expect(body.has("telephone")).toBe(false);
+      if (action !== "register") {
+        expect(body.get(role === "teacher" ? "teacherAccount" : "studentAccount")).toBe("person@example.com");
+        expect(body.get(role === "teacher" ? "teacherName" : "studentName")).toBe("Alice");
+        return new Response(JSON.stringify({ error_info: { errno: membershipCode }, data: 999 }));
+      }
+      expect(body.get("email")).toBe("person@example.com");
+      expect(body.get("md5pass")).toMatch(/^[a-f0-9]{32}$/);
       expect(body.has("password")).toBe(false);
-      expect(body.get("md5pass")).toBe(createHash("md5").update("initial123").digest("hex"));
-      expect(body.get("addToSchoolMember")).toBe("2");
-      return new Response(JSON.stringify({ error_info: { errno }, data: 12345 }));
+      expect(body.has("addToSchoolMember")).toBe(false);
+      return new Response(JSON.stringify({ error_info: { errno: uidCode }, data: 12345 }));
     };
-    await expect(new ClassInClient(config, request).registerAccount("teacher@example.com", "initial123", "teacher"))
-      .resolves.toEqual({ phone: "teacher@example.com", uid: "12345" });
+    await expect(new ClassInClient(config, request).linkAccount("person@example.com", "Alice", role))
+      .resolves.toEqual({ phone: "person@example.com", uid: "12345", addedToInstitution: membershipCode === 1 });
+    expect(actions).toEqual([role === "teacher" ? "addTeacher" : "addSchoolStudent", "register"]);
   });
-  it("does not bind when registration succeeds but institution membership fails", async () => {
-    const request: typeof fetch = async () => new Response(JSON.stringify({ error_info: { errno: 820 }, data: 12345 }));
-    await expect(new ClassInClient(config, request).registerAccount("13800138000", "initial123", "student")).rejects.toThrow("820");
+  it.each([113, 102, 845])("stops before register when adding member fails: %s", async errno => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({error_info:{errno}})));
+    await expect(new ClassInClient(config, request).linkAccount("13800138000", "Alice", "student"))
+      .rejects.toThrow(errno === 113 ? "该账号尚未注册" : String(errno));
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+  it.each([820, 1])("does not report association success without confirmed existing UID: %s", async errno => {
+    const request = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({error_info:{errno:1}})))
+      .mockResolvedValueOnce(new Response(JSON.stringify({error_info:{errno},data:12345})));
+    await expect(new ClassInClient(config, request).linkAccount("13800138000", "Alice", "teacher")).rejects.toThrow("未确认已有账号 UID");
   });
   it("signs requests and rejects explicit API errors", async () => {
     const request: typeof fetch = async (_url, init) => {
@@ -62,5 +80,24 @@ describe("ClassIn boundary", () => {
     expect(client.verifyWebhook(payload).eventKey).toHaveLength(64);
     expect(() => client.verifyWebhook(payload, (timestamp+601)*1000)).toThrow();
     expect(() => client.verifyWebhook({...payload, SafeKey:"0".repeat(32)})).toThrow();
+  });
+  it("AC-20 keeps teacher UID arrays in the body but excludes them and long values from signing", async () => {
+    const clock=vi.spyOn(Date,"now").mockReturnValue(1700000000000);
+    try {
+      const request:typeof fetch=async(_url,init)=>{
+        expect(JSON.parse(String(init?.body)).teacherUids).toEqual(["42"]);
+        expect(new Headers(init?.headers).get("X-EEO-SIGN")).toBe(createHash("md5").update("courseId=7&sid=test&timeStamp=1700000000&key=secret").digest("hex"));
+        return new Response(JSON.stringify({code:1,data:[]}));
+      };
+      await new ClassInClient(config,request).callV2("/course/addCourseTeacher",{courseId:7,teacherUids:["42"],description:"中".repeat(400)});
+    } finally {clock.mockRestore();}
+  });
+  it.each([1,133,30022])("AC-19 accepts confirmed teacher membership %s",async code=>{
+    const request:typeof fetch=async()=>new Response(JSON.stringify({code:1,data:[{teacherUid:42,code}]}));
+    await expect(new ClassInClient(config,request).addCourseTeacher("7","42")).resolves.toBeUndefined();
+  });
+  it("AC-19 rejects a failed member even when the outer response succeeds",async()=>{
+    const request:typeof fetch=async()=>new Response(JSON.stringify({code:1,data:[{teacherUid:42,code:387}]}));
+    await expect(new ClassInClient(config,request).addCourseTeacher("7","42")).rejects.toThrow("387");
   });
 });

@@ -84,12 +84,15 @@ it("空意向可排，未培训成人老师可为少儿安排且无需确认，�
   const { d } = mount();
   await select("19:00", d.teachers[0].name);
   expect(demoRepository.read().lessons).toHaveLength(0);
+  await testAct(async()=>{fireEvent.click(screen.getByRole("button",{name:"预览排课"}));});
+  expect(screen.getByRole("region",{name:"灵活排课预览"})).toBeTruthy();
+  expect(demoRepository.read().lessons).toHaveLength(0);
   const submit = screen.getByRole("button", { name: /确认排课/ });
   await testAct(async () => { fireEvent.click(submit); });
   expect(demoRepository.read().lessons).toHaveLength(1);
   expect(submit.hasAttribute("disabled")).toBe(true);
 });
-it("意向外可排，取消选择不新增，移除待确认课程不写入", async () => {
+it("意向外可排，取消选择不新增，移除待保存课程不写入", async () => {
   const f = fixture();
   f.intent.windows = [{ day: 2, start: "18:00", end: "19:00" }];
   render(
@@ -121,10 +124,10 @@ it("意向外可排，取消选择不新增，移除待确认课程不写入", a
     screen.getByRole("button", { name: "加入课表" }).hasAttribute("disabled"),
   ).toBe(false);
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
-  expect(screen.queryByRole("button", { name: /待确认 T\./ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /待保存 T\./ })).toBeNull();
   await select("19:00", f.d.teachers[0].name);
   await testAct(async () => { fireEvent.click(
-    screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ }),
+    screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ }),
   ); });
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "移除本节" })); });
   expect(demoRepository.read().lessons).toHaveLength(0);
@@ -133,7 +136,7 @@ it("拖动至原老师不可用时间，取消保留原课，选新老师后移�
   const { d } = mount();
   await select("19:00", d.teachers[0].name);
   const transfer = { setData: vi.fn(), effectAllowed: "" };
-  let source = screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ });
+  let source = screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ });
   await testAct(async () => { fireEvent.dragStart(source, { dataTransfer: transfer }); });
   await testAct(async () => { fireEvent.drop(
     screen.getByRole("button", { name: "2026-11-23 20:00 可排课" }),
@@ -141,9 +144,9 @@ it("拖动至原老师不可用时间，取消保留原课，选新老师后移�
   ); });
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
   expect(
-    screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ }),
+    screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ }),
   ).toBeTruthy();
-  source = screen.getByRole("button", { name: /2026-11-23 19:00 待确认/ });
+  source = screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ });
   await testAct(async () => { fireEvent.dragStart(source, { dataTransfer: transfer }); });
   await testAct(async () => { fireEvent.drop(
     screen.getByRole("button", { name: "2026-11-23 20:00 可排课" }),
@@ -155,7 +158,7 @@ it("拖动至原老师不可用时间，取消保留原课，选新老师后移�
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存修改" })); });
   expect(
     screen.getByRole("button", {
-      name: new RegExp(`2026-11-23 20:00 待确认 ${d.teachers[1].name}`),
+      name: new RegExp(`2026-11-23 20:00 待保存 ${d.teachers[1].name}`),
     }),
   ).toBeTruthy();
 });

@@ -69,7 +69,7 @@ export default function StudentCredits({
   }
   return (
     <div className="stack">
-      <Panel title="课时余额" action={can("credit.add") && <Button size="sm" onClick={() => onAction("credit")}>加课时</Button>}>
+      <Panel title="课时余额" action={can("credit.add") && <Button variant="primary" size="sm" onClick={() => onAction("credit")}>加课时</Button>}>
         {memberOrders.length ? <div className="table-wrap"><table>
           <thead><tr><th>剩余课时</th><th>使用学员</th></tr></thead>
           <tbody>{memberOrders.map(order => <tr key={order.id}>
@@ -172,7 +172,7 @@ export default function StudentCredits({
         action={
           can("credit.add") && (
             <div className="row">
-              <Button size="sm" onClick={() => { setDeductUnits(""); setDeductReason(""); setDeductError(""); setDeductOpen(true); }}>扣减课时</Button>
+              <Button variant="primary" size="sm" onClick={() => { setDeductUnits(""); setDeductReason(""); setDeductError(""); setDeductOpen(true); }}>扣减课时</Button>
             </div>
           )
         }

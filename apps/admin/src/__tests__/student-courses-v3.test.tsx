@@ -212,6 +212,24 @@ describe("学员课程列表、日历与详情", () => {
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "回到本周" })); });
     expect(screen.getByText("2026-10-26 — 2026-11-01")).toBeTruthy();
   });
+  it("周历无结果时收起网格，并区分空周与筛选无结果", async () => {
+    mount();
+    const click = async (name: string) => {
+      await testAct(async () => {
+        fireEvent.click(screen.getByRole("button", { name }));
+      });
+    };
+    await click("日历");
+    await choose("课程状态", "已取消");
+    await click("下一周");
+    expect(screen.getByText("当前筛选条件下没有课程")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "学员课程周历" })).toBeNull();
+    await click("清除筛选");
+    expect(screen.getByRole("region", { name: "学员课程周历" })).toBeTruthy();
+    await click("下一周");
+    expect(screen.getByText("该周暂无课程")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "学员课程周历" })).toBeNull();
+  });
   it("日期、老师和状态筛选在列表日历间保持，并能清除和校验日期范围", async () => {
     mount();
     await choose("上课老师", "T. Destiny");

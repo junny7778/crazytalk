@@ -4,7 +4,7 @@ import { useDemo } from "@crazytalk/shared/react";
 import { Badge, Button, Modal, Panel } from "@crazytalk/ui";
 import { accountBalanceAlignmentIssue, accountBalanceReviewIssue, sharedBalanceGroup, type Student } from "@crazytalk/shared";
 
-export default function StudentClassIn({ student }: { student: Student }) {
+export default function StudentClassIn({ student, shortcut = false }: { student: Student; shortcut?: boolean }) {
   const { data, act, can, preview } = useDemo();
   const linked = data.classInAccounts?.find((a) =>
     a.studentIds.includes(student.id),
@@ -22,11 +22,11 @@ export default function StudentClassIn({ student }: { student: Student }) {
   function close(){setEditing(false);}
   return (
     <>
-      <Panel
+      {shortcut ? (can("classin_account.link") && <Button variant="ghost" className="schedule-bind-link" size="sm" disabled={preview || !!student.classInChange} onClick={open}>绑定账号</Button>) : <Panel
         title="ClassIn 账号"
         action={
           can("classin_account.link") && (
-            <Button size="sm" disabled={preview || !!student.classInChange} onClick={open}>
+            <Button variant="primary" size="sm" disabled={preview || !!student.classInChange} onClick={open}>
               {linked ? "编辑关联" : "关联账号"}
             </Button>
           )
@@ -63,7 +63,7 @@ export default function StudentClassIn({ student }: { student: Student }) {
             ))}</span>
           </div>
         )}
-      </Panel>
+      </Panel>}
       <Modal
         open={editing}
         title="关联 ClassIn 账号"

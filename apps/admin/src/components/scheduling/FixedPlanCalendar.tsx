@@ -30,10 +30,12 @@ export function FixedPlanCalendar({
   intent,
   onClose,
   onComplete,
+  onBusyChange,
 }: {
   studentId: string;
   plan: FixedPlan;
   intent: ScheduleIntent;
+  onBusyChange?: (busy: boolean) => void;
   onClose: () => void;
   onComplete: (count: number, teachers: string) => void;
 }) {
@@ -218,6 +220,7 @@ export function FixedPlanCalendar({
   const [scheduleRevision] = useState(() => data.students.find(s => s.id === studentId)?.scheduleRevision ?? 0);
   const credits = useScheduleCredits(studentId, intent.duration, ready.length);
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => { onBusyChange?.(submitting); }, [submitting, onBusyChange]);
   const submitLock = useRef(false);
   async function submit() {
     if (submitLock.current) return;
@@ -334,8 +337,10 @@ export function FixedPlanCalendar({
         </span>
         <span>
           <i className="unavailable" />
-          不可排课
+          不可安排
         </span>
+        <span><i className="booked" />已排课</span>
+        <span><i className="intent" />学员意向</span>
         <small>拖动课程仅调整本节；需在学员意向内且有老师可用。</small>
       </div>
       <div className="fixed-calendar-scroll">
@@ -349,7 +354,7 @@ export function FixedPlanCalendar({
         >
           <div className="fixed-calendar-head">时间</div>
           {weekDates.map((date) => (
-            <div className="fixed-calendar-head" key={date}>
+            <div className={`fixed-calendar-head ${date === DEMO_TODAY ? "today" : ""}`} key={date}>
               {days[dayOf(date)]}
               <small>{date.slice(5)}</small>
             </div>
@@ -371,11 +376,15 @@ export function FixedPlanCalendar({
               const time = clock(start + i * 30);
               const canSchedule =
                 targetTeachers(date, time, dragged).length > 0;
+              const preferred = intent.windows.some((window) =>
+                window.day === dayOf(date) && time >= window.start &&
+                minutes(time) + intent.duration <= minutes(window.end),
+              );
               const targetKey = `${date}/${time}`;
               return (
                 <button
                   key={`${date}-${time}`}
-                  className={`fixed-empty-cell ${canSchedule ? "available" : "unavailable"} ${dropTarget === targetKey ? "drop-target" : ""}`}
+                  className={`fixed-empty-cell ${canSchedule ? "available" : "unavailable"} ${preferred ? "intent" : ""} ${dropTarget === targetKey ? "drop-target" : ""}`}
                   aria-label={`${date} ${time} ${canSchedule ? "可排课" : "不可排课"}`}
                   title={
                     canSchedule
@@ -402,7 +411,7 @@ export function FixedPlanCalendar({
                     setEditing(null);
                   }}
                 >
-                  {canSchedule ? "可排" : ""}
+                  {canSchedule ? "＋ 意向时间" : preferred ? "意向 · 不可安排" : ""}
                 </button>
               );
             }),
@@ -612,14 +621,14 @@ export function FixedPlanCalendar({
       <ClassInBookingPreview studentId={studentId} teacherIds={ready.map(row => row.teacherId)}/>
       {credits.node}
       </fieldset>
-      <div className="fixed-plan-footer">
+      <div className="fixed-plan-footer schedule-flow-actions">
         <span>
           尚未保存 · 本次可确认 {ready.length} 节
           {editable.length > ready.length
             ? `，剩余 ${editable.length - ready.length} 节待处理`
             : ""}
         </span>
-        <Button onClick={onClose}>{submitting ? "关闭" : "返回方案"}</Button>
+        <Button disabled={submitting} onClick={onClose}>返回调整</Button>
         <Button
           variant="primary"
           disabled={

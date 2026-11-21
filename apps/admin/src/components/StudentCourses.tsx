@@ -19,6 +19,8 @@ import {
   StudentLessonDrawer,
 } from "./StudentLessonDrawer";
 import "./student-courses.css";
+import "./weekly-calendar.css";
+import { CalendarStatusLegend, calendarLessonStatus } from "./CalendarStatusLegend";
 import "./student-statistics.css";
 
 function weekStart(date: string) {
@@ -37,7 +39,9 @@ export default function StudentCourses({
   onOpenLesson,
   onSchedule,
   onChangeTeacher,
+  timetableOnly = false,
 }: {
+  timetableOnly?: boolean;
   student: Student;
   onReschedule: (lessonId: string) => void;
   onOpenLesson?: (lessonId: string) => void;
@@ -95,6 +99,9 @@ export default function StudentCourses({
   const weekly = filtered.filter(
     (lesson) => lesson.date >= week && lesson.date <= weekEnd,
   );
+  const weekHasLessons = lessons.some(
+    (lesson) => lesson.date >= week && lesson.date <= weekEnd,
+  );
   const days = Array.from({ length: 7 }, (_, index) => addDays(week, index));
   const startHour = weekly.length
     ? Math.max(
@@ -143,31 +150,33 @@ export default function StudentCourses({
   }
   return (
     <div className="stack sc-courses">
-      <Panel title="课程安排">
-        <dl className="sc-arrangement-summary">
-          <div>
-            <dt>当前老师</dt>
-            <dd className="row wrap">
-              <strong>{summary.teacher.name || "暂未安排老师"}</strong>
-              {activeService &&
-                can("student.reschedule") &&
-                onChangeTeacher && (
-                  <Button size="sm" variant="ghost" onClick={onChangeTeacher}>
-                    换老师
-                  </Button>
-                )}
-            </dd>
-          </div>
-          <div>
-            <dt>上课时间</dt>
-            <dd>{summary.scheduleText || "暂无固定安排"}</dd>
-          </div>
-          <div>
-            <dt>周上课频次</dt>
-            <dd>{summary.frequencyText || "未填写"}</dd>
-          </div>
-        </dl>
-      </Panel>
+      {!timetableOnly && (
+        <Panel title="课程安排">
+          <dl className="sc-arrangement-summary">
+            <div>
+              <dt>当前老师</dt>
+              <dd className="row wrap">
+                <strong>{summary.teacher.name || "暂未安排老师"}</strong>
+                {activeService &&
+                  can("student.reschedule") &&
+                  onChangeTeacher && (
+                    <Button size="sm" variant="ghost" onClick={onChangeTeacher}>
+                      换老师
+                    </Button>
+                  )}
+              </dd>
+            </div>
+            <div>
+              <dt>上课时间</dt>
+              <dd>{summary.scheduleText || "暂无固定安排"}</dd>
+            </div>
+            <div>
+              <dt>周上课频次</dt>
+              <dd>{summary.frequencyText || "未填写"}</dd>
+            </div>
+          </dl>
+        </Panel>
+      )}
       <Panel
         title="课表"
         action={
@@ -296,7 +305,9 @@ export default function StudentCourses({
                 <table className="sc-lesson-table">
                   <thead>
                     <tr>
-                      <th>上课时间</th><th>时长</th><th>课程类型</th>
+                      <th>上课时间</th>
+                      <th>时长</th>
+                      <th>课程类型</th>
                       <th>老师</th>
                       <th>教材</th>
                       <th>状态</th>
@@ -316,8 +327,9 @@ export default function StudentCourses({
                           >
                             {lesson.date} {lesson.time}
                           </button>
-                          </td><td>{lesson.duration} 分钟</td><td>{lesson.kind}
                         </td>
+                        <td>{lesson.duration} 分钟</td>
+                        <td>{lesson.kind}</td>
                         <td>{teacherName(data, lesson.teacherId)}</td>
                         <td>{lesson.material || "未填写"}</td>
                         <td>
@@ -358,6 +370,15 @@ export default function StudentCourses({
               />
             )}
           </>
+        ) : weekly.length === 0 ? (
+          <EmptyState
+            title={weekHasLessons ? "当前筛选条件下没有课程" : "该周暂无课程"}
+            description={
+              weekHasLessons
+                ? "可以清除筛选，查看该周课程。"
+                : "可以切换周次，或返回列表查看其他日期。"
+            }
+          />
         ) : (
           <>
             <div className="sc-calendar-scroll">
@@ -439,7 +460,7 @@ export default function StudentCourses({
                           </strong>
                           <span>
                             {teacherName(data, lesson.teacherId)} ·{" "}
-                            {lesson.status}
+                            {calendarLessonStatus(lesson.status)}
                           </span>
                         </button>
                       ))}
@@ -448,221 +469,233 @@ export default function StudentCourses({
                 })}
               </div>
             </div>
-            {weekly.length === 0 && (
-              <EmptyState
-                title={
-                  activeFilters ? "该周暂无符合条件的课程" : "该周暂无课程"
-                }
-                description="可以切换周次，或返回列表查看其他日期。"
-              />
-            )}
+            <CalendarStatusLegend lessons={weekly} />
           </>
         )}
       </Panel>
-      <Panel
-        title="月度上课情况"
-        className="sc-monthly-panel"
-        action={
-          <div className="sc-month-picker">
-            <Field label="统计月份">
-              <DatePicker
-                placeholder="统计月份"
-                mode="month"
-                value={month}
-                onValueChange={(nextValue) => {
-                  setMonth(nextValue || DEMO_TODAY.slice(0, 7));
-                  setMonthlyMode(null);
-                  setShowAllMonthly(false);
-                }}
-              />
-            </Field>
-          </div>
-        }
-      >
-        <div className="sc-month-metrics">
-          {(["planned", "actual"] as const).map((mode) => {
-            const count = summary.monthly[mode];
-            const active = monthlyMode === mode;
-            return (
-              <div
-                key={mode}
-                className={`sc-month-metric${active ? " is-active" : ""}`}
-              >
-                <span>{mode === "planned" ? "月应上课" : "实际上课"}</span>
-                <strong>
-                  {count} <small>节</small>
-                </strong>
-                {count > 0 ? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    aria-label={`${active ? "收起" : "查看"}${mode === "planned" ? "月应上课" : "实际上课"}课程`}
-                    aria-expanded={active}
-                    aria-controls={monthlyDetailsId}
-                    onClick={() => toggleMonthly(mode)}
-                  >
-                    {active ? "收起课程 ▴" : "查看课程 ▾"}
-                  </Button>
-                ) : (
-                  <span className="muted">暂无课程</span>
-                )}
+      {!timetableOnly && (
+        <>
+          <Panel
+            title="月度上课情况"
+            className="sc-monthly-panel"
+            action={
+              <div className="sc-month-picker">
+                <Field label="统计月份">
+                  <DatePicker
+                    placeholder="统计月份"
+                    mode="month"
+                    value={month}
+                    onValueChange={(nextValue) => {
+                      setMonth(nextValue || DEMO_TODAY.slice(0, 7));
+                      setMonthlyMode(null);
+                      setShowAllMonthly(false);
+                    }}
+                  />
+                </Field>
               </div>
-            );
-          })}
-        </div>
-        {monthlyMode && (
-          <section
-            id={monthlyDetailsId}
-            className="sc-month-details"
-            aria-label="月度课程明细"
+            }
           >
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>上课时间</th>
-                    <th>老师</th>
-                    <th>时长</th>
-                    <th>课程状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(showAllMonthly
-                    ? monthlyLessons
-                    : monthlyLessons.slice(0, 5)
-                  ).map((lesson) => (
-                    <tr key={lesson.id}>
-                      <td>
-                        {lesson.date} {lesson.time}
-                      </td>
-                      <td>{teacherName(data, lesson.teacherId)}</td>
-                      <td>{lesson.duration} 分钟</td>
-                      <td>
-                        <Badge>{lesson.status}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {monthlyLessons.length > 5 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowAllMonthly(!showAllMonthly)}
-              >
-                {showAllMonthly
-                  ? "收起为前5节"
-                  : `展开全部，共 ${monthlyLessons.length} 节`}
-              </Button>
-            )}
-          </section>
-        )}
-        {historicalMonths.length > 0 && (
-          <details className="student-history">
-            <summary>
-              查看该月历史导入数据 ·{" "}
-              {historicalMonths
-                .map(
-                  (record) =>
-                    `应上 ${record.planned === null ? "未提供" : `${record.planned} 节`}，实上 ${record.actual === null ? "未提供" : `${record.actual} 节`}`,
-                )
-                .join("；")}
-            </summary>
-            {historicalMonths.map((record) => (
-              <div className="inset" key={record.id}>
-                <p>月份：{record.month}</p>
-                <p>
-                  月应上课：
-                  {record.planned === null ? "未提供" : `${record.planned} 节`}
-                </p>
-                <p>
-                  实际上课：
-                  {record.actual === null ? "未提供" : `${record.actual} 节`}
-                </p>
-                {record.note && <p>{record.note}</p>}
-              </div>
-            ))}
-          </details>
-        )}
-      </Panel>
-      <Panel title="教材与学习进度">
-        <div className="sc-progress-summary">
-          <span className="muted">当前学到</span>
-          <strong>
-            {summary.progress.material || "教材未填写"} /{" "}
-            {formatStudentProgress(summary.progress.unit) || "尚未记录学习进度"}
-          </strong>
-          {latestReportLesson && (
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={() => openCourse(latestReportLesson.id)}
-            >
-              查看对应课程
-            </Button>
-          )}
-        </div>
-        <h3 className="sc-progress-heading">逐节学习记录</h3>
-        {reports.length ? (
-          <div className="sc-progress-list">
-            {(showAllProgress ? reports : reports.slice(0, 5)).map((report) => {
-              const lesson = lessons.find(
-                (item) => item.id === report.lessonId,
-              );
-              return (
-                <article key={report.id}>
-                  <div className="row between">
+            <div className="sc-month-metrics">
+              {(["planned", "actual"] as const).map((mode) => {
+                const count = summary.monthly[mode];
+                const active = monthlyMode === mode;
+                return (
+                  <div
+                    key={mode}
+                    className={`sc-month-metric${active ? " is-active" : ""}`}
+                  >
+                    <span>{mode === "planned" ? "月应上课" : "实际上课"}</span>
                     <strong>
-                      {lesson ? `${lesson.date} ${lesson.time}` : report.date} ·{" "}
-                      {teacherName(data, report.teacherId)}
+                      {count} <small>节</small>
                     </strong>
-                    {lesson && (
+                    {count > 0 ? (
                       <Button
-                        size="xs"
                         variant="ghost"
-                        onClick={() => openCourse(lesson.id)}
+                        size="xs"
+                        aria-label={`${active ? "收起" : "查看"}${mode === "planned" ? "月应上课" : "实际上课"}课程`}
+                        aria-expanded={active}
+                        aria-controls={monthlyDetailsId}
+                        onClick={() => toggleMonthly(mode)}
                       >
-                        查看课程
+                        {active ? "收起课程 ▴" : "查看课程 ▾"}
                       </Button>
+                    ) : (
+                      <span className="muted">暂无课程</span>
                     )}
                   </div>
-                  <p>
-                    {report.material} /{" "}
-                    {report.from
-                      ? `${formatStudentProgress(report.from)} → `
-                      : ""}
-                    {formatStudentProgress(report.to)}
-                  </p>
-                  {report.screenshot && <img src={report.screenshot} width={200} alt="当节教材结束页"/>}
-                  {report.comment && <p>{report.comment}</p>}
-                  <small>
-                    {report.rating > 0 ? `${report.rating} 分 · ` : ""}
-                    {report.recordedAt
-                      ? `提交于 ${reportSubmittedAt(report.recordedAt)}`
-                      : `记录日期 ${report.date}`}
-                  </small>
-                </article>
-              );
-            })}
-            {reports.length > 5 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowAllProgress(!showAllProgress)}
+                );
+              })}
+            </div>
+            {monthlyMode && (
+              <section
+                id={monthlyDetailsId}
+                className="sc-month-details"
+                aria-label="月度课程明细"
               >
-                {showAllProgress
-                  ? "收起记录"
-                  : `查看更多，共 ${reports.length} 条`}
-              </Button>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>上课时间</th>
+                        <th>老师</th>
+                        <th>时长</th>
+                        <th>课程状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(showAllMonthly
+                        ? monthlyLessons
+                        : monthlyLessons.slice(0, 5)
+                      ).map((lesson) => (
+                        <tr key={lesson.id}>
+                          <td>
+                            {lesson.date} {lesson.time}
+                          </td>
+                          <td>{teacherName(data, lesson.teacherId)}</td>
+                          <td>{lesson.duration} 分钟</td>
+                          <td>
+                            <Badge>{lesson.status}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {monthlyLessons.length > 5 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowAllMonthly(!showAllMonthly)}
+                  >
+                    {showAllMonthly
+                      ? "收起为前5节"
+                      : `展开全部，共 ${monthlyLessons.length} 节`}
+                  </Button>
+                )}
+              </section>
             )}
-          </div>
-        ) : (
-          <p className="muted">
-            暂无逐节学习记录，老师提交课后进度后将显示在这里。
-          </p>
-        )}
-      </Panel>
+            {historicalMonths.length > 0 && (
+              <details className="student-history">
+                <summary>
+                  查看该月历史导入数据 ·{" "}
+                  {historicalMonths
+                    .map(
+                      (record) =>
+                        `应上 ${record.planned === null ? "未提供" : `${record.planned} 节`}，实上 ${record.actual === null ? "未提供" : `${record.actual} 节`}`,
+                    )
+                    .join("；")}
+                </summary>
+                {historicalMonths.map((record) => (
+                  <div className="inset" key={record.id}>
+                    <p>月份：{record.month}</p>
+                    <p>
+                      月应上课：
+                      {record.planned === null
+                        ? "未提供"
+                        : `${record.planned} 节`}
+                    </p>
+                    <p>
+                      实际上课：
+                      {record.actual === null
+                        ? "未提供"
+                        : `${record.actual} 节`}
+                    </p>
+                    {record.note && <p>{record.note}</p>}
+                  </div>
+                ))}
+              </details>
+            )}
+          </Panel>
+          <Panel title="教材与学习进度">
+            <div className="sc-progress-summary">
+              <span className="muted">当前学到</span>
+              <strong>
+                {summary.progress.material || "教材未填写"} /{" "}
+                {formatStudentProgress(summary.progress.unit) ||
+                  "尚未记录学习进度"}
+              </strong>
+              {latestReportLesson && (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => openCourse(latestReportLesson.id)}
+                >
+                  查看对应课程
+                </Button>
+              )}
+            </div>
+            <h3 className="sc-progress-heading">逐节学习记录</h3>
+            {reports.length ? (
+              <div className="sc-progress-list">
+                {(showAllProgress ? reports : reports.slice(0, 5)).map(
+                  (report) => {
+                    const lesson = lessons.find(
+                      (item) => item.id === report.lessonId,
+                    );
+                    return (
+                      <article key={report.id}>
+                        <div className="row between">
+                          <strong>
+                            {lesson
+                              ? `${lesson.date} ${lesson.time}`
+                              : report.date}{" "}
+                            · {teacherName(data, report.teacherId)}
+                          </strong>
+                          {lesson && (
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => openCourse(lesson.id)}
+                            >
+                              查看课程
+                            </Button>
+                          )}
+                        </div>
+                        <p>
+                          {report.material} /{" "}
+                          {report.from
+                            ? `${formatStudentProgress(report.from)} → `
+                            : ""}
+                          {formatStudentProgress(report.to)}
+                        </p>
+                        {report.screenshot && (
+                          <img
+                            src={report.screenshot}
+                            width={200}
+                            alt="当节教材结束页"
+                          />
+                        )}
+                        {report.comment && <p>{report.comment}</p>}
+                        <small>
+                          {report.rating > 0 ? `${report.rating} 分 · ` : ""}
+                          {report.recordedAt
+                            ? `提交于 ${reportSubmittedAt(report.recordedAt)}`
+                            : `记录日期 ${report.date}`}
+                        </small>
+                      </article>
+                    );
+                  },
+                )}
+                {reports.length > 5 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowAllProgress(!showAllProgress)}
+                  >
+                    {showAllProgress
+                      ? "收起记录"
+                      : `查看更多，共 ${reports.length} 条`}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <p className="muted">
+                暂无逐节学习记录，老师提交课后进度后将显示在这里。
+              </p>
+            )}
+          </Panel>
+        </>
+      )}
       <StudentLessonDrawer
         lessonId={lessonId}
         onClose={() => setLessonId(null)}

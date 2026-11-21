@@ -24,7 +24,15 @@ export function FlexStudentCalendar({
   studentId,
   intent,
   onComplete,
+  onDirtyChange,
+  onBusyChange,
+  onClose,
+  onStageChange,
 }: {
+  onClose?: () => void;
+  onStageChange?: (stage: "setup" | "preview") => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onBusyChange?: (busy: boolean) => void;
   onComplete?: (count: number, teacherNames: string) => void;
   studentId: string;
   intent: ScheduleIntent;
@@ -39,6 +47,9 @@ export function FlexStudentCalendar({
     monday(intent.startDate < DEMO_TODAY ? DEMO_TODAY : intent.startDate),
   );
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [reviewing, setReviewing] = useState(false);
+  useEffect(() => { onStageChange?.(reviewing ? "preview" : "setup"); }, [reviewing, onStageChange]);
+  useEffect(() => { onDirtyChange?.(slots.length > 0); }, [slots.length, onDirtyChange]);
   const [editor, setEditor] = useState<{
     date: string;
     time: string;
@@ -172,6 +183,7 @@ export function FlexStudentCalendar({
   const [scheduleRevision] = useState(() => data.students.find(s => s.id === studentId)?.scheduleRevision ?? 0);
   const credits = useScheduleCredits(studentId, intent.duration, slots.length);
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => { onBusyChange?.(submitting); }, [submitting, onBusyChange]);
   const submitLock = useRef(false);
   async function submit() {
     if (submitLock.current) return;
@@ -218,6 +230,7 @@ export function FlexStudentCalendar({
     <section className="flex-student-calendar stack" aria-label="学员灵活课表">
       <ClassInOperationFeedback studentId={studentId}/>
       <fieldset disabled={submitting} className="stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
+      <div hidden={reviewing} className="stack">
       {!intent.windows.length && (
         <p className="muted">
           尚未填写意向时间，可通过“修改排课信息”补充，也可直接选择时间排课。
@@ -260,7 +273,7 @@ export function FlexStudentCalendar({
         >
           <div className="fixed-calendar-head">时间</div>
           {dates.map((date) => (
-            <div className="fixed-calendar-head" key={date}>
+            <div className={`fixed-calendar-head ${date === DEMO_TODAY ? "today" : ""}`} key={date}>
               {days[dayOf(date)]}
               <small>{date.slice(5)}</small>
             </div>
@@ -291,10 +304,10 @@ export function FlexStudentCalendar({
                 : booked
                   ? "已排课"
                   : pending
-                    ? "待确认"
+                    ? "待保存"
                     : available
                       ? "可排课"
-                      : "无老师";
+                      : "不可安排";
               const preferred = inIntent(date, time),
                 key = `${date}/${time}`;
               return (
@@ -325,11 +338,8 @@ export function FlexStudentCalendar({
                     if (!preview && can("schedule.create")) drop(date, time);
                   }}
                 >
-                  <span>
-                    {state}
-                    {available && time !== baseTime ? ` ${time}` : ""}
-                  </span>
-                  {preferred && <small>意向时间</small>}
+                  {available && <span>＋{time !== baseTime ? ` ${time}` : ""}</span>}
+                  {preferred && <small>{available ? "意向时间" : "意向 · 不可安排"}</small>}
                 </button>
               );
             }),
@@ -342,7 +352,7 @@ export function FlexStudentCalendar({
                   key={`${index}-${s.date}-${s.time}`}
                   className="fixed-course flex-pending"
                   draggable={!preview && can("schedule.create")}
-                  aria-label={`${s.date} ${s.time} 待确认 ${data.teachers.find((t) => t.id === s.teacherId)?.name}`}
+                  aria-label={`${s.date} ${s.time} 待保存 ${data.teachers.find((t) => t.id === s.teacherId)?.name}`}
                   style={{
                     gridColumn: dates.indexOf(s.date) + 2,
                     gridRow: "2 / -1",
@@ -371,7 +381,7 @@ export function FlexStudentCalendar({
                       "请选择老师"}
                   </strong>
                   <small>
-                    待确认{inIntent(s.date, s.time) ? " · 意向时间" : ""}
+                    待保存{inIntent(s.date, s.time) ? " · 意向时间" : ""}
                   </small>
                 </button>
               ),
@@ -410,8 +420,8 @@ export function FlexStudentCalendar({
         {[
           ["intent", "意向时间"],
           ["available", "可排课"],
-          ["unavailable", "无老师"],
-          ["pending", "待确认"],
+          ["unavailable", "不可安排"],
+          ["pending", "待保存"],
           ["booked", "已排课"],
           ["expired", "已过期"],
         ].map(([style, label]) => (
@@ -559,6 +569,8 @@ export function FlexStudentCalendar({
           </div>
         </Modal>
       )}
+      </div>
+      {reviewing && <section aria-label="灵活排课预览" className="stack"><p>本次安排 {slots.length} 节课程</p><div className="schedule-lessons-scroll"><table><thead><tr><th>日期时间</th><th>老师</th><th>时长</th></tr></thead><tbody>{slots.map((slot,i)=><tr key={i}><td>{slot.date} {slot.time}</td><td>{data.teachers.find(t=>t.id===slot.teacherId)?.name}</td><td>{intent.duration} 分钟</td></tr>)}</tbody></table></div></section>}
       {error && !editor && <p role="alert">{error}</p>}
       {hasInvalid && (
         <p role="alert">
@@ -568,22 +580,24 @@ export function FlexStudentCalendar({
       <ClassInBookingPreview studentId={studentId} teacherIds={slots.map(row => row.teacherId)}/>
       {credits.node}
       </fieldset>
-      <div className="fixed-plan-footer">
+      <div className="fixed-plan-footer schedule-flow-actions">
         <span>
           <strong>
             已安排 {progress.scheduledCount}/{progress.requiredCount} 节
           </strong>
         </span>
         <Button
-          disabled={!slots.length}
+          disabled={!slots.length || submitting}
           onClick={() => {
-            setSlots([]);
+            setSlots([]); setReviewing(false);
             setEditor(null);
             setError("");
           }}
         >
           清空选择
         </Button>
+        {!reviewing && onClose && <Button disabled={submitting} onClick={onClose}>返回概况</Button>}
+        {reviewing && <Button disabled={submitting} onClick={()=>setReviewing(false)}>返回调整</Button>}
         <Button
           variant="primary"
           disabled={
@@ -594,9 +608,9 @@ export function FlexStudentCalendar({
             !can("schedule.create")
           }
           loading={submitting}
-            onClick={submit}
+            onClick={()=>reviewing ? submit() : setReviewing(true)}
         >
-          {submitting ? "正在排课" : "确认排课"}
+          {submitting ? "正在排课" : reviewing ? "确认排课" : "预览排课"}
         </Button>
       </div>
     </section>

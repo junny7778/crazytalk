@@ -59,6 +59,7 @@ export function useScheduleCredits(
         本次 {count} 节 · 需占用{" "}
         {Number.isFinite(summary.required) ? summary.required : "待填写"} 课时
       </small>
+      {!summary.error && count > 0 && <small>本次安排后可用 {Number((summary.available - summary.required).toFixed(8))} 课时</small>}
       {unknown.map((lesson) => (
         <div className="row wrap" key={lesson.id}>
           <Field

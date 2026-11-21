@@ -3,17 +3,13 @@ import CourseSyncLink from "../components/CourseSyncLink";
 import { DatePicker } from "@crazytalk/ui";
 import DataTransferButton from "../components/DataTransferButton";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, Link, useBlocker } from "react-router-dom";
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Plus,
-  X,
-  AlertCircle,
   Check,
-  ArrowRight,
-  Users,
   Clock3,
 } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
@@ -29,7 +25,6 @@ import {
   type Teacher,
   type Command,
   getStudentScheduleProgress,
-  getTeacherScheduleMatch,
   type Student,
   type FixedPlan,
   type ScheduleIntent,
@@ -49,9 +44,12 @@ import {
   useToast,
 } from "@crazytalk/ui";
 import "./Schedule.css";
+import "../components/weekly-calendar.css";
+import { CalendarStatusLegend, calendarLessonStatus } from "../components/CalendarStatusLegend";
 import { FixedPlanCalendar } from "../components/scheduling/FixedPlanCalendar";
 import { CoursePlanEditor } from "../components/scheduling/CoursePlanEditor";
 import { StudentSchedulingPanel } from "../components/scheduling/StudentSchedulingPanel";
+import { ScheduleOverview } from "../components/scheduling/ScheduleOverview";
 type Slot = { date: string; time: string };
 const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const minute = (time: string) =>
@@ -72,15 +70,48 @@ export default function Schedule() {
   const view = params.get("view") === "day" ? "day" : "week";
   const base = params.get("date") || DEMO_TODAY;
   const weekStart = monday(base);
-  const [selectedTeacher, setTeacher] = useState(params.get("teacher") || (businessMode() ? data.teachers[0]?.id || "" : "t1"));
-  const [panel, setPanel] = useState(
-    params.get("student") ? "pending" : "teachers",
+  const [selectedTeacher, setTeacher] = useState(
+    params.get("teacher") ||
+      (businessMode() ? data.teachers[0]?.id || "" : "t1"),
   );
+  const [panel, setPanel] = useState(
+    params.get("teacher") && !params.get("student") ? "teachers" : "pending",
+  );
+  const [calendarMode, setCalendarMode] = useState<"read" | "edit">("read");
+  const [flow, setFlow] = useState<"overview" | "auto" | "custom" | "calendar">(
+    "overview",
+  );
+  const [workflowStage, setWorkflowStage] = useState<"setup" | "preview">(
+    "setup",
+  );
+  const [workflowDirty, setWorkflowDirty] = useState(false);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
+  const [studentQuery, setStudentQuery] = useState("");
+  const [studentFilter, setStudentFilter] = useState("all");
+  const [teacherStatus, setTeacherStatus] = useState("active");
+  const [multiSelect, setMultiSelect] = useState(false);
+  function leaveWorkflow(action: () => void) {
+    if (workflowBusy) return;
+    if (workflowDirty || (flow === "calendar" && selected.length) || fixedPlan)
+      setLeaveAction(() => action);
+    else action();
+  }
+  function resetWorkflow() {
+    setFlow("overview");
+    setWorkflowStage("setup");
+    setFixedPlan(null);
+    setFixedPreview(false);
+    setModal(null);
+    setSelected([]);
+    setWorkflowDirty(false);
+    setWorkflowBusy(false);
+    setError("");
+  }
   const [query, setQuery] = useState("");
   const [so, setSo] = useState("");
-  const [studentId, setStudent] = useState(
-    routeStudentId || "",
-  );
+  const [studentId, setStudent] = useState(routeStudentId || "");
+  const [fixedPreview, setFixedPreview] = useState(false);
   const [fixedPlan, setFixedPlan] = useState<{
     plan: FixedPlan;
     intent: ScheduleIntent;
@@ -92,31 +123,48 @@ export default function Schedule() {
     teacherName: string;
     count: number;
   } | null>(null);
-  const [recommendedTeacher, setRecommendedTeacher] = useState("");
-  const [duration, setDuration] = useState(25);
+  const duration = 25;
   const [selected, setSelected] = useState<Slot[]>([]);
-  const [generatedPlan, setGeneratedPlan] = useState(false);
   const [lessonId, setLessonId] = useState<string | null>(null);
-  const [modal, setModal] = useState<"schedule" | "reschedule" | null>(
-    null,
-  );
+  const [modal, setModal] = useState<"schedule" | "reschedule" | null>(null);
   const [kind, setKind] = useState<"固定课" | "临时课">("固定课");
-  const [weeks, setWeeks] = useState(8);
   const [rescheduleConfirmed, setRescheduleConfirmed] = useState(false);
   const [error, setError] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState(DEMO_TODAY);
   const [rescheduleTime, setRescheduleTime] = useState("19:00");
-  const [rescheduleTeacher, setRescheduleTeacher] = useState((businessMode() ? data.teachers[0]?.id || "" : "t1"));
+  const [rescheduleTeacher, setRescheduleTeacher] = useState(
+    businessMode() ? data.teachers[0]?.id || "" : "t1",
+  );
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [calendarNode, setCalendarNode] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     if (routeStudentId) {
+      resetWorkflow();
       setStudent(routeStudentId);
-      setRecommendedTeacher("");
       setPanel("pending");
     }
   }, [routeStudentId]);
+  const hasDraft =
+    workflowDirty ||
+    !!fixedPlan ||
+    (flow === "calendar" && selected.length > 0);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      (hasDraft || workflowBusy) &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        new URLSearchParams(currentLocation.search).get("student") !==
+          new URLSearchParams(nextLocation.search).get("student")),
+  );
+  useEffect(() => {
+    if (!hasDraft && !workflowBusy) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasDraft, workflowBusy]);
   const student = data.students.find((s) => s.id === studentId);
   const teacher =
     data.teachers.find((t) => t.id === selectedTeacher) || data.teachers[0];
@@ -126,9 +174,9 @@ export default function Schedule() {
       panel === "pending" ? student?.scheduleIntent?.windows : undefined;
     const starts =
       windows?.map((w) => minute(w.start)) ||
-      teacher.availability.map((w) => minute(w.start));
-    return starts.length ? Math.min(...starts) : 17 * 60;
-  }, [panel, student?.scheduleIntent, teacher.availability]);
+      teacher?.availability.map((w) => minute(w.start));
+    return starts?.length ? Math.min(...starts) : 17 * 60;
+  }, [panel, student?.scheduleIntent, teacher?.availability]);
   const attachCalendar = useCallback(
     (node: HTMLDivElement | null) => {
       setCalendarNode(node);
@@ -148,77 +196,68 @@ export default function Schedule() {
     p.set("teacher", teacherId);
     setParams(p);
   }
-  function isFree(
-    t: Teacher,
-    slot: Slot,
-    minutes = duration,
-    ignoreId?: string,
-    allowOutsideRegular = false,
-    checkStudent = true,
-  ) {
-    return !isAvailable(
-      data,
-      t.id,
-      slot.date,
-      slot.time,
-      minutes,
-      checkStudent && panel === "pending" ? studentId : undefined,
-      ignoreId,
-      allowOutsideRegular,
-    ).length;
-  }
-  const visibleTeachers = data.teachers.filter(
-    (t) =>
-      t.status !== "已离职" &&
-      (!so || t.so === so) &&
-      t.name.toLowerCase().includes(query.toLowerCase()),
-  );
-  const pending = data.students.filter(
-    (s) =>
-      !["停课", "结课", "退费"].includes(s.status) &&
-      (data.tasks.some(task => task.studentId === s.id && task.rebooking && task.status === "待处理") ||
-        (s.scheduleIntent
-          ? !getStudentScheduleProgress(data, s.id, s.scheduleIntent).complete
-          : s.status === "待排课")),
-  );
-  const filtered = visibleTeachers;
-  const found = panel === "pending" && Boolean(recommendedTeacher);
-  function changePanel(next: string) {
-    setDuration(25);
-    setWeeks(8);
-    setPanel(next);
-    setSelected([]);
-    setRecommendedTeacher("");
-    setScheduleResult(null);
-    setStudent(next === "pending" ? pending[0]?.id || "" : "");
-    setError("");
-  }
-  function viewRecommendation(
-    teacherId: string,
-    intent: NonNullable<Student["scheduleIntent"]>,
-  ) {
-    setTeacher(teacherId);
-    setRecommendedTeacher(teacherId);
-    setSelected([]);
-    setDuration(intent.duration);
-    setWeeks(intent.weeks);
-    navigateView("week", intent.startDate, teacherId);
-  }
-  function previewRecommendation(
-    teacherId: string,
-    intent: NonNullable<Student["scheduleIntent"]>,
-    slots: Slot[],
-    useManualTimes = false,
-  ) {
-    viewRecommendation(teacherId, intent);
-    const match = getTeacherScheduleMatch(data, teacherId, studentId, intent);
-    setSelected(
-      intent.mode === "fixed" && !useManualTimes ? match.plan : slots,
+  const studentRanks = useMemo(() => {
+    const futureStudents = new Set(
+      data.lessons
+        .filter((l) => l.date >= DEMO_TODAY && l.status !== "已取消")
+        .map((l) => l.studentId),
     );
-    setGeneratedPlan(true);
-    setKind(intent.mode === "fixed" ? "固定课" : "临时课");
-    setError("");
-    setModal("schedule");
+    return new Map(
+      data.students.map((s) => [
+        s.id,
+        ["停课", "结课", "退费"].includes(s.status)
+          ? 3
+          : !futureStudents.has(s.id)
+            ? 0
+            : s.scheduleIntent &&
+                getStudentScheduleProgress(data, s.id, s.scheduleIntent)
+                  .complete
+              ? 2
+              : 1,
+      ]),
+    );
+  }, [data]);
+  const studentRank = (s: Student) => studentRanks.get(s.id)!;
+  const allStudents = useMemo(
+    () =>
+      [...data.students].sort(
+        (a, b) =>
+          studentRank(a) - studentRank(b) ||
+          a.name.localeCompare(b.name, "zh-CN") ||
+          a.id.localeCompare(b.id),
+      ),
+    [data.students, studentRanks],
+  );
+  const pending = allStudents.filter(
+    (s) =>
+      `${s.name} ${s.id}`.toLowerCase().includes(studentQuery.toLowerCase()) &&
+      (studentFilter === "all" || studentFilter === String(studentRank(s))),
+  );
+  const visibleTeachers = data.teachers
+    .filter(
+      (t) =>
+        (teacherStatus === "all" || t.status !== "已离职") &&
+        (!so || t.so === so) &&
+        `${t.name} ${t.id}`.toLowerCase().includes(query.toLowerCase()),
+    )
+    .sort(
+      (a, b) =>
+        Number(a.status === "已离职") - Number(b.status === "已离职") ||
+        Number(!a.availability.length) - Number(!b.availability.length) ||
+        usage(a) - usage(b) ||
+        a.name.localeCompare(b.name),
+    );
+  const filtered = visibleTeachers;
+  useEffect(() => {
+    if (!studentId && allStudents.length) setStudent(allStudents[0].id);
+  }, [studentId, allStudents]);
+  function changePanel(next: string) {
+    if (next === panel) return;
+    leaveWorkflow(() => {
+      resetWorkflow();
+      setPanel(next);
+      setScheduleResult(null);
+    });
   }
   const columns =
     view === "week"
@@ -250,20 +289,20 @@ export default function Schedule() {
     return open ? Math.min(100, Math.round((booked / open) * 100)) : 0;
   }
   function selectTeacher(id: string) {
-    setTeacher(id);
-    navigateView("week", base, id);
-    setSelected([]);
+    if (id === selectedTeacher) return;
+    leaveWorkflow(() => {
+      resetWorkflow();
+      setTeacher(id);
+      navigateView("week", base, id);
+    });
   }
   function changeStudent(id: string) {
     setStudent(id);
-    const s = data.students.find((s) => s.id === id);
     if (modal !== "schedule") {
       setSelected([]);
-      setRecommendedTeacher("");
     }
   }
   function beginSchedule(temporary = false) {
-    setGeneratedPlan(false);
     setError("");
     setKind(temporary ? "临时课" : "固定课");
     setModal("schedule");
@@ -313,7 +352,9 @@ export default function Schedule() {
       toast(e instanceof Error ? e.message : "暂时没能保存，请重试", {
         tone: "error",
       });
-    } finally { setActionBusy(false); }
+    } finally {
+      setActionBusy(false);
+    }
   }
   async function exportSchedule() {
     setBusy(true);
@@ -372,48 +413,7 @@ export default function Schedule() {
     URL.revokeObjectURL(url);
   }
   const slots = Array.from({ length: 32 }, (_, i) => clock(480 + i * 30));
-  const ScheduleOverlay = panel === "pending" ? Drawer : Modal;
   const profileTeacher = data.teachers.find((t) => t.id === profileTeacherId);
-  function closeStudentFlow() {
-    setRecommendedTeacher("");
-    setModal(null);
-    setSelected([]);
-    setError("");
-  }
-  function previewStudentTimes() {
-    const intent = student?.scheduleIntent;
-    if (!intent) return;
-    const slots = selected.length
-      ? intent.mode === "flex"
-        ? selected
-        : selected.flatMap((slot) => {
-            const firstDate = addDays(
-              intent.startDate,
-              (dayOf(slot.date) - dayOf(intent.startDate) + 7) % 7,
-            );
-            return Array.from({ length: intent.weeks }, (_, week) => ({
-              date: addDays(firstDate, week * 7),
-              time: slot.time,
-            }));
-          })
-      : getTeacherScheduleMatch(data, teacher.id, student.id, intent).slots;
-    const uniqueSlots = [
-      ...new Map(
-        slots.map((slot) => [`${slot.date}-${slot.time}`, slot]),
-      ).values(),
-    ].filter(
-      (slot) =>
-        !data.lessons.some(
-          (lesson) =>
-            lesson.studentId === student.id &&
-            lesson.status !== "已取消" &&
-            lesson.date === slot.date &&
-            lesson.time === slot.time &&
-            lesson.duration === intent.duration,
-        ),
-    );
-    previewRecommendation(teacher.id, intent, uniqueSlots, selected.length > 0);
-  }
   const calendarToolbar = (
     <div className="schedule-topbar">
       <div className="row gap-12">
@@ -455,7 +455,13 @@ export default function Schedule() {
       )}
     </div>
   );
-  const teacherCalendar = (
+  const viewingCalendar = calendarMode === "read";
+  const calendarLessons = data.lessons.filter((lesson) =>
+    (viewingCalendar || active(lesson)) &&
+    columns.some((column) => lesson.teacherId === column.teacher.id && lesson.date === column.date) &&
+    minute(lesson.time) >= 480 && minute(lesson.time) < 1440,
+  );
+  const teacherCalendar = teacher ? (
     <section className="schedule-board">
       <div className="schedule-board-heading">
         <div className="row gap-12">
@@ -523,244 +529,215 @@ export default function Schedule() {
         </dl>
       )}
       {calendarToolbar}
-      <div className="schedule-grid-scroll" ref={attachCalendar}>
-        <div
-          className="schedule-grid"
-          style={{
-            minWidth:
-              view === "day"
-                ? 64 + Math.max(columns.length, 1) * 112
-                : undefined,
-            gridTemplateColumns: `64px repeat(${Math.max(columns.length, 1)},minmax(${view === "day" ? 112 : 108}px,1fr))`,
-            gridTemplateRows: `52px repeat(${slots.length},40px)`,
-          }}
-        >
-          <div className="schedule-corner">时间</div>
-          {columns.map((col, ci) => (
-            <button
-              key={col.id}
-              className={`schedule-col-head ${col.date === DEMO_TODAY ? "today" : ""}`}
-              style={{ gridColumn: ci + 2, gridRow: 1 }}
-              onClick={() => {
-                if (view === "day") {
-                  setTeacher(col.teacher.id);
-                  navigateView("week", col.date, col.teacher.id);
-                }
-              }}
-            >
-              {view === "week" ? (
-                <>
-                  <strong>{weekdays[dayOf(col.date)]}</strong>
-                  <small>
-                    {formatDate(col.date)}
-                    {col.date === DEMO_TODAY ? " · 今天" : ""}
-                  </small>
-                </>
-              ) : (
-                <>
-                  <strong>{col.teacher.name}</strong>
-                  <small>{col.teacher.so}</small>
-                </>
-              )}
-            </button>
-          ))}
-          {slots.map((time, ri) => (
-            <div
-              key={time}
-              className={`schedule-time ${time.endsWith("00") ? "hour" : ""}`}
-              style={{ gridColumn: 1, gridRow: ri + 2 }}
-            >
-              {time}
-            </div>
-          ))}
-          {columns.map((col, ci) =>
-            slots.map((time, ri) => {
-              const slot = { date: col.date, time };
-              const occupied = data.lessons.some(
-                (l) =>
-                  l.teacherId === col.teacher.id &&
-                  l.date === col.date &&
-                  active(l) &&
-                  minute(l.time) <= minute(time) &&
-                  minute(l.time) + l.duration > minute(time),
-              );
-              const leave = data.leaves.some(
-                (l) =>
-                  l.teacherId === col.teacher.id &&
-                  ["已通过","已登记"].includes(l.status) &&
-                  overlapsLeave(col.date, time, duration, l.start, l.end),
-              );
-              const open = isRegularTime(col.teacher, col.date, time, duration);
-              const blocked = !isFree(
-                col.teacher,
-                slot,
-                duration,
-                undefined,
-                true,
-              );
-              const selectedHere =
-                selectedTeacher === col.teacher.id &&
-                selected.some((s) => same(s, slot));
-              const intentWindow =
-                found &&
-                Boolean(
-                  student?.scheduleIntent?.windows.some(
-                    (w) =>
-                      w.day === dayOf(slot.date) &&
-                      minute(slot.time) >= minute(w.start) &&
-                      minute(slot.time) + duration <= minute(w.end),
-                  ),
-                );
-              const intent =
-                intentWindow &&
-                slot.date >= (student?.scheduleIntent?.startDate || "") &&
-                slot.date <
-                  addDays(
-                    student?.scheduleIntent?.startDate || DEMO_TODAY,
-                    (student?.scheduleIntent?.weeks || 1) * 7,
-                  );
-              return (
-                <button
-                  key={`${col.id}-${time}`}
-                  type="button"
-                  aria-label={`${col.teacher.name} ${col.date} ${time} ${occupied ? "已有课" : leave ? "请假" : blocked ? "不可安排" : open ? "常规可排" : "可临时安排，需老师确认"}`}
-                  aria-pressed={selectedHere}
-                  title={
-                    intentWindow && !intent
-                      ? "不在排课周期内，请切换至开始日期之后"
-                      : blocked
-                        ? isAvailable(
-                            data,
-                            col.teacher.id,
-                            col.date,
-                            time,
-                            duration,
-                            panel === "pending" ? studentId : undefined,
-                            undefined,
-                            true,
-                          ).join("；")
-                        : open
-                          ? "常规可用时间"
-                          : "非常规时间，可与老师确认后安排临时课"
-                  }
-                  disabled={
-                    blocked ||
-                    (panel === "pending" && !intent) ||
-                    col.date < DEMO_TODAY ||
-                    !can("schedule.create")
-                  }
-                  className={`schedule-cell ${blocked ? "closed" : open ? "open" : "coordinate"} ${leave ? "leave" : ""} ${selectedHere ? "selected" : ""} ${intentWindow ? "intent" : ""} ${intentWindow && !intent ? "outside-intent-period" : ""} ${col.date < DEMO_TODAY ? "past" : ""}`}
-                  style={{ gridColumn: ci + 2, gridRow: ri + 2 }}
-                  onClick={(e) => {
+      {viewingCalendar && columns.length > 0 && calendarLessons.length === 0 ? (
+        <EmptyState title={view === "week" ? "该周暂无课程" : "当天暂无课程"} />
+      ) : (
+        <div className="schedule-grid-scroll" ref={attachCalendar}>
+          <div
+            className={`schedule-grid ${viewingCalendar ? "calendar-read" : ""}`}
+            style={{
+              minWidth:
+                view === "day"
+                  ? 64 + Math.max(columns.length, 1) * 112
+                  : undefined,
+              gridTemplateColumns: `64px repeat(${Math.max(columns.length, 1)},minmax(${view === "day" ? 112 : 108}px,1fr))`,
+              gridTemplateRows: `52px repeat(${slots.length},40px)`,
+            }}
+          >
+            <div className="schedule-corner">时间</div>
+            {columns.map((col, ci) => (
+              <button
+                key={col.id}
+                className={`schedule-col-head ${col.date === DEMO_TODAY ? "today" : ""}`}
+                style={{ gridColumn: ci + 2, gridRow: 1 }}
+                onClick={() => {
+                  if (view === "day") {
                     setTeacher(col.teacher.id);
-                    if (panel === "pending" || e.shiftKey) {
-                      setSelected((prev) =>
-                        selectedTeacher !== col.teacher.id
-                          ? [slot]
-                          : prev.some((s) => same(s, slot))
-                            ? prev.filter((s) => !same(s, slot))
-                            : [...prev, slot],
-                      );
-                    } else {
-                      setSelected([slot]);
-                      if (panel === "teachers") beginSchedule(true);
-                    }
-                  }}
-                >
-                  {selectedHere ? (
-                    <>
-                      <Check size={14} />
-                      <span>已选</span>
-                    </>
-                  ) : leave ? (
-                    "请假"
-                  ) : intentWindow && !intent ? (
-                    slot.date < (student?.scheduleIntent?.startDate || "") ? (
-                      "尚未开始"
-                    ) : (
-                      "周期已结束"
-                    )
-                  ) : intent ? (
-                    blocked ? (
-                      "意向 · 不可排"
-                    ) : (
-                      "意向"
-                    )
-                  ) : !blocked ? (
-                    <span className="cell-plus">+</span>
-                  ) : (
-                    ""
-                  )}
-                </button>
-              );
-            }),
-          )}
-          {columns.map((col, ci) =>
-            data.lessons
-              .filter(
-                (l) =>
-                  l.teacherId === col.teacher.id &&
-                  l.date === col.date &&
-                  active(l) &&
-                  minute(l.time) >= 480 &&
-                  minute(l.time) < 1440,
-              )
-              .map((l) => {
-                const s = data.students.find((s) => s.id === l.studentId);
+                    navigateView("week", col.date, col.teacher.id);
+                  }
+                }}
+              >
+                {view === "week" ? (
+                  <>
+                    <strong>{weekdays[dayOf(col.date)]}</strong>
+                    <small>
+                      {col.date.slice(5)}
+                      {col.date === DEMO_TODAY ? " · 今天" : ""}
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <strong>{col.teacher.name}</strong>
+                    <small>{col.teacher.so}</small>
+                  </>
+                )}
+              </button>
+            ))}
+            {slots.map((time, ri) => (
+              <div
+                key={time}
+                className={`schedule-time ${time.endsWith("00") ? "hour" : ""}`}
+                style={{ gridColumn: 1, gridRow: ri + 2 }}
+              >
+                {time}
+              </div>
+            ))}
+            {columns.map((col, ci) =>
+              slots.map((time, ri) => {
+                if (viewingCalendar) {
+                  return <div key={`${col.id}-${time}`} className="schedule-cell" style={{ gridColumn: ci + 2, gridRow: ri + 2 }} />;
+                }
+                const slot = { date: col.date, time };
+                const occupied = data.lessons.some(
+                  (l) =>
+                    l.teacherId === col.teacher.id &&
+                    l.date === col.date &&
+                    active(l) &&
+                    minute(l.time) <= minute(time) &&
+                    minute(l.time) + l.duration > minute(time),
+                );
+                const leave = data.leaves.some(
+                  (l) =>
+                    l.teacherId === col.teacher.id &&
+                    ["已通过", "已登记"].includes(l.status) &&
+                    overlapsLeave(col.date, time, duration, l.start, l.end),
+                );
+                const conflicts = isAvailable(
+                  data, col.teacher.id, col.date, time, duration,
+                  panel === "pending" ? studentId : undefined,
+                );
+                const past = col.date < DEMO_TODAY;
+                const blocked = conflicts.length > 0 || past;
+                const selectedHere =
+                  selectedTeacher === col.teacher.id &&
+                  selected.some((s) => same(s, slot));
+                const intentWindow =
+                  panel === "pending" &&
+                  Boolean(
+                    student?.scheduleIntent?.windows.some(
+                      (w) =>
+                        w.day === dayOf(slot.date) &&
+                        minute(slot.time) >= minute(w.start) &&
+                        minute(slot.time) + duration <= minute(w.end),
+                    ),
+                  );
+                const intent =
+                  intentWindow &&
+                  slot.date >= (student?.scheduleIntent?.startDate || "") &&
+                  slot.date <
+                    addDays(
+                      student?.scheduleIntent?.startDate || DEMO_TODAY,
+                      (student?.scheduleIntent?.weeks || 1) * 7,
+                    );
                 return (
                   <button
-                    key={l.id}
-                    onClick={() => setLessonId(l.id)}
-                    className={`schedule-lesson ${l.kind === "临时课" ? "temporary" : ""} ${l.date < DEMO_TODAY ? "past" : ""} ${l.conflict ? "conflict" : ""}`}
-                    style={{
-                      gridColumn: ci + 2,
-                      gridRow: `${2 + Math.floor((minute(l.time) - 480) / 30)} / span ${Math.ceil(((minute(l.time) % 30) + l.duration) / 30)}`,
+                    key={`${col.id}-${time}`}
+                    type="button"
+                    aria-label={`${col.teacher.name} ${col.date} ${time} ${occupied ? "已排课" : leave ? "请假" : blocked ? "不可安排" : "可排课"}`}
+                    aria-pressed={selectedHere}
+                    title={
+                      intentWindow && !intent
+                        ? "不在排课周期内，请切换至开始日期之后"
+                        : blocked
+                          ? past ? "已过期" : conflicts.join("；")
+                          : "可排课"
+                    }
+                    disabled={
+                      blocked ||
+                      (panel === "pending" && !intent) ||
+                      !can("schedule.create")
+                    }
+                    className={`schedule-cell ${blocked ? "closed" : "open"} ${leave ? "leave" : ""} ${selectedHere ? "selected" : ""} ${intentWindow ? "intent" : ""} ${intentWindow && !intent ? "outside-intent-period" : ""} ${past ? "past" : ""}`}
+                    style={{ gridColumn: ci + 2, gridRow: ri + 2 }}
+                    onClick={(e) => {
+                      setTeacher(col.teacher.id);
+                      if (panel === "pending" || multiSelect || e.shiftKey) {
+                        setSelected((prev) =>
+                          selectedTeacher !== col.teacher.id
+                            ? [slot]
+                            : prev.some((s) => same(s, slot))
+                              ? prev.filter((s) => !same(s, slot))
+                              : [...prev, slot],
+                        );
+                      } else {
+                        setSelected([slot]);
+                        if (panel === "teachers") beginSchedule(true);
+                      }
                     }}
                   >
-                    <strong>
-                      {s?.name}
-                      {l.conflict && " ⚠"}
-                    </strong>
-                    <small>
-                      {l.time}–{clock(minute(l.time) + l.duration)}
-                    </small>
+                    {selectedHere ? (
+                      <>
+                        <Check size={14} />
+                        <span>已选</span>
+                      </>
+                    ) : leave ? (
+                      "请假"
+                    ) : intentWindow && !intent ? (
+                      slot.date < (student?.scheduleIntent?.startDate || "") ? (
+                        "尚未开始"
+                      ) : (
+                        "周期已结束"
+                      )
+                    ) : intent ? (
+                      blocked ? (
+                        "意向 · 不可排"
+                      ) : (
+                        "意向"
+                      )
+                    ) : !blocked ? (
+                      <span className="cell-plus">+</span>
+                    ) : (
+                      ""
+                    )}
                   </button>
                 );
               }),
-          )}
-          {!columns.length && (
-            <div className="no-columns">没有符合筛选条件的老师</div>
-          )}
+            )}
+            {columns.map((col, ci) =>
+              calendarLessons
+                .filter((l) => l.teacherId === col.teacher.id && l.date === col.date)
+                .map((l) => {
+                  const s = data.students.find((s) => s.id === l.studentId);
+                  return (
+                    <button
+                      key={l.id}
+                      onClick={() => setLessonId(l.id)}
+                      data-status={viewingCalendar ? l.status : undefined}
+                      className={`schedule-lesson ${l.kind === "临时课" ? "temporary" : ""} ${l.date < DEMO_TODAY ? "past" : ""} ${l.conflict ? "conflict" : ""}`}
+                      style={{
+                        gridColumn: ci + 2,
+                        gridRow: `${2 + Math.floor((minute(l.time) - 480) / 30)} / span ${Math.ceil(((minute(l.time) % 30) + l.duration) / 30)}`,
+                      }}
+                    >
+                      <strong>
+                        {s?.name}
+                        {l.conflict && " ⚠"}
+                      </strong>
+                      <small>
+                        {l.time}–{clock(minute(l.time) + l.duration)}
+                        {viewingCalendar && ` · ${calendarLessonStatus(l.status)}`}
+                      </small>
+                    </button>
+                  );
+                }),
+            )}
+            {!columns.length && (
+              <div className="no-columns">没有符合筛选条件的老师</div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <CalendarHorizontalScroll node={calendarNode} />
-      <div className="schedule-legend">
-        <span>
-          <i className="legend-open" />
-          常规可排
-        </span>
-        <span>
-          <i className="legend-fixed" />
-          固定课
-        </span>
-        <span>
-          <i className="legend-temp" />
-          灵活课
-        </span>
-        <span>
-          <i className="legend-coordinate" />
-          可临时协调
-        </span>
-        <span>
-          <i className="legend-closed" />
-          不可安排
-        </span>
-        <span>
-          <i className="legend-leave" />
-          请假
-        </span>
-        <small>每格 30 分钟，可在排课时调整到具体分钟</small>
-      </div>
+      {viewingCalendar && calendarLessons.length > 0 && <CalendarStatusLegend lessons={calendarLessons} />}
+      {!viewingCalendar && (
+        <div className="schedule-legend">
+          <span><i className="legend-open" />可排课</span>
+          <span><i className="legend-fixed" />已排课</span>
+          <span><i className="legend-closed" />不可安排</span>
+          <span><i className="legend-leave" />请假</span>
+          <small>每格 30 分钟，可在排课时调整到具体分钟</small>
+        </div>
+      )}
       {view === "day" && (
         <div className="schedule-day-rates">
           {columns.map((c) => (
@@ -771,6 +748,8 @@ export default function Schedule() {
         </div>
       )}
     </section>
+  ) : (
+    <EmptyState title="暂无老师" description="请先维护老师资料。" />
   );
   return (
     <div className="schedule-page">
@@ -779,24 +758,6 @@ export default function Schedule() {
         description="找到合适的老师，把每一节课安排妥当。"
         action={
           <>
-            {panel === "teachers" && can("schedule.create") && (
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => {
-                  setSelected([
-                    {
-                      date: base < DEMO_TODAY ? DEMO_TODAY : base,
-                      time: "19:00",
-                    },
-                  ]);
-                  beginSchedule(true);
-                }}
-              >
-                <Plus size={15} />
-                安排课程
-              </Button>
-            )}
             {can("schedule.export") && (
               <DataTransferButton
                 direction="export"
@@ -812,152 +773,381 @@ export default function Schedule() {
         value={panel}
         onChange={changePanel}
         items={[
-          { value: "teachers", label: "老师排课" },
-          { value: "pending", label: "待排课学员", count: pending.length },
+          { value: "pending", label: "按学员排课" },
+          { value: "teachers", label: "按老师排课" },
         ]}
       />
       <div className="schedule-workspace">
-        <aside className="schedule-roster">
-          <h3>{panel === "teachers" ? "老师列表" : "待排课学员"}</h3>
-          {panel === "teachers" ? (
+        <aside
+          className={`schedule-roster ${panel === "pending" ? "schedule-student-roster" : ""}`}
+        >
+          <h3>{panel === "teachers" ? "老师列表" : "学员列表"}</h3>
+          <SearchInput
+            value={panel === "teachers" ? query : studentQuery}
+            onChange={panel === "teachers" ? setQuery : setStudentQuery}
+            placeholder="搜索姓名或 ID"
+          />
+          {panel === "pending" ? (
             <>
-              <SearchInput
-                value={query}
-                onChange={setQuery}
-                placeholder="搜索老师"
-              />
               <Select
-                aria-label="按 SO 筛选"
-                value={so}
-                onValueChange={(value) => setSo(value)}
+                aria-label="排课状态"
+                value={studentFilter}
+                onValueChange={setStudentFilter}
               >
-                <option value="">全部 SO</option>
-                {[...new Set(data.teachers.map((t) => t.so))].map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
+                <option value="all">全部学员</option>
+                <option value="0">未排课</option>
+                <option value="1">部分已排 / 待完善计划</option>
+                <option value="2">计划已排齐</option>
               </Select>
-              <div className="roster-list">
-                {filtered.map((t) => {
-                  return (
-                    <button
-                      key={t.id}
-                      className={`roster-person ${view === "week" && selectedTeacher === t.id ? "selected" : ""}`}
-                      aria-pressed={view === "week" && selectedTeacher === t.id}
-                      onClick={() => selectTeacher(t.id)}
-                    >
-                      <Avatar name={t.name} />
-                      <span>
-                        <strong>
-                          {t.name} {t.needConfirm && <AlertCircle size={13} />}
-                        </strong>
-                        <small>{t.so + " · 口音 " + t.accent}</small>
-                      </span>
-                      <span className="roster-rate">
-                        {usage(t)}
-                        <small>%</small>
-                      </span>
-                    </button>
-                  );
-                })}
-                {!filtered.length && (
-                  <EmptyState
-                    title="没有合适的老师"
-                    description="试试调整意向时间或筛选条件。"
-                  />
-                )}
+              <div className="roster-list" aria-label="学员列表">
+                {pending.map((s) => (
+                  <button
+                    key={s.id}
+                    className={`roster-person ${studentId === s.id ? "selected" : ""}`}
+                    aria-pressed={studentId === s.id}
+                    onClick={() =>
+                      leaveWorkflow(() => {
+                        resetWorkflow();
+                        changeStudent(s.id);
+                        setScheduleResult(null);
+                      })
+                    }
+                  >
+                    <Avatar name={s.name} />
+                    <span>
+                      <strong>{s.name}</strong>
+                      <small>{s.id}</small>
+                    </span>
+                  </button>
+                ))}
               </div>
-            </>
-          ) : (
-            <div className="roster-list">
-              {pending.map((s) => (
-                <button
-                  key={s.id}
-                  className={`roster-person ${studentId === s.id ? "selected" : ""}`}
-                  onClick={() => {
-                    changeStudent(s.id);
-                    setRecommendedTeacher("");
-                  }}
-                >
-                  <Avatar name={s.name} />
-                  <span>
-                    <strong>
-                      {s.name}
-                      {s.groupName ? ` · ${s.groupName}` : ""}
-                    </strong>
-                    {data.tasks.filter(task => task.studentId === s.id && task.rebooking && task.status === "待处理").map(task => <small key={task.id}>{task.title}</small>)}
-                    <small>
-                      {s.project} ·{" "}
-                      {s.age === null ? "年龄未填写" : `${s.age} 岁`} ·{" "}
-                      {s.material}
-                      {s.scheduleIntent
-                        ? (() => {
-                            const progress = getStudentScheduleProgress(
-                              data,
-                              s.id,
-                              s.scheduleIntent,
-                            );
-                            return ` · 已排 ${progress.scheduledCount}/${progress.requiredCount} 节`;
-                          })()
-                        : " · 待补充意向"}
-                    </small>
-                  </span>
-                  <ArrowRight size={14} />
-                </button>
-              ))}
               {!pending.length && (
                 <EmptyState
-                  title="都安排好了"
-                  description="新学员会显示在这里。"
+                  title="没有符合条件的学员"
+                  description="试试搜索其他姓名或清除筛选。"
                 />
+              )}
+              {(studentQuery || studentFilter !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStudentQuery("");
+                    setStudentFilter("all");
+                  }}
+                >
+                  清除筛选
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Select aria-label="按 SO 筛选" value={so} onValueChange={setSo}>
+                <option value="">全部 SO</option>
+                {[...new Set(data.teachers.map((t) => t.so))].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </Select>
+              <details>
+                <summary>更多筛选</summary>
+                <Select
+                  aria-label="老师状态"
+                  value={teacherStatus}
+                  onValueChange={setTeacherStatus}
+                >
+                  <option value="active">在职老师</option>
+                  <option value="all">全部老师</option>
+                </Select>
+              </details>
+              <div className="roster-list" aria-label="老师列表">
+                {filtered.map((t) => (
+                  <button
+                    key={t.id}
+                    className={`roster-person ${selectedTeacher === t.id ? "selected" : ""}`}
+                    aria-pressed={selectedTeacher === t.id}
+                    onClick={() => selectTeacher(t.id)}
+                  >
+                    <Avatar name={t.name} />
+                    <span>
+                      <strong>{t.name}</strong>
+                      <small>{t.id}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {!filtered.length && (
+                <EmptyState
+                  title="没有符合条件的老师"
+                  description="试试搜索其他姓名或清除筛选。"
+                />
+              )}
+              {(query || so || teacherStatus !== "active") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setQuery("");
+                    setSo("");
+                    setTeacherStatus("active");
+                  }}
+                >
+                  清除筛选
+                </Button>
+              )}
+            </>
+          )}
+        </aside>
+        <div
+          className={`schedule-main stack ${flow !== "overview" ? "schedule-workspace-card" : ""}`}
+        >
+          {scheduleResult && (
+            <div role="status" className="schedule-result row between wrap">
+              <span>
+                已为 {scheduleResult.studentName} 安排 {scheduleResult.count}{" "}
+                节课程。课程已保存，可在下方查看同步状态。
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setScheduleResult(null)}
+              >
+                关闭提示
+              </Button>
+            </div>
+          )}
+          {flow !== "overview" && (
+            <div className="schedule-flow-heading row between wrap">
+              <div className="schedule-person-heading">
+                <Avatar
+                  name={
+                    (panel === "pending" ? student?.name : teacher?.name) || ""
+                  }
+                />
+                <div>
+                  <h3>
+                    {panel === "pending" ? student?.name : teacher?.name} ·{" "}
+                    {flow === "calendar" && modal !== "schedule"
+                      ? "完整课表"
+                      : "安排课程"}
+                  </h3>
+                  <small>
+                    ID: {panel === "pending" ? student?.id : teacher?.id}
+                  </small>
+                </div>
+              </div>
+              {(flow !== "calendar" || modal === "schedule") && (
+                <ol className="schedule-steps" aria-label="排课步骤">
+                  <li
+                    aria-current={
+                      !fixedPreview && workflowStage === "setup"
+                        ? "step"
+                        : undefined
+                    }
+                  >
+                    ① 设置排课
+                  </li>
+                  <li aria-hidden="true">→</li>
+                  <li
+                    aria-current={
+                      fixedPreview || workflowStage === "preview"
+                        ? "step"
+                        : undefined
+                    }
+                  >
+                    ② 预览确认
+                  </li>
+                </ol>
+              )}
+              {flow === "calendar" && modal !== "schedule" && (
+                <Button
+                  variant="ghost"
+                  disabled={workflowBusy}
+                  onClick={() => leaveWorkflow(resetWorkflow)}
+                >
+                  返回概况
+                </Button>
               )}
             </div>
           )}
-          {panel === "teachers" && (
-            <div className="roster-tip">
-              <Users size={16} />
-              <span>
-                选择老师后，点击空档安排课程。Shift 多选多个独立上课时间。
-              </span>
-            </div>
+          {flow === "overview" && (panel === "pending" ? student : teacher) && (
+            <ScheduleOverview
+              key={`${panel}-${panel === "pending" ? studentId : selectedTeacher}`}
+              person={
+                panel === "pending" && student
+                  ? { kind: "student", value: student }
+                  : { kind: "teacher", value: teacher }
+              }
+              onStart={(mode) => {
+                setScheduleResult(null);
+                setFlow(mode);
+                if (mode === "custom") {
+                  setSelected([
+                    {
+                      date: base < DEMO_TODAY ? DEMO_TODAY : base,
+                      time: "19:00",
+                    },
+                  ]);
+                  setKind("临时课");
+                  setModal("schedule");
+                }
+              }}
+              onReschedule={(id) => {
+                const selectedLesson = data.lessons.find(l => l.id === id)!;
+                setLessonId(id);
+                setRescheduleDate(selectedLesson.date);
+                setRescheduleTime(selectedLesson.time);
+                setRescheduleTeacher(selectedLesson.teacherId);
+                setReason("");
+                setRescheduleConfirmed(false);
+                setError("");
+                setModal("reschedule");
+              }}
+              onLesson={setLessonId}
+              onTeacherProfile={() => setProfileTeacherId(selectedTeacher)}
+              onTeacherCalendar={() => { setCalendarMode("read"); setFlow("calendar"); }}
+            />
           )}
-        </aside>
-        <div className="schedule-main stack">
-          {panel === "pending" &&
-            (student ? (
+          {flow === "auto" && student && (
+            <div hidden={fixedPreview}>
               <StudentSchedulingPanel
-                onFixedPlan={(plan, intent) => {
-                  setFixedPlan({ plan, intent });
-                  setTeacher(plan.primaryTeacherId);
-                  setModal(null);
-                  setRecommendedTeacher("");
-                }}
                 key={student.id}
                 student={student}
-                onIntentSaved={() => {
-                  setRecommendedTeacher("");
-                  setSelected([]);
+                onDirtyChange={setWorkflowDirty}
+                onBusyChange={setWorkflowBusy}
+                onClose={() => leaveWorkflow(resetWorkflow)}
+                onStageChange={setWorkflowStage}
+                onFixedPlan={(plan, intent) => {
+                  setFixedPlan({ plan, intent });
+                  setFixedPreview(true);
+                  setTeacher(plan.primaryTeacherId);
                 }}
-                onScheduleComplete={(count, teacherName) =>
+                onViewTeacher={setProfileTeacherId}
+                onIntentSaved={() => {
+                  setFixedPlan(null);
+                  setFixedPreview(false);
+                  setSelected([]);
+                  setWorkflowDirty(false);
+                }}
+                onScheduleComplete={(count, teacherName) => {
+                  resetWorkflow();
                   setScheduleResult({
                     studentId,
                     studentName: student.name,
                     teacherName,
                     count,
-                  })
-                }
-                onViewTeacher={setProfileTeacherId}
+                  });
+                }}
               />
-            ) : (
+            </div>
+          )}
+          {fixedPlan && student && (
+            <div className="schedule-summary-card" hidden={!fixedPreview}>
+              <FixedPlanCalendar
+                key={`${studentId}-${fixedPlan.plan.primaryTeacherId}-${JSON.stringify(fixedPlan.intent)}`}
+                studentId={studentId}
+                plan={fixedPlan.plan}
+                intent={fixedPlan.intent}
+                onBusyChange={setWorkflowBusy}
+                onClose={() => setFixedPreview(false)}
+                onComplete={(count, teacherName) => {
+                  resetWorkflow();
+                  setScheduleResult({
+                    studentId,
+                    studentName: student.name,
+                    teacherName,
+                    count,
+                  });
+                }}
+              />
+            </div>
+          )}
+          {modal === "schedule" && (
+            <div className="schedule-summary-card">
+              <CoursePlanEditor
+                studentId={panel === "pending" ? studentId : ""}
+                teacherId={panel === "teachers" ? selectedTeacher : ""}
+                lockStudent={panel === "pending"}
+                lockTeacher={panel === "teachers"}
+                slots={selected}
+                kind={kind}
+                duration={duration}
+                generated={false}
+                onDirtyChange={setWorkflowDirty}
+                onBusyChange={setWorkflowBusy}
+                onStageChange={setWorkflowStage}
+                onClose={() => leaveWorkflow(resetWorkflow)}
+                onComplete={(id, count, teachers) => {
+                  resetWorkflow();
+                  if (panel === "pending") setStudent(id);
+                  setScheduleResult({
+                    studentId: id,
+                    studentName:
+                      data.students.find((s) => s.id === id)?.name || "学员",
+                    teacherName: teachers,
+                    count,
+                  });
+                }}
+              />
+            </div>
+          )}
+          {flow === "calendar" && modal !== "schedule" && (
+            <>
+              {can("schedule.create") && (
+                <Tabs
+                  value={calendarMode}
+                  onChange={(mode) => {
+                    setCalendarMode(mode === "edit" ? "edit" : "read");
+                    setSelected([]);
+                  }}
+                  items={[
+                    { value: "read", label: "查看课表" },
+                    { value: "edit", label: "操作排课" },
+                  ]}
+                />
+              )}
+              {calendarMode === "edit" && (
+                <div className="row wrap">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={multiSelect}
+                      onChange={(e) => setMultiSelect(e.target.checked)}
+                    />{" "}
+                    多选上课时间
+                  </label>
+                  <small>点击空档安排课程，点击已有课程查看详情。</small>
+                </div>
+              )}
+              {calendarMode === "edit" && can("schedule.create") && (
+                <Button
+                  onClick={() => {
+                    setSelected([
+                      {
+                        date: base < DEMO_TODAY ? DEMO_TODAY : base,
+                        time: "19:00",
+                      },
+                    ]);
+                    beginSchedule(true);
+                  }}
+                >
+                  为该老师排课
+                </Button>
+              )}
+              {teacherCalendar}
+            </>
+          )}
+          {flow === "overview" &&
+            !(panel === "pending" ? student : teacher) && (
               <EmptyState
-                title="请选择待排课学员"
-                description="查看该学员的意向时间，匹配老师并生成排课方案。"
+                title="暂无可查看的人员"
+                description="请先维护学员或老师资料。"
               />
-            ))}
-          {panel === "teachers" && teacherCalendar}
+            )}
         </div>
       </div>
       {panel === "teachers" &&
         selected.length > 0 &&
+        modal !== "schedule" &&
         can("schedule.create") && (
           <div className="batch-bar schedule-batch">
             <div>
@@ -983,7 +1173,7 @@ export default function Schedule() {
               >
                 取消选择
               </Button>
-              {!selectedOutside && (selected.length > 0 || found) && (
+              {!selectedOutside && selected.length > 0 && (
                 <Button
                   size="sm"
                   onClick={() => beginSchedule(true)}
@@ -1005,168 +1195,39 @@ export default function Schedule() {
             </div>
           </div>
         )}
-      <ScheduleOverlay
-        open={Boolean(fixedPlan)}
-        onClose={() => setFixedPlan(null)}
-        title={`${student?.name || "学员"} 的排课方案`}
-        width={1100}
-        footer={null}
-      >
-        {fixedPlan && (
-          <FixedPlanCalendar
-            key={`${studentId}-${fixedPlan.plan.primaryTeacherId}`}
-            studentId={studentId}
-            plan={fixedPlan.plan}
-            intent={fixedPlan.intent}
-            onClose={() => setFixedPlan(null)}
-            onComplete={(count, teacherName) => {
-              setFixedPlan(null);
-              setScheduleResult({
-                studentId,
-                studentName: student?.name || "学员",
-                teacherName,
-                count,
-              });
-            }}
-          />
-        )}
-      </ScheduleOverlay>
-      <ScheduleOverlay
-        open={modal === "schedule"}
-        onClose={() => setModal(null)}
-        title={`给 ${student?.name || "学员"} 排课`}
-        width={1000}
-        footer={null}
-      >
-        {modal === "schedule" && (
-          <CoursePlanEditor
-            studentId={studentId}
-            teacherId={selectedTeacher}
-            slots={selected.map((slot) => ({
-              ...slot,
-              teacherId:
-                generatedPlan &&
-                isAvailable(
-                  data,
-                  selectedTeacher,
-                  slot.date,
-                  slot.time,
-                  duration,
-                  studentId,
-                ).length
-                  ? ""
-                  : selectedTeacher,
-            }))}
-            kind={kind}
-            duration={duration}
-            generated={generatedPlan}
-            recommended={generatedPlan && !!recommendedTeacher}
-            onComplete={(id, count, teachers, date) => {
-              navigateView("week", date);
-              setModal(null);
-              setSelected([]);
-              setRecommendedTeacher("");
-              setScheduleResult({
-                studentId: id,
-                studentName:
-                  data.students.find((s) => s.id === id)?.name || "学员",
-                teacherName: teachers,
-                count,
-              });
-            }}
-            onClose={() => {
-              setModal(null);
-              setSelected([]);
-            }}
-          />
-        )}
-      </ScheduleOverlay>
-      <Drawer
-        open={
-          panel === "pending" &&
-          Boolean(recommendedTeacher) &&
-          modal !== "schedule" &&
-          !scheduleResult
-        }
-        onClose={closeStudentFlow}
-        title={`为 ${student?.name || "学员"} 排课 · ${teacher.name}`}
-        description="点击意向时段可多选，再次点击取消；选好后预览排课。"
-        width={1000}
+      <Modal
+        open={!!leaveAction || blocker.state === "blocked"}
+        title="放弃本次修改？"
+        onClose={() => {
+          setLeaveAction(null);
+          if (blocker.state === "blocked") blocker.reset();
+        }}
         footer={
           <>
-            <span className="schedule-drawer-selection">
-              {selected.length
-                ? `已选 ${selected.length} 个上课时间`
-                : "尚未手动选择时间"}
-            </span>
-            <Button onClick={closeStudentFlow}>取消</Button>
             <Button
-              variant="primary"
-              disabled={
-                !student?.scheduleIntent || !can("schedule.create") || preview
-              }
-              onClick={previewStudentTimes}
-            >
-              预览排课
-            </Button>
-          </>
-        }
-      >
-        <div className="stack schedule-student-calendar">
-          {student?.scheduleIntent && (
-            <p className="schedule-drawer-intent">
-              {student.scheduleIntent.mode === "fixed"
-                ? "固定排课"
-                : "灵活排课"}{" "}
-              · 每节 {duration} 分钟 · 每周 {student.scheduleIntent.frequency}{" "}
-              节 · 共 {weeks} 周
-            </p>
-          )}
-          {teacherCalendar}
-        </div>
-      </Drawer>
-      <Drawer
-        open={Boolean(scheduleResult)}
-        onClose={() => setScheduleResult(null)}
-        title="排课完成"
-        width={640}
-        footer={
-          <>
-            <Link
-              className="btn btn-secondary"
-              to={`/students/${scheduleResult?.studentId}?tab=courses`}
-            >
-              查看学员课表
-            </Link>
-            <Button
-              variant="primary"
               onClick={() => {
-                setScheduleResult(null);
-                setPanel("pending");
-                setStudent(
-                  pending.find((s) => s.id !== scheduleResult?.studentId)?.id ||
-                    "",
-                );
+                setLeaveAction(null);
+                if (blocker.state === "blocked") blocker.reset();
               }}
             >
-              继续处理下一位学员
+              继续编辑
+            </Button>
+            <Button
+              variant="primary"
+              disabled={workflowBusy}
+              onClick={() => {
+                leaveAction?.();
+                if (blocker.state === "blocked") blocker.proceed();
+                setLeaveAction(null);
+              }}
+            >
+              放弃本次修改
             </Button>
           </>
         }
       >
-        {scheduleResult && (
-          <div className="stack">
-            <h3>
-              已为 {scheduleResult.studentName} 安排 {scheduleResult.count}{" "}
-              节课程
-            </h3>
-            <p>授课老师：{scheduleResult.teacherName}</p>
-            <p>
-              课程已保存，学员排课进度已更新。未完成的排课需求会继续保留在待排列表。
-            </p>
-          </div>
-        )}
-      </Drawer>
+        <p>本次尚未确认的排课将不会提交，已保存的课程不受影响。</p>
+      </Modal>
       <Drawer
         open={Boolean(profileTeacher)}
         onClose={() => setProfileTeacherId("")}
@@ -1211,7 +1272,7 @@ export default function Schedule() {
         )}
       </Drawer>
       <Drawer
-        open={Boolean(lesson)}
+        open={Boolean(lesson) && modal !== "reschedule"}
         onClose={() => setLessonId(null)}
         title="课程详情"
         width={560}
@@ -1228,9 +1289,14 @@ export default function Schedule() {
                   setError("");
                   setModal("reschedule");
                 }}
-                disabled={!can("student.reschedule") || preview}
+                disabled={
+                  !can("student.reschedule") ||
+                  preview ||
+                  lesson.status !== "未开始" ||
+                  lesson.date < DEMO_TODAY
+                }
               >
-                调课 / 换老师
+                调整时间
               </Button>
               <Link to={`/students/${lesson.studentId}`}>
                 <Button variant="primary">查看学员</Button>
@@ -1344,6 +1410,7 @@ export default function Schedule() {
                       setTeacher(rescheduleTeacher);
                       navigateView("week", rescheduleDate, rescheduleTeacher);
                       setModal(null);
+                      setLessonId(null);
                     },
                   );
               }}
@@ -1354,6 +1421,13 @@ export default function Schedule() {
         }
       >
         <div className="stack">
+          {lesson && (
+            <div className="notice">
+              原安排：{lesson.date} {lesson.time}
+              <br />
+              新安排：{rescheduleDate} {rescheduleTime} · 老师不变
+            </div>
+          )}
           <div className="form-grid">
             <Field label="上课日期" required>
               <DatePicker
@@ -1388,7 +1462,9 @@ export default function Schedule() {
                 ))}
             </Select>
           </Field>
-          <small>如需换老师，请到学员档案办理换师，取消原预约后重新排课。</small>
+          <small>
+            如需换老师，请到学员档案办理换师，取消原预约后重新排课。
+          </small>
           <Field label="调整原因">
             <input
               value={reason}

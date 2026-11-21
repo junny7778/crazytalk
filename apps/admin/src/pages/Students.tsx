@@ -618,7 +618,7 @@ export default function Students() {
           >
             <span>已选 {selectedStudents.length} 位学员</span>
             <div className="row">
-              <Button size="sm" onClick={() => setSelected({})}>
+              <Button variant="primary" size="sm" onClick={() => setSelected({})}>
                 取消选择
               </Button>
               {can("student.export") && (

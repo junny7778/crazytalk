@@ -929,7 +929,7 @@ export default function Feedback() {
               <>
                 <Badge>{feedback.status}</Badge>
                 {can("feedback.create") && (
-                  <Button size="sm" onClick={() => setEditor("edit")}>
+                  <Button variant="primary" size="sm" onClick={() => setEditor("edit")}>
                     <Pencil size={14} />
                     编辑反馈资料
                   </Button>

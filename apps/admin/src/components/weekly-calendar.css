@@ -1,0 +1,120 @@
+/* Shared week headers and booking states. */
+:is(.sc-time-head, .sc-day-head, .sc-time-axis, .schedule-corner,
+    .schedule-col-head, .schedule-time, .fixed-calendar-head, .fixed-time,
+    .course-plan-day-head):is(.sc-calendar *, .schedule-grid *, .fixed-calendar *, .course-plan-calendar *) {
+  background: var(--ct-gray-50);
+}
+:is(.sc-time-head, .sc-day-head, .schedule-col-head, .fixed-calendar-head) {
+  min-height: 52px;
+  box-sizing: border-box;
+  align-content: center;
+}
+:is(.sc-time-head, .sc-day-head, .fixed-calendar-head, .fixed-time) {
+  border-right: 1px solid var(--ct-gray-200);
+}
+:is(.sc-day-head.sc-today, .schedule-col-head.today, .fixed-calendar-head.today) {
+  background: var(--ct-brand-50);
+  color: var(--ct-brand-700);
+  box-shadow: inset 0 -2px var(--ct-brand-500);
+}
+.sc-calendar-day,
+.calendar-read .schedule-cell {
+  background-color: var(--ct-white);
+}
+.sc-time-axis {
+  background-image: repeating-linear-gradient(to bottom, transparent 0 119px, var(--ct-gray-200) 119px 120px);
+}
+.calendar-read .schedule-lesson {
+  border: 1px solid var(--ct-gray-200);
+  border-left-width: 3px;
+  border-radius: 5px;
+  opacity: 1;
+}
+.calendar-read .schedule-lesson :is(strong, small) {
+  color: inherit;
+}
+:is(.schedule-cell.open, .legend-open, .fixed-empty-cell.available, .flex-time-cell.available) {
+  background: var(--ct-success-bg);
+}
+:is(.schedule-grid .schedule-cell.closed, .flex-time-cell.unavailable, .flex-calendar-legend .unavailable) {
+  background: var(--ct-gray-100);
+}
+:is(.schedule-grid .schedule-cell.intent:not(.leave), .fixed-empty-cell.intent, .flex-time-cell.intent,
+    .fixed-calendar-legend .intent, .flex-calendar-legend .intent) {
+  background: var(--ct-warning-bg);
+  color: var(--ct-gray-700);
+  font-size: 11px;
+  box-shadow: none;
+}
+:is(.schedule-cell.open, .fixed-empty-cell.available, .flex-time-cell.available):not(:disabled):not([aria-disabled="true"]):hover,
+:is(.fixed-empty-cell, .flex-time-cell).drop-target {
+  outline: 1px solid var(--ct-brand-700);
+  outline-offset: -2px;
+}
+.fixed-calendar :is(.fixed-course.confirmed, .flex-booked),
+:is(.fixed-calendar-legend, .flex-calendar-legend) .booked {
+  background: var(--ct-brand-100);
+  border-left: 3px solid var(--ct-brand-500);
+  color: var(--ct-brand-800);
+}
+.schedule-grid .schedule-cell.selected {
+  box-shadow: inset 0 0 0 2px var(--ct-brand-700);
+}
+.course-plan-day-head {
+  text-align: center;
+  padding: 4px;
+}
+:is(.sc-calendar-lesson, .calendar-read .schedule-lesson)[data-status="未开始"] {
+  background: var(--ct-info-bg);
+  border-color: var(--ct-info-bg);
+  border-left-color: var(--ct-info);
+  color: var(--ct-info);
+}
+:is(.sc-calendar-lesson, .calendar-read .schedule-lesson)[data-status="待确认"] {
+  background: var(--ct-warning-bg);
+  border-color: var(--ct-warning-bg);
+  border-left-color: var(--ct-warning);
+  color: var(--ct-warning);
+}
+:is(.sc-calendar-lesson, .calendar-read .schedule-lesson)[data-status="已完成"] {
+  background: var(--ct-success-bg);
+  border-color: var(--ct-success-bg);
+  border-left-color: var(--ct-success);
+  color: var(--ct-success);
+}
+:is(.sc-calendar-lesson, .calendar-read .schedule-lesson)[data-status="缺席"] {
+  background: var(--ct-danger-bg);
+  border-color: var(--ct-danger-bg);
+  border-left-color: var(--ct-danger);
+  color: var(--ct-danger);
+}
+:is(.sc-calendar-lesson, .calendar-read .schedule-lesson)[data-status="已取消"] {
+  background: var(--ct-gray-100);
+  border-color: var(--ct-gray-200);
+  border-left-color: var(--ct-gray-500);
+  color: var(--ct-gray-700);
+}
+
+.calendar-status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ct-gray-700);
+}
+.calendar-status-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 2px;
+  background: var(--calendar-status-color);
+}
+.calendar-status-legend [data-status="未开始"] { --calendar-status-color: var(--ct-info); }
+.calendar-status-legend [data-status="待确认"] { --calendar-status-color: var(--ct-warning); }
+.calendar-status-legend [data-status="已完成"] { --calendar-status-color: var(--ct-success); }
+.calendar-status-legend [data-status="缺席"] { --calendar-status-color: var(--ct-danger); }
+.calendar-status-legend [data-status="已取消"] { --calendar-status-color: var(--ct-gray-500); }
+.schedule-board > .calendar-status-legend { padding: 0 16px 12px; }

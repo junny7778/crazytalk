@@ -32,6 +32,7 @@ function fixture() {
     }));
   });
   data.students[3].status = "待排课";
+  document.querySelectorAll("details").forEach(d=>d.open=true);
   return {
     data,
     student: data.students[3],
@@ -63,6 +64,7 @@ function mount(
       </DemoProvider>
     </QueryClientProvider>,
   );
+  document.querySelectorAll("details").forEach(d=>d.open=true);
   return { ...result, complete };
 }
 beforeEach(() => {
@@ -118,11 +120,12 @@ describe("多老师课程计划", () => {
         </DemoProvider>
       </QueryClientProvider>,
     );
+    document.querySelectorAll("details").forEach(d=>d.open=true);
     expect(
       screen.getByLabelText("第1节上课时间").hasAttribute("disabled"),
     ).toBe(true);
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "补齐剩余老师" })); });
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认排课" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "补齐剩余老师", hidden:true })); });
+    await clickSubmit();
     const made = demoRepository
       .read()
       .lessons.filter((l) => l.studentId === data.students[3].id);
@@ -136,12 +139,12 @@ describe("多老师课程计划", () => {
       { date: "2026-11-23", time: "19:00", teacherId: a.id },
       { date: "2026-11-30", time: "19:00", teacherId: "" },
     ]);
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认已安排的 1 节" })); });
+    await clickSubmit("确认已安排的 1 节");
     expect(demoRepository.read().lessons).toHaveLength(1);
     expect(complete).not.toHaveBeenCalled();
-    expect(screen.getByText("课程预览 · 共 1 节")).toBeTruthy();
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "补齐剩余老师" })); });
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认排课" })); });
+    expect(screen.getByText("选择上课时间 · 共 1 节")).toBeTruthy();
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "补齐剩余老师", hidden:true })); });
+    await clickSubmit();
     expect(demoRepository.read().lessons).toHaveLength(2);
   });
   it("灵活计划可逐节换老师并提交不同日期和时间", async () => {
@@ -155,7 +158,7 @@ describe("多老师课程计划", () => {
     );
     await testAct(async () => { fireEvent.click(screen.getByLabelText("第2节老师")); });
     await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: name => name.startsWith(b.name) })); });
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认排课" })); });
+    await clickSubmit();
     expect(
       demoRepository.read().lessons.map((l) => [l.date, l.time, l.teacherId]),
     ).toEqual([
@@ -174,15 +177,16 @@ describe("多老师课程计划", () => {
       "临时课",
     );
     expect(
-      screen.getByRole("button", { name: "确认排课" }).hasAttribute("disabled"),
+      (await submitButton()).hasAttribute("disabled"),
     ).toBe(true);
+    fireEvent.click(screen.getByRole("button", {name:"返回调整"}));
     await testAct(async () => { fireEvent.click(
       within(screen.getByRole("region", { name: "第2节课程" })).getByRole(
         "button",
         { name: "移除" },
       ),
     ); });
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认排课" })); });
+    await clickSubmit();
     expect(demoRepository.read().lessons).toHaveLength(1);
   });
   it("返回后可以恢复草稿，恢复的老师确认需要重新核实", async () => {
@@ -218,7 +222,7 @@ it("灵活排课从具体日期范围匹配整节课程并提交", async () => {
   expect(screen.getByLabelText<HTMLInputElement>("第1节上课时间").value).toBe(
     "18:15",
   );
-  await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "确认排课" })); });
+  await clickSubmit();
   expect(demoRepository.read().lessons[0]).toMatchObject({
     date: "2026-11-24",
     time: "18:15",
@@ -229,6 +233,14 @@ it("周日历点击具体日期添加待确认课程，预览不写入", async (
   mount([], "临时课");
   const calendar = within(screen.getByRole("region", { name: "学员周日历" }));
   await testAct(async () => { fireEvent.click(calendar.getAllByRole("button", { name: /\+$/ })[1]); });
-  expect(screen.getByText("课程预览 · 共 1 节")).toBeTruthy();
+  expect(screen.getByText("选择上课时间 · 共 1 节")).toBeTruthy();
   expect(demoRepository.read().lessons).toHaveLength(0);
 });
+
+async function submitButton(name = "确认排课") {
+  const next = screen.queryByRole("button", {name:"预览排课"});
+  if (next) await testAct(async()=>{fireEvent.click(next);});
+  return screen.getByRole("button", {name});
+}
+
+async function clickSubmit(name = "确认排课") { const button = await submitButton(name); await testAct(async()=>{fireEvent.click(button);}); }

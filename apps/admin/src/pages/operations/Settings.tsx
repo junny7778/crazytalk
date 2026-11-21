@@ -619,7 +619,7 @@ export default function Settings() {
                     <div className="row">
                       {!draftRole && (
                         <>
-                          <Button size="sm" data-diagnostic-action="copy-role" onClick={() => createRole(role)}>
+                          <Button variant="ghost" size="sm" data-diagnostic-action="copy-role" onClick={() => createRole(role)}>
                             <Copy size={14} />
                             复制角色
                           </Button>

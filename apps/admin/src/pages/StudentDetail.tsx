@@ -9,7 +9,7 @@ import StudentClassIn from "../components/StudentClassIn";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Copy, Pencil, ChevronDown } from "lucide-react";
+import { ArrowLeft, Copy, ChevronDown } from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
 import { DEMO_TODAY, getStudentSummary } from "@crazytalk/shared";
 import StudentHistoryEditor from "../components/StudentHistoryEditor";
@@ -340,8 +340,7 @@ export default function StudentDetail() {
           )}
           <Button variant="ghost" onClick={() => setCard(studentProfileCard(student, data.lessons))}>查看学员画像信息</Button>
           {can("student.edit") && (
-            <Button onClick={() => openAction("edit")}>
-              <Pencil size={16} />
+            <Button variant="primary" onClick={() => openAction("edit")}>
               编辑资料
             </Button>
           )}

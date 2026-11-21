@@ -1,8 +1,9 @@
+import { transferableAbortController } from "node:util";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
@@ -14,10 +15,11 @@ import Schedule from "../pages/Schedule";
 
 function mount(child: React.ReactNode, path = "/students") {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <DemoProvider><ToastProvider><MemoryRouter initialEntries={[path]}>{child}</MemoryRouter></ToastProvider></DemoProvider>
+    <DemoProvider><ToastProvider><RouterProvider router={createMemoryRouter([{path:"*",element:child}],{initialEntries:[path]})}/></ToastProvider></DemoProvider>
   </QueryClientProvider>);
 }
 beforeEach(() => {
+vi.stubGlobal("AbortController",class{constructor(){return transferableAbortController();}});
   localStorage.clear();
   demoRepository.reset();
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -157,7 +159,8 @@ describe("独立需求验收：学生档案与老师结课", () => {
     delete fixture.lessons[0].confirmedUnits;
     localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(fixture));
     demoRepository.refresh();
-    const { container } = mount(<Schedule />, `/schedule?date=${DEMO_TODAY}`);
+    const { container } = mount(<Schedule />, `/schedule?teacher=${fixture.lessons[0].teacherId}&date=${DEMO_TODAY}`);
+    await testAct(async () => { fireEvent.click(screen.getByRole("button",{name:"查看完整课表"})); });
     await testAct(async () => { fireEvent.click(container.querySelector(".schedule-lesson")!); });
     const detail = screen.getByRole("dialog");
     expect(detail.textContent).toContain("55 分钟");

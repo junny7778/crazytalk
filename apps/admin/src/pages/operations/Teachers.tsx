@@ -696,7 +696,7 @@ export default function Teachers() {
               <p style={{ whiteSpace: "pre-wrap" }}>{teacher.notes || "未填写"}</p>
             </section>
           </Panel>
-          {businessMode() && <Panel title="ClassIn 账号" action={can("teacher.edit") && <Button size="sm" onClick={()=>setClassInOpen(true)}>{teacher.classInUid ? "编辑关联" : "关联账号"}</Button>}>
+          {businessMode() && <Panel title="ClassIn 账号" action={can("teacher.edit") && <Button variant="primary" size="sm" onClick={()=>setClassInOpen(true)}>{teacher.classInUid ? "编辑关联" : "关联账号"}</Button>}>
             <dl className="profile-summary-fields"><div><dt>关联状态</dt><dd><Badge tone={teacher.classInUid ? "success" : "neutral"}>{teacher.classInUid ? "已关联" : "待绑定"}</Badge></dd></div><div><dt>注册账号</dt><dd>{teacher.classInAccount || "—"}</dd></div><div><dt>ClassIn UID</dt><dd>{teacher.classInUid || "—"}</dd></div></dl>
           </Panel>}
           {classInOpen && <Modal open width={480} title="关联 ClassIn 账号" onClose={()=>setClassInOpen(false)}>
@@ -850,7 +850,7 @@ export default function Teachers() {
                   </dl>
                   <div className="row">
                     {(can("training.edit") || can("teacher.edit")) && (
-                      <Button
+                      <Button variant="primary"
                         onClick={() => {
                           setTrainingOnly(true);
                           setEdit({ ...teacher });

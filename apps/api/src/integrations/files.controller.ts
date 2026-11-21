@@ -1,15 +1,16 @@
 import { Body, Controller, Get, NotFoundException, Param, Post, Req, Res } from "@nestjs/common";
 import { createWriteStream, createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
-import { Transform } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { IncomingMessage, ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { mkdir, open, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { requireIdentity } from "../auth";
 import { scopeState } from "../../../../packages/shared/src/access";
 import { database, readState } from "../store";
+import { randomUUID } from "node:crypto";
+import { attachmentOss, newAttachmentBucket } from "./attachment-oss";
 
 const uploadSchema = z.object({ data: z.string().regex(/^data:((image\/(png|jpeg|webp|gif)|video\/(mp4|webm)));base64,[A-Za-z0-9+/]+=*$/) });
 @Controller("files")
@@ -21,28 +22,25 @@ export class FilesController {
     const comma = input.data.indexOf(",");
     const mime = input.data.slice(5, input.data.indexOf(";"));
     const bytes = Buffer.from(input.data.slice(comma + 1), "base64");
-    const id = randomUUID();
-    const directory = resolve(process.env.UPLOAD_DIRECTORY || ".data/uploads");
-    await mkdir(directory, { recursive: true });
-    const path = resolve(directory, id);
-    await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
-    try {
-      await database.attachment.create({ data: { id, ownerId: identity.accountId, mime, size: bytes.length, path } });
-    } catch (error) {
-      await unlink(path);
-      throw error;
-    }
-    return { id, url: "/api/files/" + id };
+    return this.save(identity.accountId, mime, Readable.from([bytes]));
   }
 
   @Post("raw")
   async uploadRaw(@Req() request: IncomingMessage) {
     const identity = await requireIdentity(request, true);
     const mime = z.enum(["image/png", "image/jpeg", "image/webp", "image/gif", "video/mp4", "video/webm"]).parse(request.headers["content-type"]);
+    return this.save(identity.accountId, mime, request);
+  }
+
+  private async save(ownerId: string, mime: string, source: Readable) {
+    const bucket = newAttachmentBucket();
     const id = randomUUID();
+    const key = "attachments/" + id;
     const directory = resolve(process.env.UPLOAD_DIRECTORY || ".data/uploads");
     await mkdir(directory, { recursive: true });
-    const path = resolve(directory, id);
+    const localPath = resolve(directory, id);
+    const path = bucket ? "oss://" + bucket + "/" + key : localPath;
+    const handle = await open(localPath, "wx", 0o600);
     let size = 0;
     const count = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
@@ -50,14 +48,44 @@ export class FilesController {
         callback(null, chunk);
       },
     });
+    let uploaded = false;
+    let saved = false;
+    let client: Awaited<ReturnType<typeof attachmentOss>> | undefined;
     try {
-      await pipeline(request, count, createWriteStream(path, { flags: "wx", mode: 0o600 }));
-      await database.attachment.create({ data: { id, ownerId: identity.accountId, mime, size, path } });
+      await pipeline(source, count, handle.createWriteStream());
+      if (bucket) {
+        client = await attachmentOss(bucket);
+        await client.put(key, localPath, { mime });
+        uploaded = true;
+      }
+      await database.attachment.create({ data: { id, ownerId, mime, size, path } });
+      saved = true;
     } catch (error) {
-      await unlink(path).catch(() => {});
+      if (client && uploaded) {
+        await client.delete(key).catch(() => {
+          process.stderr.write("Could not remove an OSS object after an attachment database error.\n");
+        });
+      }
       throw error;
+    } finally {
+      if (bucket || !saved) await unlink(localPath).catch(() => {
+        process.stderr.write("Could not remove an attachment staging file.\n");
+      });
     }
     return { id, url: "/api/files/" + id };
+  }
+
+  private async openAttachment(path: string, range?: { start: number; end: number }): Promise<Readable> {
+    if (!path.startsWith("oss://")) return createReadStream(path, range);
+    const locator = new URL(path);
+    const client = await attachmentOss(locator.hostname);
+    const headers = range ? { Range: "bytes=" + range.start + "-" + range.end } : undefined;
+    const { stream, res } = await client.getStream(locator.pathname.slice(1), { headers });
+    if (!(stream instanceof Readable) || (range && res.status !== 206)) {
+      if (stream instanceof Readable) stream.destroy();
+      throw new Error("OSS did not return the requested attachment stream");
+    }
+    return stream;
   }
 
   @Get(":id")
@@ -79,11 +107,13 @@ export class FilesController {
       if (!match) { response.writeHead(416, { "Content-Range": "bytes */" + file.size }); response.end(); return; }
       const start = Number(match[1]), end = match[2] ? Math.min(Number(match[2]), file.size - 1) : file.size - 1;
       if (start > end || start >= file.size) { response.writeHead(416, { "Content-Range": "bytes */" + file.size }); response.end(); return; }
+      const stream = await this.openAttachment(file.path, { start, end });
       response.writeHead(206, { "Content-Range": "bytes " + start + "-" + end + "/" + file.size, "Content-Length": end - start + 1 });
-      await pipeline(createReadStream(file.path, { start, end }), response);
+      await pipeline(stream, response);
       return;
     }
+    const stream = await this.openAttachment(file.path);
     response.setHeader("Content-Length", file.size);
-    await pipeline(createReadStream(file.path), response);
+    await pipeline(stream, response);
   }
 }

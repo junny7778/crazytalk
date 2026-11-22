@@ -1,3 +1,5 @@
+import { materialMatchIssue, studentMaterials } from "@crazytalk/shared";
+import StudentCourses from "../StudentCourses";
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
 import ClassInBookingPreview from "./ClassInBookingPreview";
 import { useScheduleCredits } from "./useScheduleCredits";
@@ -13,7 +15,7 @@ import {
   type FixedPlanSlot,
   type ScheduleIntent,
 } from "@crazytalk/shared";
-import { Button, Select, Field, Modal, useToast } from "@crazytalk/ui";
+import { Button, Select, Field, Tabs, Modal, Badge, useToast } from "@crazytalk/ui";
 const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const dayOf = (date: string) => new Date(`${date}T12:00:00+08:00`).getUTCDay();
 const monday = (date: string) => addDays(date, -((dayOf(date) + 6) % 7));
@@ -44,8 +46,12 @@ export function FixedPlanCalendar({
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const student = data.students.find((s) => s.id === studentId);
-  const [rows, setRows] = useState<Row[]>(plan.slots);
-  const unchangedRecommendation = JSON.stringify(rows.map(({date,time,teacherId})=>({date,time,teacherId}))) === JSON.stringify(plan.slots.map(({date,time,teacherId})=>({date,time,teacherId})));
+  const materials = student ? studentMaterials(data, student).filter(c => !intent.materialIds || intent.materialIds.includes(c.id)) : [];
+  const [rows, setRows] = useState<Row[]>(() => plan.slots.map(s => ({...s, material: s.material || materials[0]?.name || ""})));
+  const [calendarMode, setCalendarMode] = useState("edit");
+  const [view, setView] = useState("week");
+  const [reviewing, setReviewing] = useState(false);
+  const unchangedRecommendation = JSON.stringify(rows.map(({date,time,teacherId,material})=>({date,time,teacherId,material}))) === JSON.stringify(plan.slots.map(({date,time,teacherId,material})=>({date,time,teacherId,material})));
   const [week, setWeek] = useState(monday(intent.startDate));
   const [editing, setEditing] = useState<string | null>(null);
   const [extra, setExtra] = useState<{ date: string; time: string } | null>(
@@ -57,6 +63,7 @@ export function FixedPlanCalendar({
   const rowKey = (r: { date: string; time: string }) => `${r.date}/${r.time}`;
   const teachers = data.teachers.filter(
     (t) =>
+      materials.some(c => t.materialIds?.includes(c.id)) &&
       t.status !== "已离职" &&
       (!data.rules.trainingRequired || t.trained) &&
       !(
@@ -95,6 +102,7 @@ export function FixedPlanCalendar({
       return [];
     return teachers.filter(
       (t) =>
+        !materialMatchIssue(data, student!, t, source?.material || materials[0]?.name || "") &&
         !isAvailable(data, t.id, date, time, intent.duration, studentId).length,
     );
   }
@@ -146,6 +154,8 @@ export function FixedPlanCalendar({
   function issues(r: Row, id = r.teacherId) {
     if (!id) return ["待安排老师"];
     if (!teachers.some((t) => t.id === id)) return ["老师不符合授课要求"];
+    const materialIssue = materialMatchIssue(data, student!, teachers.find(t => t.id === id)!, r.material || materials[0]?.name || "");
+    if (materialIssue) return [materialIssue];
     if (r.date < DEMO_TODAY) return ["上课日期已过期"];
     const overlap = rows.some(
       (other) =>
@@ -175,10 +185,10 @@ export function FixedPlanCalendar({
       l.studentId === studentId &&
       l.status !== "已取消" &&
       l.date >= week &&
-      l.date < addDays(week, 7),
+      l.date < addDays(week, view === "day" ? 1 : 7),
   );
   const visible = rows.filter(
-    (r) => !r.lessonId && r.date >= week && r.date < addDays(week, 7),
+    (r) => !r.lessonId && r.date >= week && r.date < addDays(week, view === "day" ? 1 : 7),
   );
   const displayedTimes = [...rows, ...confirmed].map((r) => minutes(r.time));
   const windowStarts = intent.windows.map((w) => minutes(w.start));
@@ -202,7 +212,7 @@ export function FixedPlanCalendar({
         30,
     ) * 30,
   );
-  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(week, i));
+  const weekDates = Array.from({ length: view === "day" ? 1 : 7 }, (_, i) => addDays(week, i));
   const teacherSummary = [
     ...new Set(rows.map((r) => r.teacherId).filter(Boolean)),
   ]
@@ -237,7 +247,7 @@ export function FixedPlanCalendar({
         slots: ready.map((r) => ({ ...r, confirmedTeacher: r.confirmed })),
         duration: intent.duration,
         kind: "固定课",
-        material: student?.material || "",
+        material: ready[0].material || "",
       });
       if (!mounted.current) return;
       toast(result.message);
@@ -258,6 +268,7 @@ export function FixedPlanCalendar({
           }),
         );
         setEditing(null);
+        setReviewing(false);
         setMessage(`${result.message}；其余课次仍待处理。`);
       }
     } catch (e) {
@@ -268,6 +279,9 @@ export function FixedPlanCalendar({
     <div className="fixed-plan stack">
       <ClassInOperationFeedback studentId={studentId}/>
       <fieldset disabled={submitting} className="stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
+      <Tabs value={calendarMode} onChange={setCalendarMode} items={[{value:"read",label:"查看课表"},{value:"edit",label:"操作排课"}]}/>
+      {calendarMode === "read" && student && <StudentCourses student={student} timetableOnly/>}
+      <div hidden={calendarMode === "read"} className="stack">
       <section className="fixed-plan-summary">
         <div className="row between">
           <h3>{student?.name} 的固定课表</h3>
@@ -297,7 +311,7 @@ export function FixedPlanCalendar({
             onClick={() => {
               const index = gaps.findIndex((r) => rowKey(r) === editing);
               const r = gaps[(index + 1) % gaps.length];
-              setWeek(monday(r.date));
+              setWeek(view === "day" ? r.date : monday(r.date));
               setEditing(rowKey(r));
             }}
           >
@@ -305,27 +319,29 @@ export function FixedPlanCalendar({
           </Button>
         </div>
       )}
+      <div hidden={reviewing} className="stack">
+      <div className="row between"><Tabs value={view} onChange={value => {setView(value);if(value === "week") setWeek(monday(week));}} items={[{value:"week",label:"周视图"},{value:"day",label:"日视图"}]}/><Button size="sm" variant="ghost" disabled={!ready.length || preview || !can("schedule.create")} onClick={async () => {try {await act({type:"slot.lock",studentId,duration:intent.duration,slots:ready,expiresAt:new Date(Date.now()+30*60000).toISOString()});setMessage("档期已保留30分钟；这不会创建课程。");} catch(e) {setMessage(e instanceof Error ? e.message : "保留失败");}}}>保留方案档期30分钟</Button>{data.slotLocks?.some(l => l.studentId === studentId && Date.parse(l.expiresAt) > Date.now()) && <Button size="sm" variant="ghost" onClick={async () => {try {await act({type:"slot.release",studentId});setMessage("已释放档期");} catch(e) {setMessage(String(e));}}}>释放保留档期</Button>}</div>
       <div className="fixed-plan-week-nav" aria-label="课表周切换">
         <button
           type="button"
           className="icon-button"
-          aria-label="上一周"
+          aria-label={view === "day" ? "上一天" : "上一周"}
           disabled={week <= monday(intent.startDate)}
-          onClick={() => setWeek(addDays(week, -7))}
+          onClick={() => setWeek(addDays(week, view === "day" ? -1 : -7))}
         >
           <ChevronLeft size={18} />
         </button>
         <strong>
-          {week.replaceAll("-", "/")} - {addDays(week, 6).replaceAll("-", "/")}
+          {week.replaceAll("-", "/")}{view === "week" && ` - ${addDays(week, 6).replaceAll("-", "/")}`}
         </strong>
         <button
           type="button"
           className="icon-button"
-          aria-label="下一周"
+          aria-label={view === "day" ? "下一天" : "下一周"}
           disabled={
-            addDays(week, 7) >= addDays(intent.startDate, intent.weeks * 7)
+            addDays(week, view === "day" ? 1 : 7) >= addDays(intent.startDate, intent.weeks * 7)
           }
-          onClick={() => setWeek(addDays(week, 7))}
+          onClick={() => setWeek(addDays(week, view === "day" ? 1 : 7))}
         >
           <ChevronRight size={18} />
         </button>
@@ -349,7 +365,7 @@ export function FixedPlanCalendar({
           role="region"
           aria-label="学员固定课表"
           style={{
-            gridTemplateRows: `44px repeat(${(end - start) / 30},48px)`,
+            gridTemplateColumns: `64px repeat(${weekDates.length},minmax(90px,1fr))`, gridTemplateRows: `44px repeat(${(end - start) / 30},48px)`,
           }}
         >
           <div className="fixed-calendar-head">时间</div>
@@ -500,7 +516,7 @@ export function FixedPlanCalendar({
             <p>这是固定计划之外的单次加课，不改变每周固定安排。</p>
             <Button
               onClick={() => {
-                const r = { ...extra, teacherId: "", extra: true };
+                const r = { ...extra, teacherId: "", material: materials[0]?.name || "", extra: true };
                 setRows([...rows, r]);
                 setEditing(rowKey(r));
                 setExtra(null);
@@ -534,22 +550,8 @@ export function FixedPlanCalendar({
                 完成
               </Button>
             </div>
-            <Field label="本节可用老师">
-              <Select
-                value={focused.teacherId}
-                onValueChange={(teacherId) =>
-                  update(focused, { teacherId, confirmed: false })
-                }
-              >
-                <option value="">待安排</option>
-                {available.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                    {t.id === plan.primaryTeacherId ? " · 主老师" : ""}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <Field label="本节教材"><Select value={focused.material || ""} onValueChange={material => update(focused, {material, teacherId: "", confirmed: false})}>{materials.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</Select></Field>
+            <Field label="本节可用老师"><div className="flex-teacher-options">{available.map(t => <button type="button" className="flex-teacher-choice" key={t.id} aria-pressed={focused.teacherId === t.id} onClick={() => update(focused,{teacherId:t.id,confirmed:false})}><strong>{t.name}</strong><small>{t.so} · 口音 {t.accent} · 等级 {t.level}</small><Badge tone="success">教材与时间匹配</Badge></button>)}</div></Field>
             {!available.length && (
               <p>该时间暂无符合要求的老师，可暂留缺口，或返回修改排课信息。</p>
             )}
@@ -618,17 +620,20 @@ export function FixedPlanCalendar({
         </Modal>
       )}
       {message && !focused && <p role="alert">{message}</p>}
+      </div>
+      {reviewing && <section aria-label="本次排课核对"><h4>本次安排 {ready.length} 节 · 仍有 {editable.length-ready.length+missingTimeCount} 节待处理</h4><div className="schedule-lessons-scroll"><table><thead><tr><th>日期时间</th><th>老师</th><th>教材</th><th>时长</th></tr></thead><tbody>{ready.map(r => <tr key={rowKey(r)}><td>{r.date} {r.time}</td><td>{data.teachers.find(t => t.id === r.teacherId)?.name}</td><td>{r.material}</td><td>{intent.duration} 分钟</td></tr>)}</tbody></table></div></section>}
       <ClassInBookingPreview studentId={studentId} teacherIds={ready.map(row => row.teacherId)}/>
       {credits.node}
+      </div>
       </fieldset>
-      <div className="fixed-plan-footer schedule-flow-actions">
+      <div className="fixed-plan-footer schedule-flow-actions" style={{display: calendarMode === "read" ? "none" : undefined}}>
         <span>
           尚未保存 · 本次可确认 {ready.length} 节
           {editable.length > ready.length
             ? `，剩余 ${editable.length - ready.length} 节待处理`
             : ""}
         </span>
-        <Button disabled={submitting} onClick={onClose}>返回调整</Button>
+        <Button disabled={submitting} onClick={() => reviewing ? setReviewing(false) : onClose()}>返回调整</Button>
         <Button
           variant="primary"
           disabled={
@@ -638,9 +643,9 @@ export function FixedPlanCalendar({
             !can("schedule.create")
           }
           loading={submitting}
-            onClick={submit}
+            onClick={() => reviewing ? submit() : setReviewing(true)}
         >
-          {submitting ? "正在排课" : ready.length === editable.length && !missingTimeCount
+          {submitting ? "正在排课" : !reviewing ? "核对排课" : ready.length === editable.length && !missingTimeCount
             ? "确认排课"
             : `确认已安排的 ${ready.length} 节`}
         </Button>

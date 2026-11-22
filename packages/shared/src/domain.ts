@@ -1,3 +1,5 @@
+import { initializeTeacherNumbers, newTeacherNumber } from "./teacherNumbers";
+import { materialMatchIssue, studentMaterials } from "./materials";
 import { teacherOffboardImpact, refreshOffboardRebooking } from "./teacherOffboard";
 import { getStudentScheduleProgress } from "./scheduling";
 import { isUnstartedBooking, cancelForRebooking } from "./classInChanges";
@@ -537,6 +539,7 @@ export function transition(
       const chineseName = command.student.chineseName.trim();
       if (!chineseName) throw new Error("请填写学生中文名");
       const profile = studentProfileSchema.parse({ ...command.student, chineseName, name: chineseName });
+      if (profile.materialIds?.some(id => !data.catalog.some(c => c.id === id && c.type === "教材" && c.enabled))) throw new Error("请选择教材目录中启用的教材");
       const s = studentSchema.parse({
         ...profile,
         id: nextStudentId(data.students),
@@ -576,6 +579,7 @@ export function transition(
       )
         throw new Error("已有课后进度，请更正对应课后记录");
       if (patch.chineseName !== undefined && !patch.chineseName.trim()) throw new Error("请填写学生中文名");
+      if (patch.materialIds?.some(id => !existing.materialIds?.includes(id) && !data.catalog.some(c => c.id === id && c.type === "教材" && c.enabled))) throw new Error("请选择教材目录中启用的教材");
       Object.assign(existing, patch);
       existing.name = existing.chineseName || existing.englishName || existing.name;
       event("修改资料", "更新了学员资料", existing.id);
@@ -906,6 +910,7 @@ export function transition(
         )
       )
         throw new Error("意向时间范围需能容纳一节完整课程");
+      if (intent.materialIds && (!intent.materialIds.length || intent.materialIds.some(id => !studentMaterials(data, student(command.studentId)).some(c => c.id === id)))) throw new Error("请选择学员登记的学习教材");
       student(command.studentId).scheduleIntent = intent;
       event(
         "更新排课意向",
@@ -1419,8 +1424,6 @@ export function transition(
       const s = student(command.studentId);
       if ((command.scheduleRevision ?? 0) !== (s.scheduleRevision ?? 0)) throw new Error("排课关系已变更，请重新生成课程计划");
       const flexible = command.schedulingMode === "flex";
-      if (flexible && command.kind !== "临时课")
-        throw new Error("灵活排课模式与课程类型不一致");
       if (["停课", "结课", "退费"].includes(s.status))
         throw new Error("请先为学员办理复课，再安排课程");
       if (!command.slots.length) throw new Error("请至少选择一个上课时间");
@@ -1442,6 +1445,9 @@ export function transition(
         throw new Error("选择的时间有重复");
       for (const [slotIndex,slot] of command.slots.entries()) {
         const t = teacher(slot.teacherId ?? command.teacherId);
+        const material = slot.material ?? command.material;
+        const materialIssue = materialMatchIssue(data, s, t, material);
+        if (materialIssue) throw new Error(materialIssue);
         if (command.selectionMode === "recommended") {
           const blocked = teacherFit(data, s, t).blocked;
           if (blocked.length) throw new Error(blocked[0]);
@@ -1500,7 +1506,7 @@ export function transition(
           plannedUnits,
           sync: "已同步",
           syncReason: "",
-          material: command.material,
+          material,
           note: "",
           teacherIn: "",
           teacherOut: "",
@@ -1538,6 +1544,8 @@ export function transition(
       if (command.teacherId !== l.teacherId) throw new Error("换老师需先取消原预约，再重新排课");
       const t = teacher(command.teacherId);
       const s = student(l.studentId);
+      const materialIssue = materialMatchIssue(data, s, t, l.material);
+      if (materialIssue) throw new Error(materialIssue);
       if (s.age != null && s.age < 16 && !t.categories.includes("少儿"))
         throw new Error("这位老师不接受少儿课程，请选择其他老师");
       if (["停课", "结课", "退费"].includes(s.status))
@@ -2071,6 +2079,7 @@ export function transition(
         if (found?.tags.includes(tag)) continue;
         if (!data.catalog.some(c=>c.type === "老师标签" && c.id === tag && c.enabled)) throw new Error("请选择标签库中启用的老师标签");
       }
+      if (parsedTeacher.data.materialIds?.some(id => !found?.materialIds?.includes(id) && !data.catalog.some(c => c.id === id && c.type === "教材" && c.enabled))) throw new Error("请选择教材目录中启用的教材");
       parsedTeacher.data.tags = [...new Set(parsedTeacher.data.tags)];
       const beforeSchedule = found
         ? JSON.stringify([
@@ -2080,6 +2089,7 @@ export function transition(
           ])
         : "";
 
+      parsedTeacher.data.teacherNumber = found?.teacherNumber || newTeacherNumber(data.teachers);
       if (found) Object.assign(found, parsedTeacher.data);
       else data.teachers.push(parsedTeacher.data);
       for (const l of data.lessons.filter(
@@ -2513,6 +2523,7 @@ export function transition(
     }
   }
   data.catalog = trackFeedbackCategoryUsage(data);
+  initializeTeacherNumbers(data);
   refreshPackageBalances(data);
   data.revision++;
   if (["student.create", "student.profile", "student.details.update", "student.edit", "student.import"].includes(command.type)) {

@@ -18,7 +18,7 @@ function fixture() {
   const student = data.students[3];
   student.status = "待排课";
   const intent: ScheduleIntent = {
-    mode: "fixed",
+    mode: "fixed", materialIds: data.catalog.filter(c => c.type === "教材" && c.name === student.material).map(c => c.id),
     startDate: "2026-11-23",
     weeks: 8,
     duration: 25,
@@ -86,7 +86,7 @@ it("独立验收：Richard真实种子意向生成8节，记录计算耗时", ()
   const student =
     data.students.find((s) => s.name === "Richard") || data.students[0];
   const intent: ScheduleIntent = {
-    mode: "fixed",
+    mode: "fixed", materialIds: data.catalog.filter(c => c.type === "教材" && c.name === student.material).map(c => c.id),
     startDate: "2026-11-04",
     weeks: 4,
     duration: 25,

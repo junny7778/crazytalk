@@ -40,7 +40,7 @@ it("固定方案保留无时间老师，排除暂停自动排课老师",()=>{
  const d=createSeed(),s=d.students[0];d.rules.trainingRequired=false;d.lessons=[];d.leaves=[];s.age=7;s.status="在读";
  for(const t of d.teachers){t.availability=[];t.categories=["少儿"];t.status="在职";}
  d.teachers[0].tags=["tt-64"];
- const plans=getFixedSchedulePlans(d,s.id,{mode:"fixed",startDate:"2026-12-07",weeks:1,frequency:1,duration:25,windows:[{day:1,start:"10:00",end:"11:00"}]});
+ const plans=getFixedSchedulePlans(d,s.id,{mode:"fixed",materialIds:d.catalog.filter(c=>c.type==="教材"&&c.name===s.material).map(c=>c.id),startDate:"2026-12-07",weeks:1,frequency:1,duration:25,windows:[{day:1,start:"10:00",end:"11:00"}]});
  expect(plans.some(p=>p.primaryTeacherId===d.teachers[0].id)).toBe(false);
  expect(plans.length).toBeGreaterThan(0);expect(plans.every(p=>p.primaryCount===0)).toBe(true);
 });
@@ -48,7 +48,7 @@ it("自动提交复核风险，手动可排但重复占用被拦截",()=>{
  const d=createSeed(),s=d.students[0],t=d.teachers[0];d.rules.trainingRequired=false;d.lessons=[];d.leaves=[];
  s.status="在读";s.age=7;t.tags=["tt-64"];t.availability=[{day:1,start:"08:00",end:"22:00"}];t.availabilityFrom="";t.categories=["少儿"];t.needConfirm=false;
  d.classInAccounts=[{id:"linked",phone:s.phone,uid:"123",studentIds:[s.id]}];
- const command={type:"lesson.schedule" as const,studentId:s.id,teacherId:t.id,slots:[{date:"2026-12-07",time:"10:00"}],duration:25,kind:"固定课" as const,material:"test",confirmedTeacher:true};
+ const command={type:"lesson.schedule" as const,studentId:s.id,teacherId:t.id,slots:[{date:"2026-12-07",time:"10:00"}],duration:25,kind:"固定课" as const,material:s.material,confirmedTeacher:true};
  expect(()=>transition(d,{...command,selectionMode:"recommended"})).toThrow("暂停");
  const next=transition(d,{...command,selectionMode:"manual"}).data;
  expect(next.lessons).toHaveLength(1);

@@ -47,7 +47,7 @@ import "./Schedule.css";
 import "../components/weekly-calendar.css";
 import { CalendarStatusLegend, calendarLessonStatus } from "../components/CalendarStatusLegend";
 import { FixedPlanCalendar } from "../components/scheduling/FixedPlanCalendar";
-import { CoursePlanEditor } from "../components/scheduling/CoursePlanEditor";
+import { CustomSchedulingPanel } from "../components/scheduling/CustomSchedulingPanel";
 import { StudentSchedulingPanel } from "../components/scheduling/StudentSchedulingPanel";
 import { ScheduleOverview } from "../components/scheduling/ScheduleOverview";
 type Slot = { date: string; time: string };
@@ -85,11 +85,11 @@ export default function Schedule() {
     "setup",
   );
   const [workflowDirty, setWorkflowDirty] = useState(false);
+  const [customDraftKey, setCustomDraftKey] = useState("");
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
   const [studentQuery, setStudentQuery] = useState("");
   const [studentFilter, setStudentFilter] = useState("all");
-  const [teacherStatus, setTeacherStatus] = useState("active");
   const [multiSelect, setMultiSelect] = useState(false);
   function leaveWorkflow(action: () => void) {
     if (workflowBusy) return;
@@ -127,7 +127,6 @@ export default function Schedule() {
   const [selected, setSelected] = useState<Slot[]>([]);
   const [lessonId, setLessonId] = useState<string | null>(null);
   const [modal, setModal] = useState<"schedule" | "reschedule" | null>(null);
-  const [kind, setKind] = useState<"固定课" | "临时课">("固定课");
   const [rescheduleConfirmed, setRescheduleConfirmed] = useState(false);
   const [error, setError] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState(DEMO_TODAY);
@@ -236,9 +235,9 @@ export default function Schedule() {
   const visibleTeachers = data.teachers
     .filter(
       (t) =>
-        (teacherStatus === "all" || t.status !== "已离职") &&
+        t.status === "在职" &&
         (!so || t.so === so) &&
-        `${t.name} ${t.id}`.toLowerCase().includes(query.toLowerCase()),
+        `${t.name} ${t.teacherNumber}`.toLowerCase().includes(query.toLowerCase()),
     )
     .sort(
       (a, b) =>
@@ -302,9 +301,8 @@ export default function Schedule() {
       setSelected([]);
     }
   }
-  function beginSchedule(temporary = false) {
+  function beginSchedule() {
     setError("");
-    setKind(temporary ? "临时课" : "固定课");
     setModal("schedule");
   }
   const moveTeacher = data.teachers.find((t) => t.id === rescheduleTeacher);
@@ -332,10 +330,6 @@ export default function Schedule() {
         true,
       )[0]
     : "";
-  const sourceSlots = selected;
-  const selectedOutside = sourceSlots.some(
-    (s) => !isRegularTime(teacher, s.date, s.time, duration),
-  );
   useEffect(() => {
     setRescheduleConfirmed(false);
   }, [rescheduleTeacher, rescheduleDate, rescheduleTime]);
@@ -661,7 +655,7 @@ export default function Schedule() {
                         );
                       } else {
                         setSelected([slot]);
-                        if (panel === "teachers") beginSchedule(true);
+                        if (panel === "teachers") beginSchedule();
                       }
                     }}
                   >
@@ -848,17 +842,6 @@ export default function Schedule() {
                   <option key={value}>{value}</option>
                 ))}
               </Select>
-              <details>
-                <summary>更多筛选</summary>
-                <Select
-                  aria-label="老师状态"
-                  value={teacherStatus}
-                  onValueChange={setTeacherStatus}
-                >
-                  <option value="active">在职老师</option>
-                  <option value="all">全部老师</option>
-                </Select>
-              </details>
               <div className="roster-list" aria-label="老师列表">
                 {filtered.map((t) => (
                   <button
@@ -870,7 +853,7 @@ export default function Schedule() {
                     <Avatar name={t.name} />
                     <span>
                       <strong>{t.name}</strong>
-                      <small>{t.id}</small>
+                      <small>{t.teacherNumber}</small>
                     </span>
                   </button>
                 ))}
@@ -881,14 +864,13 @@ export default function Schedule() {
                   description="试试搜索其他姓名或清除筛选。"
                 />
               )}
-              {(query || so || teacherStatus !== "active") && (
+              {(query || so) && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
                     setQuery("");
                     setSo("");
-                    setTeacherStatus("active");
                   }}
                 >
                   清除筛选
@@ -931,7 +913,7 @@ export default function Schedule() {
                       : "安排课程"}
                   </h3>
                   <small>
-                    ID: {panel === "pending" ? student?.id : teacher?.id}
+                    ID: {panel === "pending" ? student?.id : teacher?.teacherNumber}
                   </small>
                 </div>
               </div>
@@ -981,13 +963,7 @@ export default function Schedule() {
                 setScheduleResult(null);
                 setFlow(mode);
                 if (mode === "custom") {
-                  setSelected([
-                    {
-                      date: base < DEMO_TODAY ? DEMO_TODAY : base,
-                      time: "19:00",
-                    },
-                  ]);
-                  setKind("临时课");
+                  setSelected([]);
                   setModal("schedule");
                 }
               }}
@@ -1063,15 +1039,13 @@ export default function Schedule() {
           )}
           {modal === "schedule" && (
             <div className="schedule-summary-card">
-              <CoursePlanEditor
+              <CustomSchedulingPanel
                 studentId={panel === "pending" ? studentId : ""}
                 teacherId={panel === "teachers" ? selectedTeacher : ""}
-                lockStudent={panel === "pending"}
-                lockTeacher={panel === "teachers"}
-                slots={selected}
-                kind={kind}
-                duration={duration}
-                generated={false}
+                initialTime={selected[0]}
+                initialTimes={selected}
+                onDraftKeyChange={setCustomDraftKey}
+                startDate={base}
                 onDirtyChange={setWorkflowDirty}
                 onBusyChange={setWorkflowBusy}
                 onStageChange={setWorkflowStage}
@@ -1121,13 +1095,8 @@ export default function Schedule() {
               {calendarMode === "edit" && can("schedule.create") && (
                 <Button
                   onClick={() => {
-                    setSelected([
-                      {
-                        date: base < DEMO_TODAY ? DEMO_TODAY : base,
-                        time: "19:00",
-                      },
-                    ]);
-                    beginSchedule(true);
+                    setSelected([]);
+                    beginSchedule();
                   }}
                 >
                   为该老师排课
@@ -1173,24 +1142,14 @@ export default function Schedule() {
               >
                 取消选择
               </Button>
-              {!selectedOutside && selected.length > 0 && (
-                <Button
-                  size="sm"
-                  onClick={() => beginSchedule(true)}
-                  disabled={preview}
-                >
-                  灵活排课
-                </Button>
-              )}
               <Button
                 size="sm"
                 variant="primary"
-                onClick={() => beginSchedule(selectedOutside)}
+                onClick={() => beginSchedule()}
                 disabled={preview}
               >
                 <Plus size={15} />
-                选择学员排
-                {selectedOutside ? "灵活课" : "固定课"}
+                使用已选时间排课
               </Button>
             </div>
           </div>
@@ -1216,6 +1175,7 @@ export default function Schedule() {
               variant="primary"
               disabled={workflowBusy}
               onClick={() => {
+                if (modal === "schedule" && customDraftKey) localStorage.removeItem(customDraftKey);
                 leaveAction?.();
                 if (blocker.state === "blocked") blocker.proceed();
                 setLeaveAction(null);

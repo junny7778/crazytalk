@@ -37,3 +37,5 @@ export { accountPasswordHint, accountPasswordSchema } from "./accountPassword";
 export * from "./teacherTags";
 
 export * from "./teacherOffboard";
+
+export * from "./materials";

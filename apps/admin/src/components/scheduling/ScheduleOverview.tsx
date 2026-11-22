@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useDemo } from "@crazytalk/shared/react";
 import {
-  addDays,
   DEMO_TODAY,
   getScheduleCredits,
   getStudentScheduleProgress,
@@ -38,12 +37,6 @@ export function ScheduleOverview({
 }: Props) {
   const { data, can, preview } = useDemo();
   const [history, setHistory] = useState(false);
-  const [week, setWeek] = useState(() =>
-    addDays(
-      DEMO_TODAY,
-      -((new Date(`${DEMO_TODAY}T12:00:00+08:00`).getUTCDay() + 6) % 7),
-    ),
-  );
   const student = person.kind === "student" ? person.value : undefined;
   const teacher = person.kind === "teacher" ? person.value : undefined;
   const credits = student ? getScheduleCredits(data, student.id, 0, 1) : null;
@@ -68,10 +61,8 @@ export function ScheduleOverview({
       ? l.date < DEMO_TODAY || l.status === "已取消"
       : l.date >= DEMO_TODAY && l.status !== "已取消",
   );
-  const weekLessons = lessons.filter(
-    (l) => l.date >= week && l.date < addDays(week, 7) && l.status !== "已取消",
-  );
-  const weekMinutes = weekLessons.reduce((sum, l) => sum + l.duration, 0);
+  const scheduledLessons = lessons.filter(l => l.status !== "已取消");
+  const scheduledMinutes = scheduledLessons.reduce((sum, l) => sum + l.duration, 0);
   const balanceKnown =
     !!student &&
     (!!data.orders?.some((o) => o.studentIds.includes(student.id)) ||
@@ -93,7 +84,7 @@ export function ScheduleOverview({
             <Avatar name={person.value.name} />
             <div>
               <h3>{person.value.name}</h3>
-              <small>ID：{person.value.id}</small>
+              <small>ID：{person.kind === "teacher" ? person.value.teacherNumber : person.value.id}</small>
             </div>
           </div>
           {student ? (
@@ -175,39 +166,18 @@ export function ScheduleOverview({
         ) : (
           teacher && (
             <>
-              <div className="row between wrap">
-                <strong>
-                  {week} — {addDays(week, 6)}
-                </strong>
-                <div className="row">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setWeek(addDays(week, -7))}
-                  >
-                    上一周
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setWeek(addDays(week, 7))}
-                  >
-                    下一周
-                  </Button>
-                </div>
-              </div>
               <dl className="schedule-metrics">
                 <div>
-                  <dt>本周已排课节</dt>
+                  <dt>全部已排课节</dt>
                   <dd>
-                    {weekLessons.length}
+                    {scheduledLessons.length}
                     <small> 节</small>
                   </dd>
                 </div>
                 <div>
-                  <dt>本周已排时长</dt>
+                  <dt>全部已排时长</dt>
                   <dd>
-                    {weekMinutes}
+                    {scheduledMinutes}
                     <small> 分钟</small>
                   </dd>
                 </div>

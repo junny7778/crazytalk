@@ -53,7 +53,7 @@ function scenario() {
       slots: [{ date, time: "09:00" }],
       duration: 25,
       kind: "固定课",
-      material: "Book",
+      material: data.students.find(s => s.id === id)!.material,
       confirmedTeacher: true,
     });
     return data.lessons.at(-1)!;

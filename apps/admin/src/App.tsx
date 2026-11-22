@@ -196,7 +196,7 @@ export default function App() {
   const searchTeacher =
     searchKeyword && can("teacher.view")
       ? data.teachers.filter((t) =>
-          t.name.toLowerCase().includes(searchKeyword),
+          `${t.name} ${t.teacherNumber}`.toLowerCase().includes(searchKeyword),
         )
       : [];
   const guard = (permission: string, element: React.ReactNode) =>
@@ -569,7 +569,7 @@ export default function App() {
                     <div>
                       <strong>{t.name}</strong>
                       <small>
-                        {t.so} · {t.accent}
+                        {t.teacherNumber} · {t.so} · {t.accent}
                       </small>
                     </div>
                     <ArrowUpRight size={16} />

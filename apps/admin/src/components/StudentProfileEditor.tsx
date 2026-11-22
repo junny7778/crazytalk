@@ -1,3 +1,5 @@
+import MaterialPicker from "./MaterialPicker";
+import { studentMaterialIds } from "@crazytalk/shared";
 import ClassInHandoverPreview from "./ClassInHandoverPreview";
 import {studentOrganization} from "@crazytalk/shared";
 import { useEffect, useRef, useState } from "react";
@@ -132,11 +134,12 @@ export default function StudentProfileEditor({
         "ownerAccountId",
         "personality","level","interests",
         "foreignTeacherExperience",
+        "materialIds",
         "preferences",
         ...(!hasReports ? (["material", "unit"] as const) : []),
       ];
       const changed = keys.filter(
-        (key) => profile[key] !== initialProfile.current[key],
+        (key) => JSON.stringify(profile[key]) !== JSON.stringify(initialProfile.current[key]),
       );
       const edits: Partial<StudentEditableInput> = Object.fromEntries(
         changed.map((key) => [key, profile[key]]),
@@ -322,6 +325,7 @@ export default function StudentProfileEditor({
             <Field label="所属组别"><input readOnly disabled={organization.group === "待分配"} className="student-organization-value" value={organization.group}/></Field>
           </div>
         </section>
+        <section><h3>学习教材</h3><MaterialPicker label="学习教材" catalog={data.catalog} value={studentMaterialIds(data, draft)} onChange={materialIds => patch({materialIds})}/></section>
         {(!student || !hasReports) && (
           <section>
             <h3>初始教学信息</h3>

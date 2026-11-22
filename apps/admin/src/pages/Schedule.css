@@ -1286,11 +1286,10 @@
   border-color: var(--ct-brand-200);
 }
 .flex-booked {
-  pointer-events: none;
+  cursor: pointer;
   background: var(--ct-info-bg);
   border-color: var(--ct-info-bg);
   color: var(--ct-info);
-  cursor: default;
 }
 .flex-calendar-legend {
   display: flex;
@@ -1337,6 +1336,11 @@
   overflow: auto;
 }
 .flex-teacher-choice {
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 10px;
+  padding: 12px;
+  font: inherit;
+  color: var(--ct-gray-900);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1536,6 +1540,8 @@
   font-weight: 400;
 }
 .schedule-metrics .schedule-availability-summary {
+  padding: 0;
+  text-align: left;
   font-size: 13px;
   line-height: 1.7;
   font-weight: 400;
@@ -1760,3 +1766,33 @@
 .schedule-account-hint { gap: 8px; color: var(--ct-gray-500); font-size: 13px; }
 .schedule-account-hint .schedule-bind-link { border: 0; background: transparent; padding: 0; min-height: auto; color: var(--ct-brand-700); font-size: inherit; }
 .schedule-account-hint .schedule-bind-link:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+
+.schedule-strategy-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.schedule-strategy-row > label { display: grid; grid-template-columns: 18px 1fr; gap: 4px 8px; border: 1px solid var(--ct-gray-200); border-radius: 10px; padding: 12px; cursor: pointer; }
+.schedule-strategy-row > label.selected { border-color: var(--ct-brand-700); background: var(--ct-brand-50); }
+.schedule-strategy-row input { grid-row: 1 / 3; align-self: start; margin: 2px 0 0; }
+.schedule-strategy-row small { grid-column: 2; margin: 0; color: var(--ct-gray-700); }
+.schedule-recommendation-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.schedule-match-reasons { display: grid; gap: 8px; margin: 16px 0; }
+.schedule-match-card .schedule-match-meta { margin: 20px 0; }
+.schedule-plan-section > .row > input { max-width: 260px; }
+.material-picker > .row { gap: 12px 20px; }
+.material-picker input[type="checkbox"] { width: auto; }
+@media (max-width: 1100px) { .schedule-recommendation-grid { grid-template-columns: 1fr; } }
+.schedule-custom-settings { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 16px; }
+.schedule-custom-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; }
+.schedule-student-options { max-height: 720px; overflow: auto; }
+.schedule-student-options .flex-teacher-choice { width: 100%; text-align: left; }
+.schedule-student-options small { display: block; }
+@media (max-width: 1100px) { .schedule-custom-layout { grid-template-columns: minmax(0, 1fr); } .schedule-student-options { max-height: 360px; } }
+.custom-calendar-read .flex-time-cell { background: var(--ct-white); color: transparent; pointer-events: none; }
+.custom-calendar-read .flex-time-cell > * { visibility: hidden; }
+.custom-calendar-read .flex-booked[data-status="未开始"] { background: var(--ct-info-bg); color: var(--ct-info); border-left-color: var(--ct-info); }
+.custom-calendar-read .flex-booked[data-status="待确认"] { background: var(--ct-warning-bg); color: var(--ct-warning); border-left-color: var(--ct-warning); }
+.custom-calendar-read .flex-booked[data-status="已完成"] { background: var(--ct-success-bg); color: var(--ct-success); border-left-color: var(--ct-success); }
+.custom-calendar-read .flex-booked[data-status="缺席"] { background: var(--ct-danger-bg); color: var(--ct-danger); border-left-color: var(--ct-danger); }
+
+.schedule-recommendation-actions { position: static; }
+.schedule-student-options .flex-teacher-choice[aria-pressed="true"] { border-color: var(--ct-brand-700); background: var(--ct-brand-50); }
+
+.schedule-setup-actions { position: static; }

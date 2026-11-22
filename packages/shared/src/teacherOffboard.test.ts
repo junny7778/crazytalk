@@ -190,7 +190,7 @@ it("补排两节不会只约一节就结束，需全部同步成功才完成待�
       duration: 25,
       kind: "临时课",
       schedulingMode: "flex",
-      material: "测试",
+      material: s.material,
       confirmedTeacher: true,
     }).data;
   };

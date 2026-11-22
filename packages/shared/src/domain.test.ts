@@ -12,6 +12,7 @@ function createSeed() {
     uid: String(20000 + index),
     studentIds: [student.id],
   }));
+  state.students.forEach(s => {s.materialIds = ["m2"];});
   return state;
 }
 function normalPending(data: DemoState) {

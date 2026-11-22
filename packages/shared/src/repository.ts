@@ -1,3 +1,4 @@
+import { initializeTeacherNumbers } from "./teacherNumbers";
 import { finishStudentAccountChange } from "./classInChanges";
 import { initializeTeacherTags } from "./teacherTags";
 import { migratePackageBalances, refreshPackageBalances } from "./packageBalances";
@@ -103,7 +104,8 @@ function read(): DemoState {
           const original = storedFeedbackPresenceSchema.parse(input);
           const catalog = migrateFeedbackCatalog(memory.catalog);
           const copyUpdated = updateStoredCopy(memory);
-          let upgraded = catalog !== memory.catalog || payrollUpgrade || copyUpdated;
+          let upgraded = initializeTeacherNumbers(memory);
+          upgraded = catalog !== memory.catalog || payrollUpgrade || copyUpdated || upgraded;
           const tagsUpdated = initializeTeacherTags(memory);
           upgraded ||= tagsUpdated;
           const teamsUpdated = assignSampleTeams(memory);

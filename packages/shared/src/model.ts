@@ -3,6 +3,8 @@ import { z } from "zod";
 export const scheduleIntentSchema = z
   .object({
     mode: z.enum(["fixed", "flex"]),
+    materialIds: z.array(z.string()).optional(),
+    priority: z.enum(["teacher", "time"]).optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     weeks: z.number().int().min(1).max(52),
     duration: z
@@ -47,6 +49,7 @@ export const studentSchema = z.object({
   status: z.enum(["待排课", "在读", "停课", "结课", "退费"]),
   level: z.string(),
   material: z.string(),
+  materialIds: z.array(z.string()).optional(),
   unit: z.string(),
   teacherId: z.string(),
   balance: z.number(),
@@ -152,6 +155,7 @@ export const studentEditableSchema = studentProfileSchema.pick({
   foreignTeacherExperience: true,
   preferences: true,
   material: true,
+  materialIds: true,
   unit: true,
 });
 export type StudentEditableInput = z.infer<typeof studentEditableSchema>;
@@ -258,6 +262,7 @@ export const teacherSchema = z.preprocess(
   },
   z.object({
     id: z.string(),
+    teacherNumber: z.string().regex(/^[1-9]\d{7}$/).optional(),
     name: z.string(),
     so: z.string(),
     tmAccountId: z.string().optional(),
@@ -266,6 +271,7 @@ export const teacherSchema = z.preprocess(
     accent: z.string(),
     level: z.string(),
     categories: z.array(z.string()),
+    materialIds: z.array(z.string()).optional(),
     status: z.preprocess(
       value => value === "培训中" || value === "请假中" ? "在职" : value,
       z.enum(["在职", "已离职"]),
@@ -854,6 +860,7 @@ export type Command = { operator?: string } & (
         date: string;
         time: string;
         teacherId?: string;
+        material?: string;
         confirmedTeacher?: boolean;
         extra?: boolean;
         fixedOrigin?: { date: string; time: string };

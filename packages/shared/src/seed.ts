@@ -1,3 +1,4 @@
+import { initializeTeacherNumbers } from "./teacherNumbers";
 import { initializeTeacherTags } from "./teacherTags";
 import { assignSampleTeams, migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "./organization";
 import { initializePayroll } from "./payroll";
@@ -681,6 +682,8 @@ export function createSeed(): DemoState {
   migrateTeamCatalog(seed);
   migrateProjectChannels(seed);
   migrateStudentOwners(seed);
+  for (const teacher of seed.teachers) teacher.materialIds = seed.catalog.filter(c => c.type === "教材").map(c => c.id);
+  initializeTeacherNumbers(seed);
   return seed;
 }
 

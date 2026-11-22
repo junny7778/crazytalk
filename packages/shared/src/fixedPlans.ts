@@ -1,3 +1,4 @@
+import { materialMatchIssue, studentMaterials } from "./materials";
 import { teacherFit, compareTeacherFit } from "./teacherMatch";
 import {
   addDays,
@@ -13,6 +14,7 @@ export type FixedPlanSlot = {
   time: string;
   teacherId: string;
   lessonId?: string;
+  material?: string;
 };
 export type FixedPlan = {
   primaryTeacherId: string;
@@ -40,8 +42,11 @@ export function getFixedSchedulePlans(
     !scheduleIntentSchema.safeParse(intent).success
   )
     return [];
+  const materials = studentMaterials(data, student).filter(c => intent.materialIds?.includes(c.id));
+  if (!materials.length) return [];
   const teachers = data.teachers.filter(
     (t) =>
+      materials.some(c => !materialMatchIssue(data, student, t, c.name)) &&
       !teacherFit(data, student, t).blocked.length &&
       t.status !== "已离职" &&
       (!data.rules.trainingRequired || t.trained) &&
@@ -153,10 +158,9 @@ export function getFixedSchedulePlans(
   });
   const requiredCount = intent.frequency * intent.weeks;
   const plans = teachers.map((primary) => {
-    // Weighted interval scheduling: complete coverage dominates primary coverage;
-    // cardinality is the final tie-break so empty required positions stay visible.
+    // Prefer primary-teacher coverage or total coverage according to the selected priority.
     const score = (c: (typeof candidates)[number]) =>
-      c.series.filter((s) => s.ids.length).length *
+      c.series.filter((s) => intent.priority === "teacher" ? s.ids.includes(primary.id) : s.ids.length).length *
         (requiredCount + 1) *
         (intent.frequency + 1) +
       c.series.filter((s) => s.ids.includes(primary.id)).length *
@@ -196,7 +200,7 @@ export function getFixedSchedulePlans(
         .map((s, i) => (!s.teacherId && s.ids.length ? i : -1))
         .filter((i) => i >= 0),
     );
-    while (remaining.size) {
+    while (intent.priority !== "teacher" && remaining.size) {
       const best = [...teachers].sort(
         (a, b) =>
           [...remaining].filter((i) => assignments[i].ids.includes(b.id))
@@ -216,6 +220,7 @@ export function getFixedSchedulePlans(
         date,
         time,
         teacherId,
+        material: lessonId ? booked.find(l => l.id === lessonId)!.material : materials.find(c => data.teachers.find(t => t.id === teacherId)?.materialIds?.includes(c.id))?.name || materials[0].name,
         ...(lessonId ? { lessonId } : {}),
       }))
       .sort(
@@ -236,6 +241,7 @@ export function getFixedSchedulePlans(
   return plans
     .sort(
       (a, b) =>
+        (intent.priority === "teacher" ? compareTeacherFit(data, student, teachers.find(t => t.id === a.primaryTeacherId)!, teachers.find(t => t.id === b.primaryTeacherId)!) : 0) ||
         b.coveredCount - a.coveredCount ||
         b.primaryCount - a.primaryCount ||
         a.teacherCount - b.teacherCount ||

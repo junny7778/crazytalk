@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
   DEMO_TODAY,
+  studentMaterialIds,
   getStudentSummary,
   addDays,
   teacherName,
@@ -43,7 +44,7 @@ export default function StudentCourses({
 }: {
   timetableOnly?: boolean;
   student: Student;
-  onReschedule: (lessonId: string) => void;
+  onReschedule?: (lessonId: string) => void;
   onOpenLesson?: (lessonId: string) => void;
   onSchedule?: () => void;
   onChangeTeacher?: () => void;
@@ -153,6 +154,7 @@ export default function StudentCourses({
       {!timetableOnly && (
         <Panel title="课程安排">
           <dl className="sc-arrangement-summary">
+            <div><dt>学习教材</dt><dd className="row wrap">{studentMaterialIds(data, student).length ? studentMaterialIds(data, student).map(id => <Badge key={id}>{data.catalog.find(c => c.id === id)?.name || "未找到教材"}</Badge>) : "未登记"}</dd></div>
             <div>
               <dt>当前老师</dt>
               <dd className="row wrap">

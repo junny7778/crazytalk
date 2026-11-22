@@ -1,5 +1,6 @@
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
-import { FlexStudentCalendar } from "./FlexStudentCalendar";
+import MaterialPicker from "../MaterialPicker";
+import { studentMaterials } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
 import { ZodError } from "zod";
 import { useEffect, useMemo, useState } from "react";
@@ -10,7 +11,6 @@ import {
   isScheduleDate,
   addDays,
   teacherFit,
-  compareTeacherFit,
   getFixedSchedulePlans,
   type FixedPlan,
   getStudentScheduleProgress,
@@ -37,7 +37,6 @@ export function StudentSchedulingPanel({
   onViewTeacher,
   onIntentSaved,
   onFixedPlan,
-  onScheduleComplete,
 }: {
   onClose: () => void;
   onStageChange: (stage: "setup" | "preview") => void;
@@ -53,7 +52,7 @@ export function StudentSchedulingPanel({
   const toast = useToast();
   const [draft, setDraft] = useState<Intent>(
     student.scheduleIntent
-      ? student.scheduleIntent
+      ? {...student.scheduleIntent, mode: "fixed", materialIds: student.scheduleIntent.materialIds || studentMaterials(data, student).slice(0, 1).map(c => c.id), priority: student.scheduleIntent.priority || "teacher"}
       : {
           mode: "fixed",
           startDate: DEMO_TODAY,
@@ -61,15 +60,15 @@ export function StudentSchedulingPanel({
           duration: 25,
           frequency: 2,
           windows: [],
+          materialIds: studentMaterials(data, student).slice(0, 1).map(c => c.id),
+          priority: "teacher",
         },
   );
-  const [editingIntent, setEditingIntent] = useState(!student.scheduleIntent);
+  const [editingIntent, setEditingIntent] = useState(true);
   useEffect(() => {
     if (editingIntent) onStageChange("setup");
   }, [editingIntent, onStageChange]);
   const [error, setError] = useState("");
-  const [chosenTeacher, setChosenTeacher] = useState("");
-  const [showAlternatives, setShowAlternatives] = useState(false);
   const [generating, setGenerating] = useState(false);
   useEffect(() => {
     onBusyChange(generating);
@@ -79,10 +78,7 @@ export function StudentSchedulingPanel({
     onDirtyChange(JSON.stringify(draft) !== initialDraft);
   }, [draft, initialDraft, onDirtyChange]);
   const [query, setQuery] = useState("");
-  const [priority, setPriority] = useState("时间优先");
-  const [holdMinutes, setHoldMinutes] = useState(30);
   const saved = student.scheduleIntent;
-  const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
   const windowErrors = draft.windows.map((window) => {
     if (!window.start || !window.end) return "请填写开始和结束时间";
     const minutes = (time: string) =>
@@ -93,6 +89,8 @@ export function StudentSchedulingPanel({
     return "";
   });
   const validDraft =
+    !!draft.materialIds?.length &&
+    draft.materialIds.every(id => studentMaterials(data, student).some(c => c.id === id)) &&
     scheduleIntentSchema.safeParse(draft).success &&
     isScheduleDate(draft.startDate) &&
     draft.startDate >= DEMO_TODAY &&
@@ -121,30 +119,7 @@ export function StudentSchedulingPanel({
         ?.name.toLowerCase()
         .includes(query.toLowerCase()),
     )
-    .sort((a, b) => {
-      const at = data.teachers.find((t) => t.id === a.primaryTeacherId)!,
-        bt = data.teachers.find((t) => t.id === b.primaryTeacherId)!;
-      const complete =
-        Number(b.complete && b.teacherCount === 1) -
-        Number(a.complete && a.teacherCount === 1);
-      const available = Number(b.primaryCount > 0) - Number(a.primaryCount > 0);
-      const fit = compareTeacherFit(data, student, at, bt),
-        coverage = b.primaryCount - a.primaryCount;
-      return (
-        available ||
-        complete ||
-        (priority === "老师优先" ? fit || coverage : coverage || fit)
-      );
-    });
-  const selectedPlan =
-    sortedPlans.find((plan) => plan.primaryTeacherId === chosenTeacher) ??
-    sortedPlans[0];
-  const selectedTeacher = data.teachers.find(
-    (teacher) => teacher.id === selectedPlan?.primaryTeacherId,
-  );
-  const selectedBlocked = selectedTeacher
-    ? teacherFit(data, student, selectedTeacher).blocked.length > 0
-    : false;
+;
   const workloadStart = addDays(
     DEMO_TODAY,
     -((new Date(`${DEMO_TODAY}T12:00:00+08:00`).getUTCDay() + 6) % 7),
@@ -169,7 +144,7 @@ export function StudentSchedulingPanel({
       {saved && !editingIntent ? (
         <section className="schedule-intent-summary" aria-label="学员排课意向">
           <div>
-            <strong>{saved.mode === "fixed" ? "固定排课" : "灵活排课"}</strong>
+            <strong>{saved.priority === "teacher" ? "老师优先" : "时间优先"} · {studentMaterials(data, student).filter(c => saved.materialIds?.includes(c.id)).map(c => c.name).join("、")}</strong>
             <p>
               {saved.windows
                 .map((w) => `${days[w.day]} ${w.start}–${w.end}`)
@@ -193,18 +168,14 @@ export function StudentSchedulingPanel({
           aria-label="学员排课意向"
         >
           <h4>排课设置</h4>
+          <Field label="本次教材"><MaterialPicker label="本次教材" catalog={studentMaterials(data, student)} value={draft.materialIds || []} onChange={materialIds => update({materialIds})}/></Field>
+          {(draft.materialIds?.length || 0) > 1 && <small className="muted">选择了多本教材，请在方案日历中确认每一节使用的教材。</small>}
+          {!studentMaterials(data, student).length && <p role="alert">请先在学员详情的编辑资料中登记学习教材，再安排课程。</p>}
+          <Field label="匹配策略"><div className="schedule-strategy-row">
+            <label className={draft.priority === "teacher" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "teacher"} onChange={() => update({priority: "teacher"})}/><strong>老师优先</strong><small>优先适配，尽量同一老师。</small></label>
+            <label className={draft.priority === "time" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "time"} onChange={() => update({priority: "time"})}/><strong>时间优先</strong><small>优先排满，可组合多位老师。</small></label>
+          </div></Field>
           <div className="form-grid intent-settings-grid">
-            <Field label="排课方式">
-              <Select
-                value={draft.mode}
-                onValueChange={(value) =>
-                  update({ mode: value === "fixed" ? "fixed" : "flex" })
-                }
-              >
-                <option value="fixed">固定排课</option>
-                <option value="flex">灵活排课</option>
-              </Select>
-            </Field>
             <Field label="开始日期">
               <DatePicker
                 placeholder="开始日期"
@@ -402,14 +373,14 @@ export function StudentSchedulingPanel({
         </section>
       )}
       {editingIntent && (
-        <div className="schedule-flow-actions row wrap">
+        <div className="schedule-flow-actions schedule-setup-actions row wrap">
           <span className="intent-total">
             每周 {draft.frequency} 节 · 共 {draft.frequency * draft.weeks} 节
           </span>
           <Button disabled={generating} onClick={onClose}>
             返回概况
           </Button>
-          {saved && (
+          {saved?.mode === "fixed" && !!saved.materialIds?.length && (
             <Button
               disabled={generating}
               onClick={() => {
@@ -427,7 +398,6 @@ export function StudentSchedulingPanel({
               generating ||
               !can("schedule.create") ||
               preview ||
-              !dirty ||
               !validDraft
             }
             onClick={async () => {
@@ -460,285 +430,25 @@ export function StudentSchedulingPanel({
         </div>
       )}
       {saved?.mode === "fixed" && !editingIntent && (
-        <section className="schedule-plan-section" aria-label="固定排课方案">
-          <div className="row between">
-            <h4>推荐排课方案</h4>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowAlternatives(!showAlternatives)}
-            >
-              {showAlternatives ? "收起其他方案" : "更换方案"}
-            </Button>
-          </div>
-          <details>
-            <summary>匹配偏好与时段保留</summary>
-            <div className="schedule-plan-toolbar plan-match-filters">
-              <Field label="匹配策略">
-                <Select value={priority} onValueChange={setPriority}>
-                  <option>时间优先</option>
-                  <option>老师优先</option>
-                </Select>
-              </Field>
-              <Field label="锁课保留分钟">
-                <input
-                  type="number"
-                  min={1}
-                  value={holdMinutes}
-                  onChange={(e) => setHoldMinutes(Number(e.target.value))}
-                />
-              </Field>
-              {data.slotLocks?.some(
-                (l) =>
-                  l.studentId === student.id &&
-                  Date.parse(l.expiresAt) > Date.now(),
-              ) && (
-                <Button
-                  disabled={preview || !can("schedule.create")}
-                  onClick={async () => {
-                    try {
-                      await act({
-                        type: "slot.release",
-                        studentId: student.id,
-                      });
-                    } catch (cause) {
-                      toast(String(cause), { tone: "error" });
-                    }
-                  }}
-                >
-                  释放当前锁课
-                </Button>
-              )}
-              <Field label="推荐老师">
-                <input
-                  aria-label="搜索推荐老师"
-                  placeholder="搜索老师姓名"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </Field>
-            </div>
-          </details>
-          <div className="schedule-match-list">
-            {(showAlternatives
-              ? sortedPlans
-              : selectedPlan
-                ? [selectedPlan]
-                : []
-            ).map((plan) => {
-              const teacher = data.teachers.find(
-                (t) => t.id === plan.primaryTeacherId,
-              );
-              if (!teacher) return null;
-              const fit = teacherFit(data, student, teacher);
-              const distribution = [
-                ...new Set(
-                  plan.slots
-                    .map((s) => s.teacherId)
-                    .filter((id) => Boolean(id) && id !== teacher.id),
-                ),
-              ]
-                .map(
-                  (id) =>
-                    `${data.teachers.find((t) => t.id === id)?.name} ${plan.slots.filter((s) => s.teacherId === id).length} 节`,
-                )
-                .join(" · ");
-              return (
-                <article className="schedule-match-card" key={teacher.id}>
-                  <div className="schedule-match-heading">
-                    <Avatar name={teacher.name} />
-                    <strong>{teacher.name}</strong>
-                    <Badge
-                      tone={
-                        plan.primaryCount > 0 && plan.complete
-                          ? "success"
-                          : "warning"
-                      }
-                    >
-                      {plan.primaryCount === 0
-                        ? "时间不合适"
-                        : plan.complete
-                          ? "全部排满"
-                          : `缺 ${plan.requiredCount - plan.coveredCount} 节`}
-                    </Badge>
-                  </div>
-                  <details>
-                    <summary>查看匹配理由和老师信息</summary>
-                    <p>
-                      一级匹配：{fit.matchedPrimary.join("、") || "暂无命中"}
-                    </p>
-                    <p>
-                      二级匹配：
-                      {fit.matchedSecondary.join("、") || "暂无命中"}
-                    </p>
-                    <p>未命中：{fit.missing.join("、") || "无"}</p>
-                    {[...fit.blocked, ...fit.warnings].map((note) => (
-                      <p className="muted" key={note}>
-                        {note}
-                      </p>
-                    ))}
-                    <p>
-                      本人覆盖 {plan.primaryCount}/{plan.requiredCount}{" "}
-                      节；方案覆盖 {plan.coveredCount}/{plan.requiredCount} 节
-                    </p>
-                    {plan.teacherCount > 1 && (
-                      <p>多老师组合方案，需教务确认各老师负责课次。</p>
-                    )}
-                    <dl className="schedule-match-meta">
-                      <div>
-                        <dt>SO</dt>
-                        <dd>{teacher.so}</dd>
-                      </div>
-                      <div>
-                        <dt>口音等级</dt>
-                        <dd>{teacher.accent || "未填写"}</dd>
-                      </div>
-                      <div>
-                        <dt>老师等级</dt>
-                        <dd>{teacher.level || "未填写"}</dd>
-                      </div>
-                    </dl>
-                    <dl className="schedule-plan-details">
-                      <div>
-                        <dt>老师已排课数</dt>
-                        <dd>
-                          已排{" "}
-                          {
-                            data.lessons.filter(
-                              (l) =>
-                                l.teacherId === teacher.id &&
-                                l.status !== "已取消" &&
-                                l.date >= workloadStart &&
-                                l.date < addDays(workloadStart, 7),
-                            ).length
-                          }{" "}
-                          节（所有学员）
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>可授课数</dt>
-                        <dd>
-                          {plan.primaryCount === plan.requiredCount
-                            ? `承担全部 ${plan.requiredCount} 节`
-                            : `承担 ${plan.primaryCount} / ${plan.requiredCount} 节`}
-                        </dd>
-                      </div>
-                      {distribution && (
-                        <div>
-                          <dt>其他授课老师</dt>
-                          <dd>{distribution}</dd>
-                        </div>
-                      )}
-                      {!plan.complete && (
-                        <div>
-                          <dt>待安排</dt>
-                          <dd>
-                            {plan.requiredCount - plan.coveredCount}{" "}
-                            节暂无合适老师
-                          </dd>
-                        </div>
-                      )}
-                    </dl>
-                  </details>
-                  <div className="schedule-match-actions">
-                    <Button
-                      size="sm"
-                      disabled={
-                        dirty ||
-                        preview ||
-                        !can("schedule.create") ||
-                        !(holdMinutes > 0) ||
-                        !plan.primaryCount ||
-                        !!fit.blocked.length
-                      }
-                      onClick={async () => {
-                        try {
-                          await act({
-                            type: "slot.lock",
-                            studentId: student.id,
-                            duration: saved.duration,
-                            slots: plan.slots.filter(
-                              (s) => s.teacherId && !s.lessonId,
-                            ),
-                            expiresAt: new Date(
-                              Date.now() + holdMinutes * 60000,
-                            ).toISOString(),
-                          });
-                          toast("档期已保留");
-                        } catch (e) {
-                          toast(String(e), { tone: "error" });
-                        }
-                      }}
-                    >
-                      锁定方案时段
-                    </Button>
-                    {showAlternatives && (
-                      <Button
-                        size="sm"
-                        aria-pressed={
-                          selectedPlan?.primaryTeacherId === teacher.id
-                        }
-                        onClick={() => {
-                          setChosenTeacher(teacher.id);
-                          setShowAlternatives(false);
-                        }}
-                      >
-                        {selectedPlan?.primaryTeacherId === teacher.id
-                          ? "当前方案"
-                          : "选择此方案"}
-                      </Button>
-                    )}
-
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="schedule-match-text-action"
-                      onClick={() => onViewTeacher(teacher.id)}
-                    >
-                      查看老师资料
-                    </Button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-          {!fixedPlans.length && (
-            <EmptyState
-              title="暂无可排课方案"
-              description="请检查意向时间和已有课程的固定时间，或扩大可接受时间范围。"
-            />
-          )}
+        <section className="schedule-plan-section" aria-label="推荐排课方案">
+          <div className="row between"><h4>推荐排课方案</h4><input aria-label="搜索推荐老师" placeholder="搜索老师姓名" value={query} onChange={e => setQuery(e.target.value)}/></div>
+          <p className="muted">{saved.priority === "teacher" ? "优先匹配合适的老师；缺少的课次可在日历中继续补排。" : "优先满足目标课次；组合方案明确展示各位老师承担的节数。"}</p>
+          <div className="schedule-recommendation-grid">{sortedPlans.map(plan => {
+            const teacher = data.teachers.find(t => t.id === plan.primaryTeacherId)!;
+            const fit = teacherFit(data, student, teacher);
+            const names = [...new Set(plan.slots.map(s => s.teacherId).filter(Boolean))];
+            return <article className="schedule-match-card" key={teacher.id}>
+              <div className="schedule-match-heading"><Avatar name={teacher.name}/><strong>{teacher.name}</strong><Badge tone={plan.primaryCount === plan.requiredCount ? "success" : "warning"}>本老师可排 {plan.primaryCount}/{plan.requiredCount} 节</Badge></div>
+              <dl className="schedule-match-meta"><div><dt>SO</dt><dd>{teacher.so}</dd></div><div><dt>口音等级</dt><dd>{teacher.accent || "未填写"}</dd></div><div><dt>老师等级</dt><dd>{teacher.level || "未填写"}</dd></div></dl>
+              <div className="row wrap">{studentMaterials(data, student).filter(c => saved.materialIds?.includes(c.id) && teacher.materialIds?.includes(c.id)).map(c => <Badge key={c.id} tone="success">可教 {c.name}</Badge>)}</div>
+              <div className="schedule-match-reasons"><strong>推荐原因</strong><div className="row wrap">{[...fit.matchedPrimary, ...fit.matchedSecondary].map(reason => <Badge key={reason}>{reason}</Badge>)}</div>{!fit.matchedPrimary.length && !fit.matchedSecondary.length && <small>{plan.primaryCount ? "教材与授课时间匹配，暂无其他偏好命中。" : "教材匹配，当前意向时间内暂无可排课次。"}</small>}{fit.warnings.map(w => <small key={w}>{w}</small>)}</div>
+              <dl className="schedule-plan-details"><div><dt>整个方案</dt><dd>可排 {plan.coveredCount}/{plan.requiredCount} 节 · {plan.teacherCount} 位老师</dd></div>{plan.teacherCount > 1 && <div><dt>老师分工</dt><dd>{names.map(id => `${data.teachers.find(t => t.id === id)?.name} ${plan.slots.filter(s => s.teacherId === id).length} 节`).join(" · ")}</dd></div>}<div><dt>待安排</dt><dd>{plan.requiredCount - plan.coveredCount} 节</dd></div><div><dt>本周已排课数</dt><dd>{data.lessons.filter(l => l.teacherId === teacher.id && l.status !== "已取消" && l.date >= workloadStart && l.date < addDays(workloadStart, 7)).length} 节（所有学员）</dd></div></dl>
+              <div className="schedule-match-actions"><Button variant="primary" disabled={!plan.primaryCount || preview || !can("schedule.create")} onClick={() => onFixedPlan(plan, saved)}>查看排课方案</Button><Button variant="ghost" onClick={() => onViewTeacher(teacher.id)}>查看老师资料</Button></div>
+            </article>;
+          })}</div>
+          {!sortedPlans.length && <EmptyState title="暂无可排课方案" description="请核对老师可授教材、学员时间或修改搜索条件。"/>}
+          <div className="schedule-flow-actions schedule-recommendation-actions"><Button onClick={onClose}>返回概况</Button></div>
         </section>
-      )}
-      {saved?.mode === "fixed" && !editingIntent && (
-        <div className="schedule-flow-actions row wrap">
-          <Button onClick={onClose}>返回概况</Button>
-          <Button
-            variant="primary"
-            disabled={
-              dirty ||
-              preview ||
-              !can("schedule.create") ||
-              !selectedPlan?.primaryCount ||
-              selectedBlocked
-            }
-            onClick={() => onFixedPlan(selectedPlan, saved)}
-          >
-            预览排课
-          </Button>
-        </div>
-      )}
-      {saved?.mode === "flex" && !editingIntent && (
-        <FlexStudentCalendar
-          key={`${student.id}-${JSON.stringify(saved)}`}
-          studentId={student.id}
-          intent={saved}
-          onDirtyChange={onDirtyChange}
-          onBusyChange={onBusyChange}
-          onClose={onClose}
-          onStageChange={onStageChange}
-          onComplete={onScheduleComplete}
-        />
       )}
     </div>
   );

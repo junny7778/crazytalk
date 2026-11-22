@@ -1,3 +1,4 @@
+import {clickSchedule, selectSchedule, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
 import { transferableAbortController } from "node:util";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
@@ -91,9 +92,10 @@ describe("独立验收：教师时间与排课", () => {
       slots: [{ date: "2026-12-21", time: "19:00" }],
       duration: 25,
       kind: "固定课",
-      material: "test",
+      material: "Power Up 3",
     });
     mount();
+    await clickSchedule("生成排课方案");
     expect(screen.queryByRole("button", { name: "生成排课预览" })).toBeNull();
     await testAct(async () => {
       fireEvent.click(screen.getByRole("button", { name: "修改排课信息" }));
@@ -109,77 +111,20 @@ describe("独立验收：教师时间与排课", () => {
         screen.getByRole("button", { name: "生成排课方案" }),
       );
     });
-    expect(screen.getByText("全部排满")).toBeTruthy();
+    expect(screen.getByText("本老师可排 4/4 节")).toBeTruthy();
   });
-  it("未开放时间不会自动推荐，手动协调必须经老师确认", async () => {
-    const data = demoRepository.read();
-    data.lessons = [];
-    data.teachers = [data.teachers[0]];
-    data.teachers[0].availability = [];
-    data.students[3].scheduleIntent = {
-      mode: "flex",
-      startDate: "2026-11-23",
-      weeks: 1,
-      duration: 25,
-      frequency: 1,
-      windows: [{ day: 1, start: "19:00", end: "20:00" }],
-    };
-    mount();
-    expect(screen.queryByRole("button", { name: "生成排课预览" })).toBeNull();
-    expect(screen.getByRole("button",{name:"预览排课"}).hasAttribute("disabled")).toBe(true);
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("tab", { name: "按老师排课" }));
-    });
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "为该老师排课" }));
-    });
-    expect(
-      within(document.querySelector(".course-plan")!).getByRole("checkbox", {
-        name: /已与 .*确认本节授课时间/,
-      }),
-    ).toBeTruthy();
-  });
+  it("未开放时间不会自动推荐，手动协调必须经老师确认", async()=>{
+ const data=demoRepository.read();data.lessons=[];data.teachers=[data.teachers[0]];data.teachers[0].availability=[];data.students[3].scheduleIntent={mode:"fixed",startDate:"2026-11-23",weeks:1,duration:25,frequency:1,windows:[{day:1,start:"19:00",end:"20:00"}]};
+ mount();await clickSchedule("生成排课方案");expect(screen.getByRole("button",{name:"查看排课方案"}).hasAttribute("disabled")).toBe(true);await clickSchedule("返回概况");await clickSchedule("自定义排课");expect(document.querySelectorAll('.flex-time-cell.available')).toHaveLength(0);
 
-  it("排课成功定位新日期并展示课程，重复安排被阻止", async () => {
-    mount("/schedule?teacher=t1&date=2026-11-23");
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "为该老师排课" }));
-    });
-    const ui = within(document.querySelector(".course-plan")!);
-    await testAct(async () => {
-      fireEvent.click(ui.getByLabelText("学员"));
-    });
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("option", { name: /排课测试学员/ }));
-    });
-    await testAct(async () => {
-      fireEvent.change(ui.getByLabelText("第1节上课日期"), {
-        target: { value: "2026-12-04" },
-      });
-    });
-    await testAct(async () => {
-      fireEvent.change(ui.getByLabelText("第1节上课时间"), {
-        target: { value: "15:35" },
-      });
-    });
-    await testAct(async () => {
-      fireEvent.click(ui.getByRole("button", { name: "预览排课" }));
-    });
-    await testAct(async()=>{fireEvent.click(screen.getByRole("button",{name:"确认排课"}));
-    });
-    expect(screen.getByText(/课程已保存，可在下方查看同步状态/)).toBeTruthy();
-    expect(screen.getByRole("region",{name:"已安排课程"}).textContent).toContain("15:35");
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "为该老师排课" }));
-    });
-    const next=within(document.querySelector(".course-plan")!);
-    await testAct(async()=>{fireEvent.click(next.getByLabelText("学员"));});
-    await testAct(async()=>{fireEvent.click(screen.getByRole("option",{name:/排课测试学员/}));});
-    await testAct(async()=>{fireEvent.change(next.getByLabelText("第1节上课日期"),{target:{value:"2026-12-04"}});fireEvent.change(next.getByLabelText("第1节上课时间"),{target:{value:"15:35"}});});
-    await testAct(async()=>{fireEvent.click(next.getByRole("button",{name:"预览排课"}));});
-    expect(screen.getByRole("button",{name:"确认排课"}).hasAttribute("disabled")).toBe(true);
-    expect(next.getAllByText(/老师这个时间已经有课/)[0]).toBeTruthy();
-  });
+});
+
+  it("排课成功定位新日期并展示课程，重复安排被阻止", async()=>{
+ const d=demoRepository.read();d.lessons=[];d.leaves=[];d.teachers[0].availability=[{day:1,start:"18:00",end:"21:00"}];d.teachers[0].availabilityFrom="";
+ mount("/schedule?teacher=t1&date=2026-11-23");await clickSchedule("为该老师排课");await selectStudentCard("排课测试学员");await addCalendarLesson("2026-11-23","18:30");await clickSchedule("预览排课");await clickSchedule("确认排课");expect(screen.getByText(/课程已保存，可在下方查看同步状态/)).toBeTruthy();expect(screen.getByRole("region",{name:"已安排课程"}).textContent).toContain("18:30");
+ await clickSchedule("为该老师排课");await selectStudentCard("排课测试学员");expect(screen.queryByRole("button",{name:/2026-11-23 18:30 可排课/})).toBeNull();expect(screen.getByRole("button",{name:"预览排课"}).hasAttribute("disabled")).toBe(true);
+
+});
 
   it("旧数据迁移保留余额、课程与原有分钟时段，不把新时间覆盖旧设置", () => {
     const data = createSeed();
@@ -229,7 +174,7 @@ describe("独立验收：教师时间与排课", () => {
         slots: [{ date: "2026-11-09", time: "18:00" }],
         duration: 25,
         kind: "临时课",
-        material: "test",
+        material: "Think 1",
         confirmedTeacher: true,
       }),
     ).toThrow(/请假/);
@@ -241,7 +186,7 @@ describe("独立验收：教师时间与排课", () => {
         slots: [{ date: "2026-11-09", time: "18:40" }],
         duration: 25,
         kind: "临时课",
-        material: "test",
+        material: "Think 1",
         confirmedTeacher: true,
       }).data.lessons,
     ).toHaveLength(1);

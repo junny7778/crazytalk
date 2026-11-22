@@ -246,6 +246,7 @@ export const commandSchema = z.discriminatedUnion("type", [
           date,
           time,
           teacherId: id.optional(),
+          material: text.optional(),
           confirmedTeacher: z.boolean().optional(),
           extra: z.boolean().optional(),
           fixedOrigin: z.object({ date, time }).optional(),

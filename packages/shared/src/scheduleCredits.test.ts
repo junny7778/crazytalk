@@ -98,7 +98,7 @@ function booking(
       time: "19:00",
     })),
     kind: "固定课",
-    material: "test",
+    material: "Think 1",
     duration,
     plannedUnits,
   };

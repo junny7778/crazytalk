@@ -1,3 +1,4 @@
+import MaterialPicker from "../../components/MaterialPicker";
 import { teacherOffboardImpact, publicTeacherTags } from "@crazytalk/shared";
 import ProfileCard from "../../components/ProfileCard";
 import {
@@ -296,7 +297,7 @@ export default function Teachers() {
       render: (t: Teacher) => (
         <div className="row gap-12">
           <TeacherPhoto teacher={t} />
-          <strong>{t.name}</strong>
+          <div><strong>{t.name}</strong><small className="muted" style={{display:"block"}}>{t.teacherNumber}</small></div>
         </div>
       ),
     },
@@ -433,7 +434,7 @@ export default function Teachers() {
       (!status || t.status === status) &&
       (!training || (training === "completed" ? t.trained : !t.trained)) &&
       (so === "全部 SO" || t.so === so) &&
-      `${t.name} ${t.so}`.toLowerCase().includes(q.toLowerCase()),
+      `${t.name} ${t.teacherNumber} ${t.so}`.toLowerCase().includes(q.toLowerCase()),
   );
   const listPage = useListPage(filtered);
   useEffect(() => {
@@ -612,6 +613,7 @@ export default function Teachers() {
             <section className="teacher-detail-section">
               <h3>基本信息</h3>
               <dl className="teacher-profile-grid" aria-label="基本信息">
+                <div><dt>老师编号</dt><dd>{teacher.teacherNumber}</dd></div>
                 <div>
                   <dt>联系手机</dt>
                   <dd>
@@ -656,6 +658,7 @@ export default function Teachers() {
                   <dt>证书</dt>
                   <dd>{teacher.certificates || "未填写"}</dd>
                 </div>
+                <div className="teacher-profile-full"><dt>可授教材</dt><dd className="row wrap">{teacher.materialIds?.length ? teacher.materialIds.map(id => <Badge key={id}>{data.catalog.find(c => c.id === id)?.name || "未找到教材"}</Badge>) : "未登记"}</dd></div>
                 <div className="teacher-profile-full"><dt>教育背景</dt><dd>{teacher.educationBackground || "未填写"}</dd></div>
                 <div className="teacher-profile-full">
                   <dt>教学经验</dt>
@@ -942,7 +945,7 @@ export default function Teachers() {
               <SearchInput
                 value={q}
                 onChange={(v) => update("q", v)}
-                placeholder="搜索老师姓名"
+                placeholder="搜索老师姓名或编号"
               />
               <Select
                 className="ops-filter-select"
@@ -1349,6 +1352,7 @@ export default function Teachers() {
                     </Field>
                   </div>
                   <h3 className="teacher-form-section-title">教学信息</h3>
+                  <Field label="可授教材"><MaterialPicker label="可授教材" catalog={data.catalog} value={edit.materialIds || []} onChange={materialIds => setEdit({...edit, materialIds})}/></Field>
                   <Field label="能教的类别" required>
                     <div className="row wrap">
                       {["少儿", "成人", "商务", "雅思", "零基础", "托福"].map(

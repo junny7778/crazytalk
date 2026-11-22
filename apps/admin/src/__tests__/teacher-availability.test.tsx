@@ -162,7 +162,7 @@ describe("老师列表显示列", () => {
     await testAct(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "老师标签" })); });
     expect(screen.queryByRole("columnheader", { name: "口音等级" })).toBeNull();
     expect(screen.getByRole("columnheader", { name: "导师等级" })).toBeTruthy();
-    await testAct(async () => { fireEvent.change(screen.getByPlaceholderText("搜索老师姓名"), {
+    await testAct(async () => { fireEvent.change(screen.getByPlaceholderText("搜索老师姓名或编号"), {
       target: { value: "Carol" },
     }); });
     const rows = within(screen.getByRole("table")).getAllByRole("row");
@@ -621,7 +621,7 @@ describe("教师常规可用时间表单", () => {
       slots: [{ date: "2026-11-20", time: "10:00" }],
       duration: 25,
       kind: "固定课",
-      material: "Power Up 3",
+      material: "Think 1",
     });
     const scheduled = demoRepository
       .read()
@@ -730,7 +730,7 @@ describe("老师中心普通筛选", () => {
     mount("/teachers");
     await testAct(async () => { fireEvent.click(screen.getByRole("combobox", { name: "筛选 SO" })); });
     await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: data.teachers[0].so })); });
-    await testAct(async () => { fireEvent.change(screen.getByPlaceholderText("搜索老师姓名"), {
+    await testAct(async () => { fireEvent.change(screen.getByPlaceholderText("搜索老师姓名或编号"), {
       target: { value: "不存在的老师" },
     }); });
     expect(screen.getByText("没有符合条件的老师")).toBeTruthy();

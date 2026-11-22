@@ -1,3 +1,4 @@
+import { initializeTeacherNumbers } from "../../../packages/shared/src/teacherNumbers";
 import { initializeTeacherTags } from "../../../packages/shared/src/teacherTags";
 import { migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "../../../packages/shared/src/organization";
 import { isDeepStrictEqual } from "node:util";
@@ -47,6 +48,8 @@ function rowId(key: string, value: unknown) {
 export async function readState(
   tx: Transaction = database,
 ): Promise<DemoState> {
+  if (tx === database) return database.$transaction(transaction => readState(transaction));
+  await lockBusiness(tx);
   const settings = await tx.businessSettings.findUnique({ where: { id: 1 } });
   const result: Record<string, unknown> = {
     version: 1,
@@ -66,11 +69,12 @@ export async function readState(
   }
   const state = stateSchema.parse(result);
   const before = structuredClone(state);
+  const numbersChanged = initializeTeacherNumbers(state);
   const tagsChanged = initializeTeacherTags(state);
   const teamsChanged = migrateTeamCatalog(state);
   const projectsChanged = migrateProjectChannels(state);
   const ownersChanged = migrateStudentOwners(state);
-  if (teamsChanged || projectsChanged || tagsChanged || ownersChanged) await writeState(tx, state, before);
+  if (numbersChanged || teamsChanged || projectsChanged || tagsChanged || ownersChanged) await writeState(tx, state, before);
   return state;
 }
 export async function writeState(

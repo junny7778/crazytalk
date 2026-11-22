@@ -85,7 +85,7 @@ it("空意向可排，未培训成人老师可为少儿安排且无需确认，�
   await select("19:00", d.teachers[0].name);
   expect(demoRepository.read().lessons).toHaveLength(0);
   await testAct(async()=>{fireEvent.click(screen.getByRole("button",{name:"预览排课"}));});
-  expect(screen.getByRole("region",{name:"灵活排课预览"})).toBeTruthy();
+  expect(screen.getByRole("region",{name:"自定义排课预览"})).toBeTruthy();
   expect(demoRepository.read().lessons).toHaveLength(0);
   const submit = screen.getByRole("button", { name: /确认排课/ });
   await testAct(async () => { fireEvent.click(submit); });

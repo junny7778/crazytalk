@@ -10,7 +10,7 @@ it("购课、后续加入、续费、补赠和不同学员上课均落到同一�
   let data = createSeed();
   const execute = (cmd: Command) => { data = transition(data, cmd).data; };
   const enroll = (name: string) => {
-    execute({ type: "student.create", student: { ...emptyStudentProfile(), chineseName: name } });
+    execute({ type: "student.create", student: { ...emptyStudentProfile(), chineseName: name, material:"Power Up 1",materialIds:["m1"] } });
     return data.students[0].id;
   };
   const a = enroll("小安");
@@ -19,7 +19,7 @@ it("购课、后续加入、续费、补赠和不同学员上课均落到同一�
   const pack = () => data.orders!.find(item => item.id === "family")!;
   const takeLesson = (studentId: string, date: string, duration: number) => {
     execute({ type: "lesson.schedule", studentId, teacherId: data.teachers[0].id,
-      slots: [{ date, time: "19:00" }], kind: "临时课", confirmedTeacher: true, duration, material: "绘本" });
+      slots: [{ date, time: "19:00" }], kind: "临时课", confirmedTeacher: true, duration, material: data.students.find(s => s.id === studentId)!.material });
     const lesson = data.lessons.find(item => item.studentId === studentId && item.date === date)!;
     expect(lesson.orderId).toBe(pack().id);
     expect(getScheduleCredits(data, a, 1, 1).reserved).toBe(duration / 25);

@@ -7,12 +7,13 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider, useDemo } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
-import { emptyStudentProfile } from "@crazytalk/shared";
+import { emptyStudentProfile, matchingSurveyAnswers, matchingSurveyOptions } from "@crazytalk/shared";
 import { demoRepository } from "../../../../packages/shared/src/repository";
 import StudentProfileEditor from "../components/StudentProfileEditor";
 import StudentHistoryEditor from "../components/StudentHistoryEditor";
@@ -72,6 +73,7 @@ async function change(label: string, value: string) {
 async function choose(label: string, value: string) {
   await testAct(async () => { fireEvent.click(screen.getByRole("combobox", { name: label })); });
   await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: value })); });
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("combobox", { name: label })));
 }
 beforeEach(() => {
   localStorage.clear();
@@ -91,6 +93,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("学员资料与历史分离 V4", () => {
+  it("选择负责教务后直接保存归属", async () => {
+    const data = demoRepository.read();
+    const student = data.students[0];
+    const owner = data.accounts.find(a => a.roleId === "ops" && a.enabled && a.id !== student.ownerAccountId)!;
+    mount(<StudentProfileEditor student={student} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "负责教务" }));
+    fireEvent.click(screen.getByRole("option", { name: new RegExp(owner.name + " ·") }));
+    const team = screen.getByRole<HTMLInputElement>("textbox", { name: "所属队伍" });
+    const group = screen.getByRole<HTMLInputElement>("textbox", { name: "所属组别" });
+    expect([team.value, group.value]).toEqual([owner.team, owner.group]);
+    expect(team.disabled && group.disabled).toBe(true);
+    expect(screen.queryByText(/接手教务加入相关班级/)).toBeNull();
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存学员资料" })); });
+    expect(demoRepository.read().students.find(s => s.id === student.id)?.ownerAccountId).toBe(owner.id);
+  });
   it("普通新建只需姓名，历史统计和业务结果不再手填，正常0余额建档", async () => {
     mount(<StudentProfileEditor onClose={() => {}} />);
     for (const label of [
@@ -169,6 +186,45 @@ describe("学员资料与历史分离 V4", () => {
       screen.queryByRole("textbox", { name: "起始单元／页码" }),
     ).toBeNull();
     expect(screen.getByText(/教材进度已由课后记录维护/)).toBeTruthy();
+  });
+  it("问卷原答预填旧档字段，教务可修改选项并保存，原答和精确年龄保留", async () => {
+    const student = demoRepository.read().students[0];
+    student.age = 8;
+    student.gender = "";
+    student.level = "待评估";
+    student.interests = "唱歌、画画";
+    const original = matchingSurveyAnswers.parse({
+      chineseName: student.chineseName, gender: "女", ageGroup: "少儿(6-9岁)",
+      level: matchingSurveyOptions.level[0], personality: matchingSurveyOptions.personality[0],
+      membership: "1-2个月", listening: "200小时内", times: "晚上（18:00-21:00）", needs: "家长原答",
+    });
+    student.surveyOriginal = original;
+    student.surveySubmittedAt = "2026-11-16T02:10:00.000Z";
+    const close = vi.fn();
+    mount(<StudentProfileEditor student={student} onClose={close} />);
+    const interests = screen.getByRole("combobox", { name: "兴趣爱好" });
+    expect(interests.textContent).toContain("唱歌、画画");
+    expect(screen.getByRole("combobox", { name: "加入体系时长" }).textContent).toContain("1-2个月");
+    expect(screen.getByRole("textbox", { name: "其他备注" })).toHaveProperty("value", "家长原答");
+    await testAct(async () => { fireEvent.click(interests); });
+    const list = screen.getByRole("listbox", { name: "兴趣爱好" });
+    expect(list.getAttribute("aria-multiselectable")).toBe("true");
+    expect(within(list).getByRole("option", { name: "唱歌" }).getAttribute("aria-selected")).toBe("true");
+    await testAct(async () => { fireEvent.click(within(list).getByRole("option", { name: "跳舞" })); });
+    expect(within(list).getByRole("option", { name: "昆虫" })).toHaveProperty("disabled", true);
+    await testAct(async () => { fireEvent.keyDown(screen.getByRole("textbox", { name: "搜索选项" }), { key: "Escape" }); });
+    await waitFor(() => expect(document.activeElement).toBe(interests));
+    await choose("加入体系时长", "6个月以上");
+    await choose("听力输入总时长", "500小时以上");
+    await choose("预选上课时段", "未填写");
+    await change("其他备注", "教务补充");
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "保存学员资料" })); });
+    expect(close).toHaveBeenCalledOnce();
+    expect(demoRepository.read().students.find((item) => item.id === student.id)).toMatchObject({
+      age: 8, gender: "", level: "待评估", membershipDuration: "6个月以上",
+      listeningHours: "500小时以上", preferredLessonTime: "", learningNotes: "教务补充",
+      interests: "唱歌、画画、跳舞", surveyOriginal: original, surveySubmittedAt: student.surveySubmittedAt,
+    });
   });
   it("相同资料被其他操作更改时，保存提示冲突并保留新值", async () => {
     const student = structuredClone(demoRepository.read().students[0]);

@@ -1,5 +1,6 @@
+import * as Popover from "@radix-ui/react-popover";
 import { TimePicker } from "./TimePicker";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Copy, Plus, X } from "lucide-react";
 import "./weekly-availability.css";
 
@@ -54,6 +55,7 @@ export function WeeklyAvailabilityEditor({
     {},
   );
   const [mode, setMode] = useState<"day" | "grid">("grid");
+  const [editing, setEditing] = useState<{ day: number; row: number; indices: number[] } | null>(null);
   const [copyDay, setCopyDay] = useState<number | null>(null);
   const [targets, setTargets] = useState<number[]>([]);
   const week = [1, 2, 3, 4, 5, 6, 0];
@@ -62,9 +64,25 @@ export function WeeklyAvailabilityEditor({
     ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     : ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   const gridRange = (range: AvailabilityValue["availability"][number]) =>
-    range.start >= "07:00" && range.end <= "22:00" && range.start < range.end &&
-    /^(?:[01]\d|2[0-3]):(?:00|30)$/.test(range.start) && /^(?:[01]\d|2[0-3]):(?:00|30)$/.test(range.end);
+    range.start < range.end &&
+    /^(?:[01]\d|2[0-3]):(?:00|30)$/.test(range.start) && (/^(?:[01]\d|2[0-3]):(?:00|30)$/.test(range.end) || range.end === "23:59");
+  const copyHasExactTime = value.availability.some(range =>
+    range.day === copyDay && [range.start, range.end].some(time => !/:(00|30)$/.test(time))
+  );
   const exactRanges = value.availability.filter(range => !gridRange(range));
+  const grid = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const body = grid.current;
+    if (!body) return;
+    const first = body.querySelector('tbody button[aria-pressed="true"]')?.closest("tr");
+    const defaultRow = body.querySelectorAll("tbody tr")[14];
+    const header = body.querySelector("thead");
+    const row = first || defaultRow;
+    if (header && row) {
+      body.scrollTop += row.getBoundingClientRect().top -
+        body.getBoundingClientRect().top - header.getBoundingClientRect().height;
+    }
+  }, [mode]);
   const drag = useRef<{day:number;row:number;select:boolean;base:AvailabilityValue} | null>(null);
   useEffect(() => {
     const stop = () => { drag.current = null; };
@@ -72,7 +90,7 @@ export function WeeklyAvailabilityEditor({
     window.addEventListener("blur", stop);
     return () => { window.removeEventListener("mouseup", stop); window.removeEventListener("blur", stop); };
   }, []);
-  const clock = (row:number) => String(7 + Math.floor(row / 2)).padStart(2,"0") + (row % 2 ? ":30" : ":00");
+  const clock = (row:number) => row === 48 ? "23:59" : String(Math.floor(row / 2)).padStart(2,"0") + (row % 2 ? ":30" : ":00");
   function paint(day:number,row:number) {
     const selection=drag.current;
     if(!selection) return;
@@ -80,7 +98,7 @@ export function WeeklyAvailabilityEditor({
     const exact=base.availability.filter(range=>!gridRange(range));
     const next:AvailabilityValue["availability"]=[...exact];
     for(const d of week) {
-      for(let r=0;r<30;r++) {
+      for(let r=0;r<48;r++) {
         const start=clock(r),end=clock(r+1);
         if(exact.some(range=>range.day===d && range.start<end && range.end>start)) continue;
         let selected=base.availability.some(range=>gridRange(range) && range.day===d && range.start<=start && range.end>=end);
@@ -109,27 +127,47 @@ export function WeeklyAvailabilityEditor({
       {heading && <h2 className="weekly-availability-heading">{heading}</h2>}
       <div className="weekly-availability-modes" role="group" aria-label={english ? "Availability entry mode" : "时间填写方式"}>
         <button type="button" aria-pressed={mode === "grid"} onClick={() => {setMode("grid");setCopyDay(null);}}>{english ? "Weekly grid" : "周历勾选"}</button>
-        <button type="button" aria-pressed={mode === "day"} onClick={() => setMode("day")}>{english ? "By day" : "按星期填写"}</button>
+        <button type="button" aria-pressed={mode === "day"} onClick={() => { setEditing(null); setMode("day"); }}>{english ? "By day" : "按星期填写"}</button>
       </div>
       <p className="weekly-availability-hint">{mode === "day"
-        ? english ? "Set your usual teaching hours for each day." : "按星期填写常规授课时间，每天可添加多段。"
-        : english ? "Click or drag to select 30-minute slots. Drag from a selected cell to clear." : "点击或拖动选择半小时时段；从已选格子开始拖动可批量取消。"}</p>
+        ? english ? "Choose start and end times on the hour or half hour." : "开始和结束时间可选整点或半点，每天可添加多段。"
+        : english ? "Click or drag to toggle 30-minute slots. Click a labeled range to edit its exact times." : "点击或拖动勾选、取消半小时时段。点击带起止时间的格子可精确编辑。"}</p>
       {mode === "grid" ? <section className="weekly-calendar-picker" aria-label={english ? "Weekly availability grid" : "每周可用时间周历"}>
-        {exactRanges.length > 0 && <div className="weekly-exact-ranges">
-          <strong>{english ? "Exact time ranges" : "精确时段"}</strong>
-          <p>{english ? "These ranges are preserved unchanged. Overlapping grid cells are locked; use By day to edit them." : "以下时段保持原样，重叠的周历格子已锁定；请切换「按星期填写」调整。"}</p>
-          <ul>{exactRanges.map((range,index)=><li key={index}>{days[range.day]} {range.start}–{range.end}</li>)}</ul>
-        </div>}
-        <div className="weekly-slot-grid"><table><thead><tr><th>{english ? "Time" : "时间"}</th>{week.map(day=><th key={day}>{days[day]}</th>)}</tr></thead>
-          <tbody>{Array.from({length:30},(_,i)=>{
-            const clock=(n:number)=>String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
-            const start=clock(7*60+i*30),end=clock(7*60+(i+1)*30);
+        <div className="weekly-slot-grid" ref={grid}><table><thead><tr><th>{english ? "Time" : "时间"}</th>{week.map(day=><th key={day}>{days[day]}</th>)}</tr></thead>
+          <tbody>{Array.from({length:48},(_,i)=>{
+            const start=clock(i),end=clock(i+1);
             return <tr key={start}><th>{start}</th>{week.map(day=>{
               const ranges=value.availability.filter(range=>gridRange(range) && range.day===day && range.start<end && range.end>start);
-              const protectedCell=exactRanges.some(range=>range.day===day && range.start<end && range.end>start);
+              const precise = exactRanges.filter(range => range.day === day && range.start < end && range.end > start);
+              const editingHere = editing?.day === day && editing.row === i;
+              if (precise.length || editingHere) return <td key={day}>
+                <Popover.Root open={editingHere} onOpenChange={open =>
+                  setEditing(open ? { day, row: i, indices: precise.map(range => value.availability.indexOf(range)) } : null)
+                }>
+                  <Popover.Trigger asChild>
+                    <button type="button" className="weekly-slot-cell weekly-slot-exact" aria-label={days[day]+" "+start} aria-pressed={precise.length > 0} disabled={disabled}>
+                      {precise.map(range => <span key={range.start}>{range.start}–{range.end}</span>)}
+                    </button>
+                  </Popover.Trigger>
+                  <Popover.Portal>
+                    <Popover.Content className="ct-time-popup weekly-exact-editor" sideOffset={6} aria-label={days[day]}>
+                      <strong>{days[day]}</strong>
+                      {editingHere && editing.indices.map(index => {
+                        const range = value.availability[index];
+                        return <div className="weekly-availability-range" key={index}>
+                          <TimePicker label={english ? "Start time" : "开始时间"} value={range.start} onChange={start => updateRange(index, { start })} english={english} />
+                          <TimePicker label={english ? "End time" : "结束时间"} value={range.end} onChange={end => updateRange(index, { end })} english={english} />
+                          <button type="button" className="weekly-availability-remove" aria-label={english ? "Remove range" : "移除时段"}
+                            onClick={() => { setEditing(null); onChange({...value, availability: value.availability.filter((_, i) => i !== index)}); }}><X size={16} /></button>
+                        </div>;
+                      })}
+                    </Popover.Content>
+                  </Popover.Portal>
+                </Popover.Root>
+              </td>;
               const covered=ranges.some(range=>range.start<=start && range.end>=end);
-              return <td key={day}><button type="button" className="weekly-slot-cell" aria-label={days[day]+" "+start} aria-pressed={covered} disabled={disabled || protectedCell}
-                title={protectedCell ? english ? "Edit this exact range in By day" : "请在按星期填写中调整精确时段" : undefined}
+              return <td key={day}><button type="button" className="weekly-slot-cell" aria-label={days[day]+" "+start} aria-pressed={covered} disabled={disabled}
+                title={ranges.map(range => `${range.start}–${range.end}`).join("、") || undefined}
                 onMouseDown={event=>{if(event.button!==0)return;event.preventDefault();drag.current={day,row:i,select:!covered,base:value};paint(day,i);}}
                 onMouseEnter={()=>{if(drag.current)paint(day,i);}}
                 onClick={event=>{if(event.detail===0){drag.current={day,row:i,select:!covered,base:value};paint(day,i);drag.current=null;}}}
@@ -164,7 +202,7 @@ export function WeeklyAvailabilityEditor({
                         ...value.availability,
                         ...(remembered.current[day]?.length
                           ? remembered.current[day]
-                          : [{ day, start: "17:00", end: "21:55" }]),
+                          : [{ day, start: "17:00", end: "22:00" }]),
                       ],
                 });
               }}
@@ -206,11 +244,13 @@ export function WeeklyAvailabilityEditor({
               ? "Replaces existing ranges on selected days. Changes take effect after saving."
               : "将覆盖所选日期的已有时段，保存可用时间后生效。"}
           </small>
+          {copyHasExactTime && <p role="alert">{english ? "Choose whole or half hours for this day before copying." : "请先将当天的起止时间调整为整点或半点，再复制。"}</p>}
           <div className="row">
             <button
               type="button"
               className="btn btn-primary btn-sm"
               disabled={
+                copyHasExactTime ||
                 !targets.length ||
                 !value.availability.some((range) => range.day === copyDay) ||
                 Boolean(
@@ -315,6 +355,7 @@ export function WeeklyAvailabilityEditor({
                         label={`${days[day]} ${english ? "start" : "开始时间"} ${order + 1}`}
                         value={range.start}
                         disabled={disabled}
+                        halfHourOnly
                         english={english}
                         onChange={(time) =>
                           updateRange(range.index, { start: time })
@@ -325,6 +366,7 @@ export function WeeklyAvailabilityEditor({
                         label={`${days[day]} ${english ? "end" : "结束时间"} ${order + 1}`}
                         value={range.end}
                         disabled={disabled}
+                        halfHourOnly
                         english={english}
                         onChange={(time) =>
                           updateRange(range.index, { end: time })
@@ -369,7 +411,9 @@ export function WeeklyAvailabilityEditor({
                     onClick={() => {
                       const last = ranges.at(-1);
                       const start =
-                        last && last.end < "23:00" ? last.end : "17:00";
+                        last && last.end <= "23:00"
+                          ? clock(Number(last.end.slice(0, 2)) * 2 + Math.ceil(Number(last.end.slice(3)) / 30))
+                          : "17:00";
                       onChange({
                         ...value,
                         availability: [
@@ -377,7 +421,7 @@ export function WeeklyAvailabilityEditor({
                           {
                             day,
                             start,
-                            end: start < "21:55" ? "21:55" : "23:55",
+                            end: start < "22:00" ? "22:00" : "23:30",
                           },
                         ],
                       });

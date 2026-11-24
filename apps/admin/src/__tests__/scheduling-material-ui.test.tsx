@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
@@ -68,6 +69,7 @@ function setup(teacherMode = false) {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
+  bindSchedulingStaff(demoRepository.read());
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -113,9 +115,10 @@ it("自定义日历仅提供本节教材可授老师，预览不写入，确认�
 it("按老师可先点日历时段，再从卡片选学员和共同教材", async () => {
   const { data } = setup(true);
   await click(new RegExp(`${DEMO_TODAY} 19:00 可排课`));
+  await click("确认时段");
   await act(async () => {
     fireEvent.click(
-      screen.getByRole("button", { name: new RegExp(data.students[0].name) }),
+      screen.getByText(data.students[0].name, {selector:".schedule-student-card strong"}),
     );
   });
   const dialog = within(screen.getByRole("dialog"));
@@ -128,11 +131,7 @@ it("按老师可先点日历时段，再从卡片选学员和共同教材", asyn
   });
   await click("加入课表");
   expect(screen.queryByRole("combobox", { name: "学员" })).toBeNull();
-  await act(async () => {
-    fireEvent.click(
-      screen.getByRole("button", { name: new RegExp(data.students[1].name) }),
-    );
-  });
+  await click(/更换学员/);
   expect(
     screen.getByRole("dialog", { name: "放弃当前排课草稿？" }),
   ).toBeTruthy();
@@ -142,7 +141,7 @@ it("按老师可先点日历时段，再从卡片选学员和共同教材", asyn
     screen.getByRole("region", { name: "自定义排课预览" }).textContent,
   ).toContain("Power Up 1");
 });
-it("多选时段一次加入草稿，查看和操作切换保留草稿", async () => {
+it("多选时段一次加入草稿，周历翻页保留待确认课节", async () => {
   const { data } = setup();
   await act(async () => {
     fireEvent.click(screen.getByLabelText("多选上课时间"));
@@ -166,11 +165,11 @@ it("多选时段一次加入草稿，查看和操作切换保留草稿", async (
   ).toHaveLength(3);
   await click("返回调整");
   await act(async () => {
-    fireEvent.click(screen.getByRole("tab", { name: "查看课表" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一周" }));
   });
-  expect(screen.queryByRole("button", { name: "预览排课" })).toBeNull();
+  expect(screen.getByRole("button", { name: "预览排课" }).hasAttribute("disabled")).toBe(false);
   await act(async () => {
-    fireEvent.click(screen.getByRole("tab", { name: "操作排课" }));
+    fireEvent.click(screen.getByRole("button", { name: "上一周" }));
   });
   await click("预览排课");
   expect(
@@ -180,7 +179,7 @@ it("多选时段一次加入草稿，查看和操作切换保留草稿", async (
   ).toHaveLength(3);
 });
 
-it("按周重复的草稿可恢复，明确放弃后不再恢复", async () => {
+it("按周重复的未提交课次退出后清空，重复设置恢复默认", async () => {
   const { data } = setup();
   await act(async () => {
     fireEvent.click(screen.getByRole("combobox", { name: "重复安排" }));
@@ -197,21 +196,14 @@ it("按周重复的草稿可恢复，明确放弃后不再恢复", async () => {
     );
   });
   await click("加入课表");
+  expect(Object.keys(localStorage).some(k => k.startsWith("ct-custom-calendar:"))).toBe(false);
+  await click("预览排课");
+  expect(within(screen.getByLabelText("自定义排课预览")).getAllByRole("row")).toHaveLength(3);
   cleanup();
   setup();
-  await click("继续上次编排");
-  await click("预览排课");
-  const review = screen.getByRole("region", { name: "自定义排课预览" });
-  expect(within(review).getAllByRole("row")).toHaveLength(3);
-  expect(review.textContent).toContain(addDays(DEMO_TODAY, 7));
-  await click("返回调整");
-  await act(async () => {
-    fireEvent.click(screen.getByRole("combobox", { name: "重复安排" }));
-  });
-  await act(async () => {
-    fireEvent.click(screen.getByRole("option", { name: "仅选中日期" }));
-  });
-  await click("放弃草稿并修改");
+  expect(screen.getByRole("button", { name: "预览排课" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("combobox", { name: "重复安排" }).textContent).toContain("仅选中日期");
+  expect(demoRepository.read().lessons).toHaveLength(0);
   expect(screen.queryByRole("button", { name: "继续上次编排" })).toBeNull();
   expect(
     Object.keys(localStorage).filter((k) =>

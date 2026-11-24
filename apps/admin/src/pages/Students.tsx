@@ -618,9 +618,6 @@ export default function Students() {
           >
             <span>已选 {selectedStudents.length} 位学员</span>
             <div className="row">
-              <Button variant="primary" size="sm" onClick={() => setSelected({})}>
-                取消选择
-              </Button>
               {can("student.export") && (
                 <DataTransferButton
                   direction="export"
@@ -628,9 +625,12 @@ export default function Students() {
                   loading={exporting}
                   onClick={() => void exportStudents(selectedStudents)}
                 >
-                  导出选中学员
+                  导出数据
                 </DataTransferButton>
               )}
+              <Button variant="primary" size="sm" onClick={() => setSelected({})}>
+                取消选择
+              </Button>
             </div>
           </div>
         )}

@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { teacherSchema, stateSchema, type Command } from "./model";
@@ -9,7 +10,7 @@ import {
 } from "./availability";
 
 function fixture() {
-  const data = createSeed();
+  const data = bindSchedulingStaff(createSeed());
   data.classInAccounts = data.students.map((student, index) => ({
     id: "account-" + student.id,
     phone: student.phone,
@@ -143,7 +144,7 @@ describe("教师可用时间与临时排课", () => {
     ).toHaveLength(1);
   });
   it("原表生效日期不完整的老师保留说明，核实前不开放常规时间", () => {
-    const teacher = createSeed().teachers.find(
+    const teacher = bindSchedulingStaff(createSeed()).teachers.find(
       (item) => item.name === "T. Jasshiel",
     );
     expect(teacher?.availability).toEqual([]);
@@ -297,7 +298,7 @@ describe("教师可用时间与临时排课", () => {
 });
 
 it("旧培训中和请假中资料归为在职，培训标记与请假记录保留", () => {
- const data=createSeed(), teacher=data.teachers[0];
+ const data=bindSchedulingStaff(createSeed()), teacher=data.teachers[0];
  for (const status of ["培训中", "请假中"]) {
    const parsed=teacherSchema.parse({...teacher,status,trained:false});
    expect(parsed.status).toBe("在职");

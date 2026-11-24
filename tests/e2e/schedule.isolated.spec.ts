@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { emptyStudentProfile } from "../../packages/shared/src/model";
+import { type DemoState, emptyStudentProfile } from "../../packages/shared/src/model";
 test.setTimeout(60000);
 test.skip(process.env.CT_ISOLATED_BROWSER !== "1", "Use node tests/e2e/run-isolated.mjs for isolated fixtures");
 const origin = "http://127.0.0.1:5177";
@@ -20,12 +20,29 @@ test("隔离双入口排课提交落库", async ({ page, request }) => {
     expect(r.ok(), await r.text()).toBeTruthy();
     return (await r.json()).data;
   };
+  const readState = async (): Promise<DemoState> =>
+    (await request.get(origin + "/api/state")).json();
+  const seed = await readState();
+  const owner = {
+    ...seed.accounts.find(account => account.roleId === "ops")!,
+    id: randomUUID(), name: "排课验收教务", phone: "schedule-owner", classInUid: "882001",
+  };
+  await send({ type: "account.save", account: owner, initialPassword: "Test1!" + randomUUID().slice(0, 8) });
+  const teacher = {
+    ...seed.teachers[0], id: randomUUID(), name: "排课验收老师", classInUid: "882002",
+    status: "在职", materialIds: ["m1"], availabilityFrom: "",
+    availability: [{ day: 1, start: "10:00", end: "10:50" }],
+  };
+  await send({ type: "teacher.save", teacher });
   const name = "双入口" + Date.now();
-  let state = await send({
+  await send({
     type: "student.create",
-    student: { ...emptyStudentProfile(), name, chineseName: name },
+    student: {
+      ...emptyStudentProfile(), name, chineseName: name, owner: owner.name,
+      ownerAccountId: owner.id, material: "Power Up 1", materialIds: ["m1"],
+    },
   });
-  const student = state.students[0];
+  const student = (await readState()).students.find(s => s.name === name)!;
   await send({
     type: "order.buy",
     id: randomUUID(),
@@ -46,49 +63,24 @@ test("隔离双入口排课提交落库", async ({ page, request }) => {
   await page.getByLabel("账号", { exact: true }).fill(c.login);
   await page.getByLabel("密码", { exact: true }).fill(c.password);
   await page.getByRole("button", { name: "登录", exact: true }).click();
-  for (const [entry, time] of [
-    ["schedule", "10:00"],
-    ["student", "11:00"],
-  ]) {
-    if (entry === "student")
+  await expect(page.getByRole("tab", { name: "按学员排课" })).toBeVisible();
+  await page.getByPlaceholder("搜索姓名或 ID").fill(name);
+  await page.getByRole("button", { name: new RegExp(name) }).click();
+  for (const time of ["10:00", "10:25"]) {
+    if (time === "10:25") {
       await page.goto(origin + "/students/" + student.id + "?tab=courses");
-    await page.getByRole("button", { name: "安排课程", exact: true }).click();
-    if (entry === "student") {
-      await page.getByRole("tab", {name:"灵活排课",exact:true}).click();
-      await page.getByRole("button", {name:"保存排课信息",exact:true}).click();
-      await expect(page.locator(".flex-time-cell.available").first()).toHaveAttribute("aria-label", /10:25 可排课/);
-      await page.locator(".flex-time-cell.available").first().click();
-      await page.locator(".flex-teacher-choice").first().click();
-      await page.getByRole("button", {name:"加入课表",exact:true}).click();
-      await page.getByRole("button", {name:"确认排课",exact:true}).click();
-      await expect.poll(async()=>{const current=await(await request.get(origin+"/api/state")).json();return current.lessons.filter((l:{studentId:string})=>l.studentId===student.id).length;}).toBe(2);
-      continue;
+      await page.getByRole("button", { name: "安排课程", exact: true }).click();
     }
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("学员", { exact: true }).click();
-    await page.getByRole("option", { name, exact: true }).click();
-    await dialog.getByLabel("排课方式", { exact: true }).click();
-    await page.getByRole("option", { name: "灵活排课", exact: true }).click();
-    await dialog.getByLabel("第1节上课时间", { exact: true }).fill(time);
-    await dialog.getByLabel("第1节老师", { exact: true }).click();
-    await page
-      .locator('[role="option"]:not([aria-disabled="true"])')
-      .nth(1)
-      .click();
-    await dialog.getByLabel("选择第1节", { exact: true }).check();
-    const confirmTeacher = dialog.getByRole("button", {
-      name: "已与老师确认选中课次",
-      exact: true,
-    });
-    if (await confirmTeacher.count()) await confirmTeacher.click();
-    await dialog.getByRole("button", { name: "确认排课", exact: true }).click();
-    await expect(dialog.getByRole("button", {name:"确认排课",exact:true})).toBeHidden();
+    await page.getByRole("button", { name: "自定义排课", exact: true }).click();
+    await page.getByRole("button", { name: "下一周", exact: true }).click();
+    // The first column in the weekly calendar is Monday.
+    await page.getByRole("button", { name: new RegExp(time + " 可排课") }).first().click();
+    await page.getByRole("dialog").getByRole("button", { name: new RegExp(teacher.name) }).click();
+    await page.getByRole("button", { name: "加入课表", exact: true }).click();
+    await page.getByRole("button", { name: "预览排课", exact: true }).click();
+    await page.getByRole("button", { name: "确认排课", exact: true }).click();
+    await expect.poll(async () => (await readState()).lessons
+      .filter(l => l.studentId === student.id && l.teacherId === teacher.id)
+      .map(l => l.time).sort()).toEqual(time === "10:00" ? ["10:00"] : ["10:00", "10:25"]);
   }
-  state = await (await request.get(origin + "/api/state")).json();
-  expect(
-    state.lessons.filter(
-      (l: { studentId: string }) => l.studentId === student.id,
-    ),
-  ).toHaveLength(2);
-  expect(state.lessons.filter((l: {studentId:string})=>l.studentId===student.id).map((l:{time:string})=>l.time).sort()).toEqual(["10:00","10:25"]);
 });

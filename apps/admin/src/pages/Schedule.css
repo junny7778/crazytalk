@@ -879,26 +879,6 @@
   max-height: 55vh;
 }
 
-.course-plan-calendar {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(100px, 1fr));
-  gap: 8px;
-  overflow-x: auto;
-}
-.course-plan-calendar small {
-  display: block;
-  margin-top: 6px;
-}
-.course-plan .inset > .row {
-  gap: 12px;
-}
-.course-plan input[type="time"] {
-  width: 115px;
-}
-.course-plan .ct-select-trigger {
-  min-width: 140px;
-}
-
 .schedule-teacher-profile-fields {
   display: grid;
   grid-template-columns: 100px minmax(0, 1fr);
@@ -1099,6 +1079,12 @@
   gap: 12px;
   align-self: flex-start;
 }
+.schedule-week-navigation .btn,
+.schedule-week-navigation .btn:hover {
+  color: var(--ct-brand-700);
+  background: transparent;
+  border-color: transparent;
+}
 .fixed-plan-week-nav strong {
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -1117,7 +1103,9 @@
 .fixed-calendar-legend {
   display: flex;
   gap: 16px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
   align-items: center;
   font-size: 12px;
   color: var(--ct-gray-500);
@@ -1135,8 +1123,8 @@
 }
 .fixed-calendar-legend .available,
 .fixed-empty-cell.available {
-  background: var(--ct-success-bg);
-  color: var(--ct-success);
+  background: var(--ct-white);
+  color: var(--ct-gray-700);
 }
 .fixed-calendar-legend .unavailable,
 .fixed-empty-cell.unavailable {
@@ -1148,8 +1136,8 @@
   font-size: 11px;
 }
 .fixed-empty-cell.drop-target {
-  background: var(--ct-success-bg);
-  outline: 2px solid var(--ct-success);
+  background: var(--ct-brand-50);
+  outline: 2px solid var(--ct-brand-700);
   outline-offset: -2px;
 }
 .fixed-course[draggable="true"] {
@@ -1257,9 +1245,16 @@
   color: var(--ct-gray-500);
 }
 .flex-time-cell.available {
-  background: var(--ct-success-bg);
-  color: var(--ct-success);
+  background: var(--ct-white);
+  color: var(--ct-gray-700);
   cursor: pointer;
+}
+.flex-time-cell.beside-course {
+  justify-self: end;
+  width: 45%;
+}
+.fixed-course.beside-slot {
+  margin-right: 45%;
 }
 .flex-time-cell.unavailable {
   cursor: default;
@@ -1277,9 +1272,9 @@
   font-size: 10px;
 }
 .flex-time-cell.drop-target {
-  outline: 2px solid var(--ct-success);
+  outline: 2px solid var(--ct-brand-700);
   outline-offset: -2px;
-  background: var(--ct-success-bg);
+  background: var(--ct-brand-50);
 }
 .flex-pending {
   background: var(--ct-brand-50);
@@ -1294,7 +1289,9 @@
 .flex-calendar-legend {
   display: flex;
   gap: 20px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--ct-gray-500);
 }
@@ -1314,7 +1311,7 @@
   background: white;
 }
 .flex-calendar-legend .available {
-  background: var(--ct-success-bg);
+  background: var(--ct-white);
 }
 .flex-calendar-legend .unavailable {
   background: var(--ct-gray-50);
@@ -1777,13 +1774,51 @@
 .schedule-match-card .schedule-match-meta { margin: 20px 0; }
 .schedule-plan-section > .row > input { max-width: 260px; }
 .material-picker > .row { gap: 12px 20px; }
-.material-picker input[type="checkbox"] { width: auto; }
 @media (max-width: 1100px) { .schedule-recommendation-grid { grid-template-columns: 1fr; } }
 .schedule-custom-settings { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 16px; }
-.schedule-custom-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; }
+.schedule-teacher-fields { gap: 12px 16px; }
+.schedule-teacher-fields > .field { flex: 0 1 144px; min-width: 0; }
+.schedule-teacher-fields > .field + .field { flex: 1 1 280px; max-width: 560px; }
+.schedule-custom-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
 .schedule-student-options { max-height: 720px; overflow: auto; }
-.schedule-student-options .flex-teacher-choice { width: 100%; text-align: left; }
-.schedule-student-options small { display: block; }
+.schedule-student-options > .search-input { width: 100%; max-width: none; }
+.schedule-student-cards { display: grid; gap: 12px; }
+.schedule-student-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 12px;
+  background: var(--ct-white);
+  cursor: pointer;
+}
+.schedule-student-card:hover, .schedule-student-card:focus-within { border-color: var(--ct-brand-500); }
+.schedule-student-info { display: grid; gap: 6px; }
+.schedule-student-line, .schedule-student-details { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.schedule-student-line strong { font-size: 15px; }
+.schedule-student-line small, .schedule-student-match, .schedule-student-details { color: var(--ct-gray-700); font-size: 12px; }
+.schedule-student-match { margin-left: auto; }
+.schedule-student-match[data-match="full"] { color: var(--ct-success); }
+.schedule-student-match[data-match="partial"] { color: var(--ct-brand-700); }
+.schedule-student-details > :first-child { white-space: nowrap; }
+.schedule-student-details { font-size: 13px; color: var(--ct-gray-900); }
+.schedule-student-details small { margin-right: 4px; font-size: 12px; color: var(--ct-gray-700); }
+.schedule-student-details > :last-child { border-left: 1px solid var(--ct-gray-200); padding-left: 12px; }
+.schedule-student-card input[type="radio"],
+.schedule-student-card input[type="radio"]:is(:checked, :indeterminate) {
+  appearance: none;
+  margin: 2px 0 0;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--ct-brand-700);
+  border-radius: 50%;
+  background: var(--ct-white);
+  cursor: pointer;
+}
+.schedule-student-card input[type="radio"]:checked { border-width: 2px; }
+.schedule-student-card input[type="radio"]:checked::before { content: none; }
 @media (max-width: 1100px) { .schedule-custom-layout { grid-template-columns: minmax(0, 1fr); } .schedule-student-options { max-height: 360px; } }
 .custom-calendar-read .flex-time-cell { background: var(--ct-white); color: transparent; pointer-events: none; }
 .custom-calendar-read .flex-time-cell > * { visibility: hidden; }
@@ -1793,6 +1828,13 @@
 .custom-calendar-read .flex-booked[data-status="缺席"] { background: var(--ct-danger-bg); color: var(--ct-danger); border-left-color: var(--ct-danger); }
 
 .schedule-recommendation-actions { position: static; }
-.schedule-student-options .flex-teacher-choice[aria-pressed="true"] { border-color: var(--ct-brand-700); background: var(--ct-brand-50); }
 
 .schedule-setup-actions { position: static; }
+
+.intent-range-inputs .ct-time-picker input {
+  padding-right: 32px;
+}
+
+.schedule-custom-layout .fixed-calendar { position: relative; user-select: none; }
+.schedule-selection-box { position: absolute; z-index: 5; pointer-events: none; border: 1px solid var(--ct-brand-700); background: color-mix(in srgb, var(--ct-brand-500) 12%, transparent); }
+.schedule-custom-layout:has(.students-batch-bar) { padding-bottom: 96px; }

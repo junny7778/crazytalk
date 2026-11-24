@@ -3,21 +3,28 @@ import * as Popover from "@radix-ui/react-popover";
 import { Clock } from "lucide-react";
 import "./time-picker.css";
 
+const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const allMinutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+const halfHourMinutes = ["00", "30"];
+
 export function TimePicker({
   value,
   onChange,
   label,
   disabled = false,
   english = false,
+  halfHourOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   label: string;
   disabled?: boolean;
   english?: boolean;
+  halfHourOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [hour = "", minute = ""] = value.split(":");
+  const minutes = halfHourOnly ? halfHourMinutes : allMinutes;
   return (
     <Popover.Root open={open && !disabled} onOpenChange={setOpen}>
       <div className="ct-time-picker">
@@ -29,7 +36,10 @@ export function TimePicker({
           aria-label={label}
           value={value}
           disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
+          readOnly={halfHourOnly}
+          tabIndex={halfHourOnly ? -1 : undefined}
+          onClick={halfHourOnly ? () => setOpen(true) : undefined}
+          onChange={halfHourOnly ? undefined : (event) => onChange(event.target.value)}
         />
         <Popover.Trigger asChild>
           <button
@@ -66,10 +76,7 @@ export function TimePicker({
                       : "分钟"}
                 </strong>
                 <div className="ct-time-options">
-                  {Array.from(
-                    { length: part === "hour" ? 24 : 60 },
-                    (_, index) => String(index).padStart(2, "0"),
-                  ).map((option) => (
+                  {(part === "hour" ? hours : minutes).map((option) => (
                     <button
                       type="button"
                       key={option}
@@ -87,7 +94,7 @@ export function TimePicker({
                       onClick={() => {
                         onChange(
                           part === "hour"
-                            ? `${option}:${/^\d{2}$/.test(minute) && Number(minute) < 60 ? minute : "00"}`
+                            ? `${option}:${minutes.includes(minute) ? minute : "00"}`
                             : `${/^\d{2}$/.test(hour) && Number(hour) < 24 ? hour : "00"}:${option}`,
                         );
                         if (part === "minute") setOpen(false);

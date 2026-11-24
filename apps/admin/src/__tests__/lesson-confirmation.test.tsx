@@ -17,7 +17,7 @@ import { demoRepository } from "../../../../packages/shared/src/repository";
 import App from "../App";
 import { CloseLesson } from "../../../teacher/src/screens";
 import zh from "../../../teacher/src/locales/zh";
-import type { Report } from "@crazytalk/shared";
+import { DEMO_TODAY, type Report } from "@crazytalk/shared";
 
 function mount(path: string) {
   return render(
@@ -485,4 +485,64 @@ it("进入上课记录自动结算正常课，仅异常课保留核实入口", a
   expect(
     demoRepository.read().students.find((s) => s.id === student.id)?.balance,
   ).toBe(balance - 1.5);
+});
+
+it("上课记录仅保留列表及课程详情入口", () => {
+ mount("/lessons");
+ expect(screen.queryByRole("button",{name:"日历"})).toBeNull();
+ expect(screen.queryByRole("region",{name:"课程周历"})).toBeNull();
+ expect(screen.getByRole("table")).toBeTruthy();
+ fireEvent.click(screen.getAllByRole("button",{name:"详情"})[0]);
+ expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
+it("上课记录核实老师取消，使用实际取消时间", async () => {
+  const lesson = demoRepository.read().lessons.find(l => l.status === "待确认" && l.attendance === "正常")!;
+  mount("/lessons?lesson=" + lesson.id);
+  const detail = await screen.findByRole("dialog", {name:"课程详情"});
+  fireEvent.click(within(detail).getByRole("button",{name:"核实"}));
+  const form = within(screen.getByRole("dialog",{name:"核实上课记录"}));
+  fireEvent.click(form.getByRole("combobox",{name:/核实结论/}));
+  fireEvent.click(screen.getByRole("option",{name:"老师取消"}));
+  fireEvent.change(form.getByLabelText(/实际取消时间/),{target:{value:lesson.date + "T00:00"}});
+  fireEvent.change(form.getByRole("textbox",{name:/核实依据/}),{target:{value:"排课取消申请时间已核对"}});
+  fireEvent.click(form.getByRole("button",{name:"确认核实"}));
+  await waitFor(()=>expect(demoRepository.read().lessons.find(l=>l.id===lesson.id)).toMatchObject({
+    status:"已取消",deducted:false,cancellation:{responsibility:"老师",at:new Date(lesson.date + "T00:00:00+08:00").toISOString()},
+  }));
+});
+
+it("从网络课程实际取消，到工资单录入双方应得金额", async () => {
+  const data = demoRepository.read();
+  const lesson = data.lessons.find(l=>l.status==="待确认" && l.attendance==="正常")!;
+  const teacher = data.teachers.find(t=>t.id===lesson.teacherId)!;
+  lesson.date = DEMO_TODAY;
+  data.lessons = [lesson];
+  data.teachers = [teacher];
+  teacher.payMode = "NP";
+  teacher.rate = 180;
+  data.officePayRates = {[teacher.so]:60};
+  data.feedback = []; data.settlements = []; data.payroll = []; data.actions = [];
+  const first = mount("/lessons?lesson=" + lesson.id);
+  const detail = await screen.findByRole("dialog", {name:"课程详情"});
+  fireEvent.click(within(detail).getByRole("button",{name:"核实"}));
+  const form = within(screen.getByRole("dialog",{name:"核实上课记录"}));
+  fireEvent.click(form.getByRole("combobox",{name:/核实结论/}));
+  fireEvent.click(screen.getByRole("option",{name:"老师网络设备问题"}));
+  fireEvent.click(form.getByRole("combobox",{name:/实际上课结果/}));
+  fireEvent.click(screen.getByRole("option",{name:"取消"}));
+  fireEvent.change(form.getByRole("textbox",{name:/核实依据/}),{target:{value:"教务确认受影响课程未完成"}});
+  fireEvent.click(form.getByRole("button",{name:"确认核实"}));
+  await waitFor(()=>expect(demoRepository.read().lessons[0]).toMatchObject({status:"已取消",incident:{networkOutcome:"取消"}}));
+  first.unmount();
+  mount("/payroll");
+  fireEvent.click(await screen.findByRole("button",{name:"查看工资单"}));
+  const payroll = within(screen.getByRole("dialog"));
+  fireEvent.click(payroll.getByRole("button",{name:"记录处理结果"}));
+  fireEvent.change(payroll.getByLabelText(/本节老师应得课酬/),{target:{value:"73"}});
+  fireEvent.change(payroll.getByLabelText(/本节 SO 应得课酬/),{target:{value:"22"}});
+  fireEvent.change(payroll.getByLabelText("待核处理说明"),{target:{value:"办公室核实双方实际金额"}});
+  fireEvent.click(payroll.getByRole("button",{name:"保存处理结果"}));
+  await waitFor(()=>expect(payroll.getAllByText("₱73").length).toBeGreaterThan(0));
+  expect(payroll.getAllByText("₱22").length).toBeGreaterThan(0);
 });

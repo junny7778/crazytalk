@@ -34,14 +34,14 @@ export async function verifyWorkflows(
   const firstLesson = initial.lessons.find(l => l.studentId === sibling.id)!;
   const available = getScheduleCredits(initial, existing.id, 1, 1).available;
   const second = await send({ type: "lesson.schedule", studentId: existing.id, teacherId: firstLesson.teacherId,
-    slots: [{ date: firstLesson.date, time: "10:00" }], duration: 25, kind: "固定课", material: "共享课时验收", confirmedTeacher: true });
+    slots: [{ date: firstLesson.date, time: "10:00" }], duration: 25, kind: "固定课", material: firstLesson.material, confirmedTeacher: true });
   const secondLesson = (second.data as DemoState).lessons.find(l => l.studentId === existing.id)!;
   assert.equal(getScheduleCredits(await read(), sibling.id, 1, 1).available, available - 1);
   await send({ type: "lesson.cancel", id: secondLesson.id, reason: "提前取消验收", responsibility: "学员", kind: "学员请假" });
   assert.equal(getScheduleCredits(await read(), existing.id, 1, 1).available, available - 1, "外部取消未确认前保留原课时占用");
   for (const [studentId, time] of [[existing.id, "11:00"], [sibling.id, "12:00"]])
     await send({ type: "lesson.schedule", studentId, teacherId: firstLesson.teacherId,
-      slots: [{ date: firstLesson.date, time }], duration: 25, kind: "临时课", material: "账号退款验收", confirmedTeacher: true });
+      slots: [{ date: firstLesson.date, time }], duration: 25, kind: "临时课", material: firstLesson.material, confirmedTeacher: true });
   const beforeRefund = await read();
   await send({ type: "student.lifecycle", studentId: existing.id, status: "退费", reason: "只验证停用流程不执行资金退款" });
   const refunded = await read();
@@ -49,7 +49,10 @@ export async function verifyWorkflows(
   assert.equal(refunded.credits.length, beforeRefund.credits.length + (existing.balance !== 0 ? 1 : 0));
   assert.equal(refunded.students.find(s => s.id === sibling.id)!.balance, 0);
   assert.equal(refunded.students.find(s => s.id === sibling.id)!.status, "退费");
-  const canceled = refunded.lessons.filter(l => l.material === "账号退款验收");
+  const canceled = refunded.lessons.filter(l => l.date === firstLesson.date && (
+    (l.studentId === existing.id && l.time === "11:00") ||
+    (l.studentId === sibling.id && l.time === "12:00")
+  ));
   assert.equal(canceled.length, 2);
   assert.ok(canceled.every(l => l.status === "已取消" && l.sync === "处理中"));
   await send({ type: "student.lifecycle", studentId: sibling.id, status: "退费", reason: "重复退款" }, admin, 400);

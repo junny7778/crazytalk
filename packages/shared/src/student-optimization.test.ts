@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
@@ -115,7 +116,7 @@ describe("学员跟进自动关联", () => {
       ),
     ).toBe(true);
     expect(
-      transition(changed, { type: "teacher.save", teacher }).data.tasks,
+      transition(changed, { type: "teacher.save", teacher: changed.teachers[0] }).data.tasks,
     ).toHaveLength(changed.tasks.length);
   });
 
@@ -324,7 +325,8 @@ describe("学员跟进自动关联", () => {
   });
 
   it("调课、取消、更正显式关联对应课程，新充值精确关联本次流水", () => {
-    const before = createSeed();
+    const before = bindSchedulingStaff(createSeed());
+    before.classInAccounts = before.students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(990000+index),studentIds:[student.id]}));
     const learner = before.students[0];
     const future = before.lessons.find(
       (item) =>

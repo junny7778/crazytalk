@@ -11,6 +11,7 @@ export const undoSchema = z.object({
   before: z.array(lessonSchema),
   after: z.array(lessonSchema),
   decision: z.string(),
+  capturedPayIds: z.array(z.string()).optional(),
 });
 export function undoConfirmation(
   state: DemoState,
@@ -57,6 +58,7 @@ export function undoConfirmation(
     )
       payroll.lessons--;
   }
+  for (const id of snapshot.capturedPayIds ?? []) delete state.lessonPayBasis?.[id];
   state.revision++;
   state.events.unshift({
     id: randomUUID(),

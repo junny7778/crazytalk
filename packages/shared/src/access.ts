@@ -44,6 +44,13 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "lesson.notice": "lesson.confirm",
   "slot.lock": "schedule.create",
   "slot.release": "schedule.create",
+  "halfPay.rules": "pay_rate.edit",
+  "halfPay.officeRate": "pay_rate.edit",
+  "halfPay.teacherRate": "pay_rate.edit",
+  "halfPay.adjust": "payroll.adjust",
+  "halfPay.review": "payroll.adjust",
+  "halfPay.serious": "payroll.adjust",
+  "halfPay.status": "payroll.confirm",
   "pay.terms": "pay_rate.edit",
   "pay.freeze": "payroll.confirm",
   "survey.issue": "student.edit",
@@ -158,6 +165,8 @@ export function assertCommandAccess(
         throw new Error("老师账号没有执行此操作的权限");
     }
   }
+  if (command.type.startsWith("halfPay.") && (!can("payroll.view") || !can("field.pay_amount")))
+    throw new Error("没有操作薪资金额的权限");
   if (command.type === "survey.submit")
     throw new Error("请通过专属问卷链接提交");
   let permission = commandPermissions[command.type];
@@ -170,7 +179,7 @@ export function assertCommandAccess(
   )
     permission = "org.manage";
   if (command.type === "report.save") permission = "lesson.confirm";
-  if (command.type === "payroll.status" && command.status === "已发放")
+  if ((command.type === "payroll.status" || command.type === "halfPay.status") && command.status === "已发放")
     permission = "payroll.mark_paid";
   if (
     command.type === "teacher.save" &&
@@ -374,6 +383,9 @@ export function assertCommandAccess(
       throw new Error("你没有修改老师可用时间的权限");
   }
   if (identity.roleId === "tm") {
+    if (command.type === "halfPay.officeRate" &&
+        !state.teachers.some(t => t.so === command.so && t.tmAccountId === account.id))
+      throw new Error("只能修改本人负责老师所属 SO 的单价");
     let teacherId: string | undefined;
     if ("teacherId" in command) teacherId = command.teacherId;
     if (command.type === "teacher.save") teacherId = command.teacher.id;
@@ -482,6 +494,7 @@ export function scopeState(
       studentIds.has(lesson.studentId) && teacherIds.has(lesson.teacherId),
   );
   const lessonIds = new Set(lessons.map((lesson) => lesson.id));
+  const canSeePay = !teacherId && can("payroll.view") && can("field.pay_amount");
   const visible: DemoState = {
     ...state,
     students: state.students
@@ -578,6 +591,13 @@ export function scopeState(
         ? item.teacherId === teacherId && item.status !== "待确认"
         : can("payroll.view") && teacherIds.has(item.teacherId),
     ),
+    halfMonthPayroll: can("payroll.view") && can("field.pay_amount") && !teacherId
+      ? state.halfMonthPayroll?.filter(item => teacherIds.has(item.teacherId)) : [],
+    payRuleChanges: canSeePay ? state.payRuleChanges : undefined,
+    lessonPayBasis: canSeePay ? Object.fromEntries(Object.entries(state.lessonPayBasis ?? {}).filter(([id]) => lessonIds.has(id))) : undefined,
+    officeRateHistory: canSeePay ? Object.fromEntries(Object.entries(state.officeRateHistory ?? {}).filter(([so]) => state.teachers.some(t => t.so === so && teacherIds.has(t.id)))) : undefined,
+    officePayRates: can("payroll.view") && can("field.pay_amount") && !teacherId
+      ? Object.fromEntries(Object.entries(state.officePayRates ?? {}).filter(([so]) => state.teachers.some(t => t.so === so && teacherIds.has(t.id)))) : undefined,
     payTerms:
       teacherId || !can("payroll.view")
         ? []
@@ -610,6 +630,10 @@ export function scopeState(
         studentIds.has(item.studentId) && teacherIds.has(item.teacherId),
     ),
   };
+  if (!canSeePay) {
+    visible.credits = visible.credits.map(entry => ({ ...entry, renewalPayRuleVersion: undefined }));
+    visible.feedback = visible.feedback.map(item => ({ ...item, tmPayRuleVersion: undefined }));
+  }
   if (!teacherId && !can("field.student_phone")) {
     const mask = (phone: string) => (phone ? "****" + phone.slice(-4) : "");
     visible.students = visible.students.map((student) => ({
@@ -655,6 +679,7 @@ export function scopeState(
     visible.teachers = visible.teachers.map((teacher) => ({
       ...teacher,
       rate: 0,
+      payRateHistory: undefined,
     }));
     visible.actions = visible.actions.map((action) => ({
       ...action,
@@ -685,6 +710,11 @@ export function scopeState(
       email: "",
       roster: undefined,
       surveyOriginal: undefined,
+      ageGroup: undefined,
+      membershipDuration: undefined,
+      listeningHours: undefined,
+      preferredLessonTime: undefined,
+      learningNotes: undefined,
       surveyToken: undefined,
       surveySecret: undefined,
       preferences: "",

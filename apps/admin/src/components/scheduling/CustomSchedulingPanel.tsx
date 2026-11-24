@@ -1,19 +1,19 @@
-import { SchedulingAccountNotice } from "./SchedulingAccountNotice";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { schedulingBookingIssue, teacherSchedulingAccountIssue } from "@crazytalk/shared";
+import { SchedulingAccountNotice, TeacherSchedulingAccountNotice } from "./SchedulingAccountNotice";
+import { useCallback, useMemo, useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
   DEMO_TODAY,
   isAvailable,
+  getScheduleCredits,
+  scheduleUnits,
+  matchesScheduleWindow,
   studentMaterials,
   type ScheduleIntent,
 } from "@crazytalk/shared";
-import { Avatar, Badge, Button, Field, Modal, Select } from "@crazytalk/ui";
+import { Avatar, Button, Field, Modal, SearchInput, Select, useToast } from "@crazytalk/ui";
 import MaterialPicker from "../MaterialPicker";
-import {
-  FlexStudentCalendar,
-  customDraftKey,
-  readCustomDraft,
-} from "./FlexStudentCalendar";
+import { FlexStudentCalendar } from "./FlexStudentCalendar";
 
 type Time = { date: string; time: string };
 export function CustomSchedulingPanel({
@@ -22,7 +22,6 @@ export function CustomSchedulingPanel({
   initialTime,
   initialTimes = [],
   startDate = DEMO_TODAY,
-  onDraftKeyChange,
   onDirtyChange,
   onBusyChange,
   onStageChange,
@@ -34,39 +33,32 @@ export function CustomSchedulingPanel({
   initialTime?: Time;
   initialTimes?: Time[];
   startDate?: string;
-  onDraftKeyChange?: (key: string) => void;
   onDirtyChange: (dirty: boolean) => void;
   onBusyChange: (busy: boolean) => void;
   onStageChange: (stage: "setup" | "preview") => void;
   onClose: () => void;
   onComplete: (studentId: string, count: number, teachers: string) => void;
 }) {
-  const { data, can, preview, accountId } = useDemo();
+  const { data, can, preview, act } = useDemo();
   const [studentId, setStudent] = useState(initialStudent);
   const student = data.students.find((s) => s.id === studentId);
   const teacher = data.teachers.find((t) => t.id === teacherId);
-  const [saved] = useState(() =>
-    initialStudent
-      ? readCustomDraft(customDraftKey(accountId, initialStudent, teacherId))
-      : undefined,
-  );
+  const toast = useToast();
+  const [savingMaterials, setSavingMaterials] = useState(false);
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(30);
   const [time, setTime] = useState(initialTime);
   const [pickedTimes, setPickedTimes] = useState(initialTimes);
-  useEffect(() => {
-    onDraftKeyChange?.(customDraftKey(accountId, studentId, teacherId));
-  }, [accountId, studentId, teacherId, onDraftKeyChange]);
-  const [duration, setDuration] = useState(saved?.intent.duration || 25);
-  const [repeatWeeks, setRepeatWeeks] = useState(saved?.repeatWeeks || 1);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [duration, setDuration] = useState(25);
+  const [repeatWeeks, setRepeatWeeks] = useState(1);
   const [materialIds, setMaterialIds] = useState(
     () =>
-      saved?.intent.materialIds ||
-      (student
+      student
         ? studentMaterials(data, student)
             .slice(0, 1)
             .map((c) => c.id)
-        : []),
+        : [],
   );
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
@@ -88,32 +80,29 @@ export function CustomSchedulingPanel({
   );
   function change(action: () => void) {
     if (busy) return;
-    if (dirty) setPending(() => action);
-    else {
+    const apply = () => {
+      setTime(undefined);
+      setPickedTimes([]);
       action();
-      setRevision((v) => v + 1);
-    }
+    };
+    const commit = () => {
+      apply();
+      setRevision(v => v + 1);
+      setDirtyState(false);
+    };
+    if (dirty) setPending(() => commit);
+    else commit();
   }
   function selectStudent(id: string) {
-    change(() => {
-      setStudent(id);
-      const previous = readCustomDraft(
-        customDraftKey(accountId, id, teacherId),
-      );
-      if (previous) {
-        setDuration(previous.intent.duration);
-        setRepeatWeeks(previous.repeatWeeks);
-        setMaterialIds(previous.intent.materialIds || []);
-        return;
-      }
-      const next = data.students.find((s) => s.id === id)!;
-      setMaterialIds(
-        studentMaterials(data, next)
-          .filter((c) => !teacher || teacher.materialIds?.includes(c.id))
-          .slice(0, 1)
-          .map((c) => c.id),
-      );
-    });
+    setPickerOpen(false);
+    setStudent(id);
+    const next = data.students.find((s) => s.id === id)!;
+    setMaterialIds(
+      studentMaterials(data, next)
+        .filter((c) => !teacher || teacher.materialIds?.includes(c.id))
+        .slice(0, 1)
+        .map((c) => c.id),
+    );
   }
   const intent = useMemo<ScheduleIntent>(
     () => ({
@@ -134,21 +123,41 @@ export function CustomSchedulingPanel({
       materialIds,
     ],
   );
-  const candidates = data.students.filter(
-    (s) =>
-      !["停课", "结课", "退费"].includes(s.status) &&
-      `${s.name} ${s.id}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const choosingStudent = !!teacher && pickerOpen && !student;
+  const units = scheduleUnits(duration);
+  const candidates = useMemo(() => {
+    if (!choosingStudent || !teacher) return [];
+    return data.students
+      .filter(s => !["停课", "结课", "退费"].includes(s.status) &&
+        `${s.name} ${s.id}`.toLowerCase().includes(query.toLowerCase()))
+      .flatMap(s => {
+        if (schedulingBookingIssue(data, s.id, [teacher.id])) return [];
+        const common = studentMaterials(data, s).filter(c => teacher.materialIds?.includes(c.id));
+        if (!common.length) return [];
+        // Custom durations have their deduction entered later in the booking flow.
+        const credits = getScheduleCredits(data, s.id, units === undefined ? 0 : pickedTimes.length, units ?? 1);
+        if (credits.available <= 0 || credits.error) return [];
+        if (pickedTimes.some(slot => isAvailable(data, teacher.id, slot.date, slot.time, duration, s.id, undefined, false, true).length)) return [];
+
+        const intent = s.scheduleIntent;
+        const matches = intent?.windows.length
+          ? pickedTimes.filter(slot => matchesScheduleWindow(slot, duration, intent)).length : 0;
+        return [{ student: s, common, available: credits.available, matches, hasIntent: !!intent?.windows.length }];
+      })
+      .sort((a, b) => b.matches - a.matches || Number(b.hasIntent) - Number(a.hasIntent));
+  }, [choosingStudent, teacher, pickedTimes, data, query, duration, units]);
   return (
     <div className="stack">
+      {teacher && <TeacherSchedulingAccountNotice key={teacher.id} teacher={teacher}/>}
       {student && (
         <SchedulingAccountNotice key={student.id} student={student} />
       )}
+      {student && !teacher && data.teachers.filter(t=>t.status!=="已离职" && teacherSchedulingAccountIssue(t) && materialIds.some(id=>t.materialIds?.includes(id))).map(t=><div key={t.id} className="stack"><button className="flex-teacher-choice" disabled>{t.name} · 未绑定 ClassIn</button><TeacherSchedulingAccountNotice teacher={t}/></div>)}
       <fieldset
         disabled={busy || preview || !can("schedule.create")}
         className="schedule-custom-settings"
       >
-        <div className="form-grid">
+        <div className={teacher ? "row wrap schedule-teacher-fields" : "form-grid"}>
           <Field label="每节时长">
             <Select
               value={duration}
@@ -163,7 +172,7 @@ export function CustomSchedulingPanel({
               ))}
             </Select>
           </Field>
-          <Field label="重复安排">
+          {!teacher && <Field label="重复安排">
             <Select
               value={repeatWeeks}
               onValueChange={(value) =>
@@ -176,7 +185,38 @@ export function CustomSchedulingPanel({
                 </option>
               ))}
             </Select>
-          </Field>
+          </Field>}
+          {teacher && <Field label="可授教材">
+            <Select multiple checkboxOptions size="form" searchable value={teacher.materialIds || []}
+              placeholder="请选择可授教材"
+              disabled={busy || savingMaterials || preview || !can("teacher.edit")}
+              onValueChange={ids => {
+                const removesSelected = !!student && materialIds.some(id => !ids.includes(id));
+                const save = async () => {
+                  setSavingMaterials(true);
+                  try {
+                    await act({type: "teacher.save", teacher: {...teacher, materialIds: ids}});
+                    if (removesSelected) {
+                      setMaterialIds(materialIds.filter(id => ids.includes(id)));
+                      setTime(undefined);
+                      setPickedTimes([]);
+                      setRevision(v => v + 1);
+                      setDirtyState(false);
+                    }
+                  } catch (error) {
+                    toast(error instanceof Error ? error.message : "可授教材保存失败", {tone: "error"});
+                  } finally {
+                    setSavingMaterials(false);
+                  }
+                };
+                if (dirty && removesSelected) setPending(() => save);
+                else void save();
+              }}>
+              {data.catalog.filter(c => c.type === "教材" && (c.enabled || teacher.materialIds?.includes(c.id))).map(c =>
+                <option key={c.id} value={c.id}>{c.name}{c.enabled ? "" : "（已停用）"}</option>
+              )}
+            </Select>
+          </Field>}
         </div>
         {student && (
           <Field label="本次教材">
@@ -196,18 +236,11 @@ export function CustomSchedulingPanel({
           </p>
         )}
       </fieldset>
-      {teacher && (
-        <div className="row">
-          <strong>{teacher.name}</strong>
-          <span className="muted">
-            可授教材：
-            {data.catalog
-              .filter((c) => teacher.materialIds?.includes(c.id))
-              .map((c) => c.name)
-              .join("、") || "未登记，请通过老师的编辑资料补充"}
-          </span>
-        </div>
-      )}
+      {teacher && student && <Button variant="ghost" disabled={busy || preview} onClick={() => change(() => {
+        setStudent("");
+        setTime(undefined);
+        setPickedTimes([]);
+      })}>{student.name} · 更换学员</Button>}
       <div className={teacher ? "schedule-custom-layout" : ""}>
         <div>
           {(!student || materialIds.length > 0) && (
@@ -217,9 +250,12 @@ export function CustomSchedulingPanel({
               teacherId={teacherId}
               initialTime={time}
               initialTimes={pickedTimes}
-              onPickTime={(slot) => {
-                setTime(slot);
-                setPickedTimes([slot]);
+              onConfirmTimes={(slots) => {
+                setTime(slots[0]);
+                setPickedTimes(slots);
+                setPickerOpen(true);
+                setQuery("");
+                setVisibleCount(30);
               }}
               intent={intent}
               repeatWeeks={repeatWeeks}
@@ -231,90 +267,48 @@ export function CustomSchedulingPanel({
             />
           )}
         </div>
-        {teacher && (
-          <aside className="schedule-student-options stack">
-            <h4>选择学员</h4>
-            {time && (
-              <p>
-                {time.date} {time.time} · 已选时段
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() =>
-                    change(() => {
-                      setTime(undefined);
-                      setPickedTimes([]);
-                    })
-                  }
-                >
-                  取消时间筛选
-                </Button>
-              </p>
-            )}
-            <input
-              aria-label="搜索待排学员"
+        {teacher && time && choosingStudent && (
+          <Modal open width={720} title="选择学员" description={`已选 ${pickedTimes.length} 个时段${units ? ` · 共需 ${units * pickedTimes.length} 课时` : ""}`} onClose={() => setPickerOpen(false)}>
+            <div className="schedule-student-options stack">
+            <SearchInput
+              label="搜索待排学员"
               placeholder="搜索学员姓名或 ID"
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setVisibleCount(30);
-              }}
+              onChange={value => { setQuery(value); setVisibleCount(30); }}
             />
-            {candidates.slice(0, visibleCount).map((s) => {
-              const common = studentMaterials(data, s).filter((c) =>
-                teacher.materialIds?.includes(c.id),
-              );
-              const reason = !common.length
-                ? "没有共同教材"
-                : time
-                  ? isAvailable(
-                      data,
-                      teacher.id,
-                      time.date,
-                      time.time,
-                      duration,
-                      s.id,
-                      undefined,
-                      false,
-                      true,
-                    )[0]
-                  : "";
-              return (
-                <button
-                  type="button"
-                  key={s.id}
-                  className="flex-teacher-choice"
-                  disabled={
-                    !!reason || busy || preview || !can("schedule.create")
-                  }
-                  aria-pressed={s.id === studentId}
-                  onClick={() => selectStudent(s.id)}
-                >
-                  <span className="row">
-                    <Avatar name={s.name} />
-                    <strong>{s.name}</strong>
+            <div className="schedule-student-cards" role="radiogroup" aria-label="可排课学员">
+              {candidates.slice(0, visibleCount).map(({ student: s, common, available, matches, hasIntent }) => (
+                <label key={s.id} className="schedule-student-card">
+                  <Avatar name={s.name} size={40}/>
+                  <span className="schedule-student-info">
+                    <span className="schedule-student-line">
+                      <strong>{s.name}</strong>
+                      <small>ID {s.id}</small>
+                      <span className="schedule-student-match" data-match={matches === pickedTimes.length ? "full" : matches ? "partial" : "none"}>
+                        {matches ? (pickedTimes.length === 1 ? "符合意向时间" : `${matches}/${pickedTimes.length} 时段符合意向`) : hasIntent ? "与意向时间不符" : "未登记意向"}
+                      </span>
+                    </span>
+                    <span className="schedule-student-details">
+                      <span><small>待排课时</small> {available} 课时</span>
+                      <span><small>共同教材</small> {common.map(c => c.name).join("、")}</span>
+                    </span>
                   </span>
-                  <small>ID：{s.id}</small>
-                  <span className="row wrap">
-                    {common.map((c) => (
-                      <Badge key={c.id}>{c.name}</Badge>
-                    ))}
-                  </span>
-                  <small>{reason || "教材匹配，可选择"}</small>
-                  <small>{s.scheduleText || "未登记固定上课时间"}</small>
-                </button>
-              );
-            })}
+                  <input type="radio" name="schedule-student" value={s.id}
+                    disabled={busy || preview || !can("schedule.create")}
+                    onChange={() => selectStudent(s.id)} />
+                </label>
+              ))}
+            </div>
             {candidates.length > visibleCount && (
               <Button onClick={() => setVisibleCount((n) => n + 30)}>
                 显示更多学员
               </Button>
             )}
             {!candidates.length && (
-              <p className="muted">没有找到学员，请修改搜索条件。</p>
+              <p className="muted">{query ? "没有找到匹配的待排学员" : "当前时段暂无可排课的学员"}</p>
             )}
-          </aside>
+            </div>
+          </Modal>
         )}
       </div>
       {(!student || !materialIds.length) && (
@@ -328,13 +322,8 @@ export function CustomSchedulingPanel({
             <Button
               variant="primary"
               onClick={() => {
-                localStorage.removeItem(
-                  customDraftKey(accountId, studentId, teacherId),
-                );
                 pending();
                 setPending(null);
-                setRevision((v) => v + 1);
-                setDirtyState(false);
               }}
             >
               放弃草稿并修改

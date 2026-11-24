@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { transition, isAvailable } from "./domain";
@@ -6,12 +7,13 @@ import {
   refreshOffboardRebooking,
 } from "./teacherOffboard";
 import { getStudentSummary } from "./studentSummary";
-import { stateSchema } from "./model";
+import { DEMO_TODAY, stateSchema } from "./model";
 import { schedulingAccountIssue } from "./packageBalances";
+import { halfMonthStatement } from "./halfMonthPayroll";
 import { getScheduleCredits } from "./scheduleCredits";
 
 function fixture() {
-  const data = createSeed();
+  const data = bindSchedulingStaff(createSeed());
   data.students = data.students.slice(0, 3);
   data.tasks = [];
   data.leaves = [];
@@ -206,4 +208,25 @@ it("补排两节不会只约一节就结束，需全部同步成功才完成待�
   expect(data.tasks.find((t) => t.studentId === s.id)?.status).toBe("已完成");
   expect(data.students[0].status).toBe("在读");
   expect(getStudentSummary(data, s.id).teacher.id).toBe("t2");
+});
+
+it("离职即刻取消预约，OP 无预约的固定底薪跨半月计至所选日期含当天", () => {
+  const data = fixture();
+  const teacher = data.teachers.find(t => t.id === "t1")!;
+  Object.assign(teacher, {
+    payMode: "OP", rate: 180, availabilityFrom: "2026-11-01",
+    availability: [{ day: 1, start: "19:00", end: "19:30" }],
+  });
+  data.officePayRates = { [teacher.so]: 60 };
+  const offboardCommand = { type: "teacher.offboard", teacherId: teacher.id, reason: "个人原因" } as const;
+  expect(() => transition(data, { ...offboardCommand, payrollEndDate: "2025-01-01" })).toThrow(/今天/);
+  expect(transition(data, offboardCommand).data.teachers.find(t => t.id === teacher.id)?.payrollEndDate).toBe(DEMO_TODAY);
+  const after = transition(data, { ...offboardCommand, payrollEndDate: "2026-11-16" }).data;
+  const former = after.teachers.find(t => t.id === teacher.id)!;
+  expect(former.status).toBe("已离职");
+  expect(after.lessons[0].status).toBe("已取消");
+  const base = (period: string) => halfMonthStatement(after, former, period).rows
+    .filter(r => r.category === "底薪").map(r => [r.date, r.teacher, r.office]);
+  expect(base("2026-11-1")).toEqual([["2026-11-02", 180, 60], ["2026-11-09", 180, 60]]);
+  expect(base("2026-11-2")).toEqual([["2026-11-16", 180, 60]]);
 });

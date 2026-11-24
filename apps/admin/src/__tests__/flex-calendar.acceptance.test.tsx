@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
@@ -66,6 +67,7 @@ async function select(time: string, name: string) {
 beforeEach(() => {
   localStorage.clear();
   demoRepository.reset();
+ bindSchedulingStaff(demoRepository.read());
   demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index) => ({id:"verified-"+student.id,phone:"",uid:String(990000+index),studentIds:[student.id]}));
   vi.stubGlobal(
     "ResizeObserver",
@@ -252,4 +254,15 @@ it("保存灵活空意向成功，固定空意向仍拒绝", () => {
       intent: { ...intent, mode: "fixed" },
     }),
   ).toThrow();
+});
+
+it("重新打开编辑器时，原老师的未提交课次已清空", async () => {
+  const { d } = mount();
+  await select("19:00", d.teachers[0].name);
+  cleanup();
+  delete d.teachers[0].classInUid;
+  mount();
+  expect(screen.queryByRole("button", { name: /待保存/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "预览排课" }).hasAttribute("disabled")).toBe(true);
+  expect(demoRepository.read().lessons).toHaveLength(0);
 });

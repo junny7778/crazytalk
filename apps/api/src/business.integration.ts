@@ -1,3 +1,4 @@
+import { verifyHalfMonthPayroll } from "./half-month-payroll.integration";
 import { verifyMatching } from "./matching.integration";
 import { verifyModules } from "./modules.integration";
 import "dotenv/config";
@@ -59,7 +60,7 @@ async function main() {
       DATABASE_URL: url.href,
       API_PORT: "3191",
       NODE_ENV: "test",
-      CLASSIN_API_BASE: "http://127.0.0.1:1",
+      CLASSIN_API_BASE: "https://127.0.0.1:1",
       CLASSIN_SID: "test",
       CLASSIN_SECRET: "test",
       CLASSIN_DATA_DIRECTORY: ".data/" + schema,
@@ -126,6 +127,10 @@ async function main() {
     await verification.$transaction((tx) => writeState(tx, state), {
       timeout: 60000,
     });
+    if (process.argv.includes("--payroll")) {
+      await verifyHalfMonthPayroll("http://127.0.0.1:3191", headers, verification);
+      return;
+    }
     const teacherBootstrap = spawn(
       "pnpm",
       ["exec", "tsx", "src/create-teacher-account.ts"],
@@ -225,7 +230,7 @@ async function main() {
     const createChild = async (name: string) => {
       const result = await invoke({
         type: "student.create",
-        student: { ...emptyStudentProfile(), name, chineseName: name, owner:bookingOwner.name,ownerAccountId:bookingOwner.id },
+        student: { ...emptyStudentProfile(), name, chineseName: name, material:"Power Up 1", materialIds:["m1"], owner:bookingOwner.name,ownerAccountId:bookingOwner.id },
       });
       return (result.data as DemoState).students.find(
         (student) => student.chineseName === name,
@@ -277,6 +282,7 @@ async function main() {
     );
     const teacher = {
       ...state.teachers[0],
+      materialIds:["m1"],
       trained: true,
       classInUid: state.teachers[0].classInUid || "998002",
       availabilityFrom: "",
@@ -299,7 +305,7 @@ async function main() {
       slots: [{ date: future, time: "09:00" }],
       duration: 25,
       kind: "固定课",
-      material: "Book",
+      material: "Power Up 1",
       confirmedTeacher: true,
     };
     const scheduled = await invoke(schedule);
@@ -322,6 +328,7 @@ async function main() {
       }),
     });
     assert.equal(conflict.status, 400);
+    assert.match((await conflict.json()).message, /老师这个时间已经有课/);
     const feedback = state.feedback[0];
     await invoke({
       type: "feedback.customer",

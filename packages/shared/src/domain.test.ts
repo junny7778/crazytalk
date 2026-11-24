@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, expect, it } from "vitest";
 import { createSeed as originalSeed } from "./seed";
 import { transition, payrollTotal, isAvailable } from "./domain";
@@ -5,7 +6,7 @@ import { demoRepository } from "./repository";
 import type { Command, DemoState } from "./model";
 
 function createSeed() {
-  const state = originalSeed();
+  const state = bindSchedulingStaff(originalSeed());
   state.classInAccounts = state.students.map((student, index) => ({
     id: "account-" + student.id,
     phone: student.phone,

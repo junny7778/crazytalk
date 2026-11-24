@@ -1,3 +1,4 @@
+import { halfMonthCommand } from "./halfMonthPayrollSchema";
 import { z } from "zod";
 import { accountPasswordSchema } from "./accountPassword";
 import {
@@ -122,6 +123,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     sent: z.boolean(),
     error: text,
   }),
+  ...halfMonthCommand.options,
   z.object({ type: z.literal("pay.terms"), terms: payTermsSchema }),
   z.object({
     type: z.literal("pay.freeze"),
@@ -137,6 +139,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("survey.submit"),
     token: id,
+    revision: z.boolean().optional(),
     submittedAt: text.optional(),
     nameEdited: z.boolean().optional(),
     answers: studentSurveyAnswers,
@@ -272,6 +275,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     time,
     teacherId: id,
     reason: id,
+    responsibility: z.enum(["老师", "学员", "平台"]).optional(),
     confirmedTeacher: z.boolean().optional(),
     confirmationNote: text.optional(),
   }),
@@ -298,6 +302,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     decision: z.enum(["扣课", "不扣", "缺席"]),
     reason: id,
     conclusion: text.optional(),
+    cancelledAt: text.datetime({offset:true}).optional(),
+    networkOutcome: z.enum(["正常完课","取消"]).optional(),
     minutes: nonnegative.optional(),
     units: nonnegative.optional(),
   }),
@@ -378,6 +384,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     type: z.literal("teacher.offboard"),
     teacherId: id,
     reason: id,
+    payrollEndDate: z.string().date().optional(),
   }),
   z.object({ type: z.literal("payroll.adjust"), id, amount: number, note: id }),
   z.object({

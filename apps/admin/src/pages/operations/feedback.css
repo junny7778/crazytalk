@@ -185,7 +185,6 @@
 .feedback-follow-form > .btn {
   justify-self: start;
 }
-.feedback-list-tools,
 .feedback-list-summary {
   display: flex;
   align-items: center;
@@ -193,9 +192,6 @@
   justify-content: space-between;
   flex-wrap: wrap;
   margin-bottom: 20px;
-}
-.feedback-list-tools .search-input {
-  width: min(100%, 360px);
 }
 .feedback-filters {
   display: grid;
@@ -291,23 +287,6 @@
   white-space: nowrap;
 }
 
-.feedback-list-tools {
-  justify-content: flex-start;
-  gap: 12px;
-}
-.feedback-list-tools .search-input {
-  flex: 1 1 220px;
-  max-width: 320px;
-}
-.feedback-list-tools > .field {
-  flex: 0 1 132px;
-  min-width: 0;
-  margin: 0;
-}
-.feedback-list-tools > .row {
-  margin-left: auto;
-}
-.feedback-list-tools .field > label,
 .feedback-filters .field > label {
   position: absolute;
   width: 1px;
@@ -318,8 +297,6 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.feedback-list-tools .field .ct-select-trigger,
-.feedback-list-tools .search-input,
 .feedback-filters .field .ct-date-picker > input,
 .feedback-filters .field .ct-select-trigger {
   height: 40px;

@@ -54,9 +54,12 @@ try {
     "exec",
     "playwright",
     "test",
-    "tests/e2e/refund.isolated.spec.ts",
-    "tests/e2e/report.isolated.spec.ts",
-    "tests/e2e/schedule.isolated.spec.ts",
+    ...(process.argv.length > 2 ? process.argv.slice(2) : [
+      "tests/e2e/refund.isolated.spec.ts",
+      "tests/e2e/report.isolated.spec.ts",
+      "tests/e2e/schedule.isolated.spec.ts",
+      "tests/e2e/payroll.isolated.spec.ts",
+    ]),
   ]);
   process.exitCode = await new Promise((resolve) =>
     test.on("exit", (code) => resolve(code ?? 1)),

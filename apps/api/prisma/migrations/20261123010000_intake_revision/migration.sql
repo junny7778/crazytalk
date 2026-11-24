@@ -1,0 +1,1 @@
+ALTER TABLE "Intake" ADD COLUMN "revisionOpen" BOOLEAN NOT NULL DEFAULT false;

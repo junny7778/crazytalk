@@ -1,3 +1,5 @@
+import { halfMonthStatement } from "../../../packages/shared/src/halfMonthPayroll";
+import { payPeriod } from "../../../packages/shared/src/halfMonthPayrollSchema";
 import {
   Body,
   Controller,
@@ -8,6 +10,7 @@ import {
   Post,
   Patch,
   Param,
+  Query,
   Req,
   Res,
   BadRequestException,
@@ -285,6 +288,20 @@ export class BusinessController {
       async (tx) => accountState(tx, await readState(tx), identity),
       { isolationLevel: "RepeatableRead" },
     );
+  }
+  @Get("payroll/half-month") async halfMonthPayroll(
+    @Req() req: IncomingMessage,
+    @Query("period") period: string,
+  ) {
+    const identity = await requireIdentity(req);
+    if (!payPeriod.safeParse(period).success) throw new BadRequestException("请选择有效的半月周期");
+    const state = await readState();
+    if (identity.teacherId || !canBusiness(state, identity, "payroll.view") ||
+        !canBusiness(state, identity, "field.pay_amount"))
+      throw new ForbiddenException("没有查看薪资金额的权限");
+    return Object.fromEntries(scopeState(state, identity).teachers.map(teacher => [
+      teacher.id, halfMonthStatement(state, teacher, period),
+    ]));
   }
   @Post("undo") async undo(
     @Req() req: IncomingMessage,
@@ -625,6 +642,7 @@ export class BusinessController {
                           command.ids.includes(lesson.id),
                         ),
                         decision: command.decision,
+                        capturedPayIds: command.ids.filter(id => !state.lessonPayBasis?.[id] && result.data.lessonPayBasis?.[id]),
                       }),
                     )
                   : Prisma.DbNull,

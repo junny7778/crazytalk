@@ -1,4 +1,5 @@
-import { matchingSurveyAnswers } from "./studentSurvey";
+import { halfMonthRecord, payRuleValues, type HalfMonthCommand } from "./halfMonthPayrollSchema";
+import { matchingSurveyAnswers, studentSurveyPrefillSchema } from "./studentSurvey";
 import { z } from "zod";
 export const scheduleIntentSchema = z
   .object({
@@ -35,6 +36,11 @@ export const studentSchema = z.object({
   surveySecret:z.string().optional(), surveyToken:z.string().optional(),surveySubmittedAt:z.string().optional(), surveyPreviousSubmittedAt:z.string().optional(), surveyOriginal:studentSurveyAnswers.optional(), interests:z.string().optional(),
   name: z.string(),
   chineseName: z.string(),
+  ageGroup: studentSurveyPrefillSchema.shape.ageGroup.optional(),
+  membershipDuration: studentSurveyPrefillSchema.shape.membership.optional(),
+  listeningHours: studentSurveyPrefillSchema.shape.listening.optional(),
+  preferredLessonTime: studentSurveyPrefillSchema.shape.times.optional(),
+  learningNotes: studentSurveyPrefillSchema.shape.needs.optional(),
   englishName: z.string().optional(),
   age: z.number().int().min(0).max(120).nullable().default(null),
   project: z.string(),
@@ -145,6 +151,11 @@ export const studentEditableSchema = studentProfileSchema.pick({
   email: true,
   age: true,
   ageText: true,
+  ageGroup: true,
+  membershipDuration: true,
+  listeningHours: true,
+  preferredLessonTime: true,
+  learningNotes: true,
   gender: true,
   level: true, interests:true,
   project: true,
@@ -281,6 +292,7 @@ export const teacherSchema = z.preprocess(
     photo: z.string().optional(),
     startDate: z.string().optional(),
     certificates: z.string().optional(),
+    payrollEndDate: z.string().date().optional(),
     notes: z.string().optional(),
     quizScore: z.number().min(0).max(100).nullable().optional(),
     newTutorTraining: z
@@ -292,6 +304,10 @@ export const teacherSchema = z.preprocess(
     needConfirm: z.boolean(),
     phone: z.string(),
     rate: z.number(),
+    payMode: z.enum(["OP", "NP"]).optional(),
+    payModeHistory: z.array(z.object({ until: z.string(), mode: z.enum(["OP", "NP"]) })).optional(),
+    payRateHistory: z.array(z.object({ until: z.string(), rate: z.number() })).optional(),
+    payScheduleHistory: z.array(z.object({ from: z.string(), until: z.string(), slots: z.array(availabilitySlotSchema) })).optional(),
     availability: z.array(availabilitySlotSchema).default([]),
     availabilityFrom: z.string().default(""),
     availabilityNote: z.string().default(""),
@@ -307,7 +323,9 @@ export const teacherSchema = z.preprocess(
 export const lessonSchema = z.object({
   cancellation:z.object({kind:z.string(),at:z.string(),responsibility:z.string(),waived:z.boolean()}).optional(),
   requiresScreenshot:z.boolean().optional(),
-  incident:z.object({minutes:z.number().nonnegative().optional(),reason:z.string(),note:z.string(),at:z.string(),operator:z.string()}).optional(),
+  classInAttendanceReceived: z.boolean().optional(),
+  teacherRescheduleDates: z.array(z.string()).optional(),
+  incident:z.object({networkOutcome:z.enum(["正常完课","取消"]).optional(),minutes:z.number().nonnegative().optional(),reason:z.string(),note:z.string(),at:z.string(),operator:z.string()}).optional(),
   attendanceMessages: z.object({ 学员: z.string().optional(), 老师: z.string().optional() }).optional(),
   attendanceFinal: z.object({ 学员: z.boolean().optional(), 老师: z.boolean().optional() }).optional(),
   attendanceUpdates: z.object({ 学员: z.string().optional(), 老师: z.string().optional() }).optional(),
@@ -426,6 +444,7 @@ export const feedbackDetailsInputSchema = z.object({
 });
 export type FeedbackDetailsInput = z.infer<typeof feedbackDetailsInputSchema>;
 export const feedbackSchema = z.object({
+  tmPayRuleVersion: z.number().int().nonnegative().optional(),
   id: z.string(),
   studentId: z.string(),
   teacherId: z.string(),
@@ -464,6 +483,7 @@ export const recordRelationTypeSchema = z.enum([
   "student",
 ]);
 export const creditSchema = z.object({
+  renewalPayRuleVersion: z.number().int().nonnegative().optional(),
   purchaseId: z.string().optional(),
   purchaseStudentIds: z.array(z.string()).optional(),
   orderId: z.string().optional(),
@@ -661,6 +681,14 @@ export const stateSchema = z.object({
   packageBalanceVersion: z.union([z.literal(1), z.literal(2)]).optional(),
   orders: z.array(z.object({ id:z.string(), classInAccountId:z.string().optional(), purchaseStudentIds:z.array(z.string()).optional(), memberCount:z.number().optional(), hiddenReservations:z.object({ units:z.number(), unknownCount:z.number() }).optional(), studentIds:z.array(z.string()), units:z.number(), balance:z.number(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
   slotLocks:z.array(z.object({studentId:z.string(),teacherId:z.string(),date:z.string(),time:z.string(),duration:z.number().positive(),operator:z.string(),expiresAt:z.string()})).optional(),
+  halfMonthPayroll: z.array(halfMonthRecord).optional(),
+  officePayRates: z.record(z.string(), z.number().nonnegative()).optional(),
+  payRuleChanges: z.array(z.object({ at: z.string(), values: payRuleValues })).optional(),
+  officeRateHistory: z.record(z.string(), z.array(z.object({ until: z.string(), rate: z.number() }))).optional(),
+  lessonPayBasis: z.record(z.string(), z.object({
+    at: z.string().optional(), so: z.string().optional(), mode: z.enum(["OP", "NP"]).optional(),
+    teacherRate: z.number(), officeRate: z.number().optional(), rules: payRuleValues,
+  })).optional(),
   payTerms:z.array(payTermsSchema).optional(),
   settlements:z.array(z.object({teacherId:z.string(),month:z.string(),so:z.string(),at:z.string(),lines:z.array(payLine)})).optional(),
   importedBatches: z.array(z.string()).optional(),
@@ -771,11 +799,12 @@ export type Command = { operator?: string } & (
   | {type:"lesson.incident";minutes?:number;id:string;reason:string;note:string}
   | {type:"lesson.attendance";id:string;person:"学员"|"老师";result:"未到堂"|"到堂"|"缺席";at:string;operator?:string}
   | {type:"lesson.notice";id:string;sent:boolean;error:string}
+  | HalfMonthCommand
   | {type:"pay.terms";terms:PayTerms}
   | {type:"pay.freeze";teacherId:string;month:string}
   | {type:"slot.release";studentId:string}
   | {type:"survey.issue";id:string;token?:string;secret?:string}
-  | {type:"survey.submit";token:string;submittedAt?:string;nameEdited?:boolean;answers:z.input<typeof studentSurveyAnswers>}
+  | {type:"survey.submit";token:string;revision?:boolean;submittedAt?:string;nameEdited?:boolean;answers:z.input<typeof studentSurveyAnswers>}
   | { type: "order.join"; orderId: string; studentId: string; bindAccountId?: string }
   | { type: "order.buy"; id:string; studentId:string; studentIds:string[]; units:72|144; date:string; kind:string; note:string }
   | { type: "student.bindClassIn"; id: string; phone: string; uid: string }
@@ -880,6 +909,7 @@ export type Command = { operator?: string } & (
       time: string;
       teacherId: string;
       reason: string;
+      responsibility?: "老师" | "学员" | "平台";
       confirmedTeacher?: boolean;
       confirmationNote?: string;
     }
@@ -901,6 +931,8 @@ export type Command = { operator?: string } & (
   | {
       type: "lesson.resolve";
       conclusion?: string;
+      cancelledAt?: string;
+      networkOutcome?: "正常完课" | "取消";
       minutes?: number;
       ids: string[];
       decision: "扣课" | "不扣" | "缺席";
@@ -988,6 +1020,7 @@ export type Command = { operator?: string } & (
       type: "teacher.offboard";
       teacherId: string;
       reason: string;
+      payrollEndDate?: string;
     }
   | { type: "payroll.adjust"; id: string; amount: number; note: string }
   | { type: "payroll.status"; ids: string[]; status: "已确认" | "已发放" }
@@ -1088,6 +1121,7 @@ export const permissionGroups = [
     name: "薪资",
     keys: [
       "payroll.view",
+      "payroll.export",
       "payroll.adjust",
       "payroll.confirm",
       "payroll.mark_paid",
@@ -1211,6 +1245,7 @@ export const permissionLabels: Record<string, string> = {
   "availability.edit": "修改可用时间",
   "training.edit": "登记培训",
   "payroll.view": "查看薪资",
+  "payroll.export": "导出薪资明细",
   "payroll.adjust": "薪资调整",
   "payroll.confirm": "确认薪资",
   "payroll.mark_paid": "标记发放",

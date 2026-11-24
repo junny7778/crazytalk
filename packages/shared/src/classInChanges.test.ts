@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, it, expect } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
@@ -11,7 +12,7 @@ import { migrateStudentOwners, studentInScope } from "./organization";
 import { assertCommandAccess } from "./access";
 
 function fixture(shared = true) {
-  let state = createSeed();
+  let state = bindSchedulingStaff(createSeed());
   const [a, b, c] = state.students;
   state.lessons = [];
   state.credits = [];
@@ -46,7 +47,7 @@ function fixture(shared = true) {
     note: "已有余额",
   }).data;
   const source = state.orders!.find((o) => o.studentIds.includes(a.id))!;
-  const template = createSeed().lessons[0];
+  const template = bindSchedulingStaff(createSeed()).lessons[0];
   state.lessons = [
     {
       ...template,

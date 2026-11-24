@@ -1,3 +1,4 @@
+export { TimePicker } from "./TimePicker";
 import { Select } from "./Select";
 import { DatePicker } from "./DatePicker";
 export { LoadingFailureScreen, LoadingScreen } from "./LoadingScreen";
@@ -382,7 +383,7 @@ export function Drawer(props: React.ComponentProps<typeof Overlay>) {
 type Toast = {
   id: number;
   message: string;
-  tone: "success" | "error" | "info";
+  tone: "success" | "error" | "info" | "hint";
   undo?: () => void | Promise<void>;
   undoing?: boolean;
 };
@@ -400,12 +401,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   ) {
     const id = Date.now() + Math.random();
     setItems((s) => [
-      ...s,
+      ...(options?.tone === "hint" ? s.filter((item) => item.tone !== "hint") : s),
       { id, message, tone: options?.tone || "success", undo: options?.undo },
     ]);
     setTimeout(
       () => setItems((s) => s.filter((t) => t.id !== id)),
-      options?.undo ? 10000 : 4200,
+      options?.tone === "hint" ? 3200 : options?.undo ? 10000 : 4200,
     );
   }
   return (
@@ -416,9 +417,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div className={`toast toast-${item.tone}`} key={item.id}>
             {item.tone === "error" ? (
               <AlertCircle size={22} />
-            ) : (
+            ) : item.tone !== "hint" ? (
               <Check size={22} />
-            )}
+            ) : null}
             <span>{item.message}</span>
             {item.undo && (
               <button
@@ -450,12 +451,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 撤销
               </button>
             )}
-            <button
-              aria-label="关闭提示"
-              onClick={() => setItems((s) => s.filter((t) => t.id !== item.id))}
-            >
-              <X size={16} />
-            </button>
+            {item.tone !== "hint" && (
+              <button
+                aria-label="关闭提示"
+                onClick={() => setItems((s) => s.filter((t) => t.id !== item.id))}
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
         ))}
       </div>

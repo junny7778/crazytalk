@@ -1,6 +1,7 @@
 import { businessHeaders, businessMode } from "@crazytalk/shared/react";
-import { demoRepository, matchingSurveyAnswers, matchingSurveyQuestions } from "@crazytalk/shared";
-import { useEffect, useState } from "react";
+import { matchingSurveyAnswers, matchingSurveyQuestions, studentSurveyPrefill, studentSurveyPrefillSchema } from "@crazytalk/shared";
+import SurveyOptions from "./SurveyOptions";
+import { useEffect, useRef, useState } from "react";
 import { BookOpenText, Check } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { useDemo } from "@crazytalk/shared/react";
@@ -21,22 +22,53 @@ function answerRows(original: NonNullable<Student["surveyOriginal"]>): [string, 
 }
 
 export function SurveyLink({ student }: { student: Student }) {
-  const { act, can, data } = useDemo(),
+  const { act, can, preview } = useDemo(),
     [error, setError] = useState("");
   const toast = useToast();
   const previous = !!student.surveyOriginal && !student.surveySubmittedAt;
   const editable = can("student.edit");
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const apply = useRef(act);
+  apply.current = act;
+  const { surveyToken, surveySecret, surveySubmittedAt } = student;
   useEffect(() => {
-    if (!editable || !student.surveyToken || student.surveySubmittedAt) return;
+    setUnavailable(false);
+    setRevisionOpen(false);
+    if (!editable || !surveyToken) return;
+    const token = surveyToken;
     const controller = new AbortController();
-    fetch("/api/intake/" + student.surveyToken, { signal: controller.signal })
-      .then(response => {
-        if (!controller.signal.aborted && response.status === 404)
-          setError("问卷链接已失效，请重新生成链接");
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [editable, student.surveyToken, student.surveySubmittedAt]);
+    async function check() {
+      try {
+        const response = await fetch("/api/intake/" + token, {
+          headers: surveySecret ? { Authorization: "Bearer " + surveySecret } : {},
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setUnavailable(response.status === 404);
+        if (!response.ok) return;
+        const result = await response.json();
+        if (controller.signal.aborted) return;
+        setRevisionOpen(!!result.revisionOpen);
+        if (!businessMode() && surveySubmittedAt && result.answers && result.submittedAt > surveySubmittedAt) {
+          await apply.current({
+            type: "survey.submit", token, revision: true,
+            answers: result.answers, submittedAt: result.submittedAt, nameEdited: result.nameEdited,
+          });
+        }
+      } catch {
+        // Keep the last known state when the service cannot be reached.
+      }
+    }
+    void check();
+    window.addEventListener("focus", check);
+    window.addEventListener("crazytalk-survey-restored", check);
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", check);
+      window.removeEventListener("crazytalk-survey-restored", check);
+    };
+  }, [editable, surveyToken, surveySecret, surveySubmittedAt]);
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(new URL("/intake/" + student.surveyToken, location.origin).href);
@@ -46,34 +78,38 @@ export function SurveyLink({ student }: { student: Student }) {
     }
   }
   const [issuing, setIssuing] = useState(false);
-  async function issue() {
+  async function updateLink() {
     setIssuing(true);
+    setError("");
     try {
-      const response = await fetch("/api/intake", {
-        method: "POST",
-        headers: { ...businessHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({chineseName: student.chineseName}),
-      });
-      if (!response.ok) throw new Error("问卷服务暂不可用");
-      const next = await response.json();
-      if (student.surveyToken && student.surveySecret) {
-        const old = await fetch("/api/intake/" + student.surveyToken, {
-          method: "DELETE",
-          headers: { ...businessHeaders(), Authorization: "Bearer " + student.surveySecret },
+      if (surveyToken) {
+        const response = await fetch("/api/intake/" + surveyToken + "/reopen", {
+          method: "POST",
+          headers: {
+            ...businessHeaders(),
+            "Content-Type": "application/json",
+            ...(surveySecret ? { Authorization: "Bearer " + surveySecret } : {}),
+          },
         });
-        if (!old.ok && old.status !== 404) throw new Error("重新生成失败，请重试");
-        if (old.ok && !businessMode()) {
-          const result = await old.json();
-          const current = demoRepository.read().students.find(s => s.id === student.id);
-          if (result.answers && current?.surveyToken === student.surveyToken && !current.surveySubmittedAt)
-            await act({type: "survey.submit", token: student.surveyToken, answers: result.answers,
-              submittedAt: result.submittedAt, nameEdited: result.nameEdited});
+        if (response.status === 404) {
+          setUnavailable(true);
+          return;
         }
+        if (!response.ok) throw new Error("暂时无法开启问卷修改，请重试");
+        setRevisionOpen(true);
+        toast("已允许修改，请继续使用原问卷链接");
+      } else {
+        const response = await fetch("/api/intake", {
+          method: "POST",
+          headers: { ...businessHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(studentSurveyPrefill(student)),
+        });
+        if (!response.ok) throw new Error("问卷服务暂不可用");
+        const next = await response.json();
+        await act({ type: "survey.issue", id: student.id, ...next });
       }
-      await act({ type: "survey.issue", id: student.id, ...next });
-      setError("");
-    } catch (e) {
-      setError(String(e));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "问卷操作失败");
     } finally {
       setIssuing(false);
     }
@@ -82,15 +118,11 @@ export function SurveyLink({ student }: { student: Student }) {
   return (
     <Panel
       title="学员问卷与画像"
-      action={
-        <Button variant="primary" size="sm" onClick={issue} disabled={issuing}>
-          {issuing
-            ? "生成中…"
-            : student.surveyToken
-              ? "重新生成链接"
-              : "生成专属链接"}
+      action={(!surveyToken || surveySubmittedAt) && (
+        <Button variant="primary" size="sm" onClick={updateLink} disabled={preview || issuing || revisionOpen || unavailable}>
+          {issuing ? "处理中…" : revisionOpen ? "已允许修改" : surveyToken ? "允许修改" : "生成专属链接"}
         </Button>
-      }
+      )}
     >
       <dl className="profile-summary-fields">
         <div>
@@ -144,7 +176,7 @@ export function SurveyLink({ student }: { student: Student }) {
 
         </section>
       )}
-      {error && <p role="alert">{error}</p>}
+      {(error || unavailable) && <p role="alert">{error || "当前问卷链接不可用，历史答案已保留。"}</p>}
     </Panel>
   );
 }
@@ -155,8 +187,7 @@ export default function StudentSurvey() {
 }
 
 function SurveyForm({ token }: { token?: string }) {
-  const [initialName, setInitialName] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [formValues, setFormValues] = useState(() => studentSurveyPrefillSchema.parse({}));
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false),
     [error, setError] = useState(""),
@@ -168,7 +199,7 @@ function SurveyForm({ token }: { token?: string }) {
         if (!r.ok) throw new Error("问卷链接已失效");
         const j = await r.json();
         if (active) {
-          setInitialName(j.chineseName || "");
+          setFormValues(studentSurveyPrefillSchema.parse(j.prefill ?? j.answers ?? { chineseName: j.chineseName }));
           setDone(j.submitted);
           setReady(true);
         }
@@ -225,7 +256,7 @@ function SurveyForm({ token }: { token?: string }) {
           try {
             const response = await fetch("/api/intake/" + token, {
               method: "POST", headers: { ...businessHeaders(), "Content-Type": "application/json" },
-              body: JSON.stringify({...result.data, initialName}),
+              body: JSON.stringify({ ...result.data, initialName: formValues.chineseName }),
             });
             if (!response.ok && response.status !== 409)
               throw new Error(response.status === 404 ? "问卷链接已失效" : "提交失败，请检查资料并重试");
@@ -237,26 +268,39 @@ function SurveyForm({ token }: { token?: string }) {
           }
         }}>
           {matchingSurveyQuestions.map(({ key, title, required, options, hint }, index) => {
-            const multiple = key === "interests";
             const label = <>{index + 1}. {title}{required && <span aria-hidden="true" className="survey-required"> *</span>}</>;
             if (!options) return <div className="survey-question" key={key}>
               <label htmlFor={key}>{label}</label>
               {hint && <small id={key + "-hint"}>{hint}</small>}
-              {key === "needs" ? <textarea id={key} name={key} rows={3} aria-describedby={key + "-hint"} />
-                : <input id={key} name={key} defaultValue={initialName} required={required} />}
+              {key === "needs" ? <textarea id={key} name={key} rows={3} defaultValue={formValues.needs} aria-describedby={key + "-hint"} />
+                : <input id={key} name={key} defaultValue={formValues.chineseName} required={required} />}
             </div>;
-            return <fieldset className="survey-question" key={key}>
-              <legend>{label}</legend>
-              {hint && <small>{hint}</small>}
-              {multiple && <small aria-live="polite">最多选择 3 项，已选择 {selected.length}/3 项</small>}
-              {options.map(option => <label className="survey-option" key={option}>
-                <input type={multiple ? "checkbox" : "radio"} name={key} value={option} required={required}
-                  disabled={multiple && selected.length >= 3 && !selected.includes(option)}
-                  onChange={multiple ? event => setSelected(event.target.checked
-                    ? [...selected, option] : selected.filter(item => item !== option)) : undefined} />
-                <span>{option}</span>
-              </label>)}
-            </fieldset>;
+            if (key === "interests") return (
+              <SurveyOptions
+                key={key}
+                name={key}
+                label={label}
+                hint={hint}
+                multiple
+                value={formValues.interests}
+                onChange={(interests) => setFormValues((current) => ({
+                  ...current,
+                  interests,
+                }))}
+              />
+            );
+            return (
+              <SurveyOptions
+                key={key}
+                name={key}
+                label={label}
+                hint={hint}
+                required={required}
+                options={options}
+                value={formValues[key]}
+                onChange={(value) => setFormValues((current) => ({ ...current, [key]: value }))}
+              />
+            );
           })}
           {error && <p role="alert">{error}</p>}
           <Button type="submit" variant="primary" disabled={sending}>{sending ? "提交中…" : "提交"}</Button>

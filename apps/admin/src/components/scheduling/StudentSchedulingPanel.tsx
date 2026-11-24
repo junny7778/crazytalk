@@ -1,3 +1,6 @@
+import { schedulingBookingIssue } from "@crazytalk/shared";
+import { SchedulingAccountNotice } from "./SchedulingAccountNotice";
+import { TimePicker } from "@crazytalk/ui";
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
 import MaterialPicker from "../MaterialPicker";
 import { studentMaterials } from "@crazytalk/shared";
@@ -88,7 +91,9 @@ export function StudentSchedulingPanel({
       return `时间范围需至少容纳 ${draft.duration} 分钟课程`;
     return "";
   });
+  const accountIssue = schedulingBookingIssue(data, student.id);
   const validDraft =
+    !accountIssue &&
     !!draft.materialIds?.length &&
     draft.materialIds.every(id => studentMaterials(data, student).some(c => c.id === id)) &&
     scheduleIntentSchema.safeParse(draft).success &&
@@ -134,6 +139,7 @@ export function StudentSchedulingPanel({
   return (
     <div className="student-scheduling stack">
       <ClassInOperationFeedback studentId={student.id} />
+      <SchedulingAccountNotice student={student}/>
       <div className="row between">
         {progress && saved?.mode !== "flex" && (
           <Badge tone="info">
@@ -287,30 +293,28 @@ export function StudentSchedulingPanel({
                                 aria-label={`意向时间${index + 1}`}
                               >
                                 <div className="intent-range-inputs">
-                                  <input
-                                    type="time"
-                                    aria-label={`意向${index + 1}开始时间`}
+                                  <TimePicker
+                                    label={`意向${index + 1}开始时间`}
                                     value={window.start}
-                                    onChange={(e) =>
+                                    onChange={(value) =>
                                       update({
                                         windows: draft.windows.map((w, i) =>
                                           i === index
-                                            ? { ...w, start: e.target.value }
+                                            ? { ...w, start: value }
                                             : w,
                                         ),
                                       })
                                     }
                                   />
                                   <span>—</span>
-                                  <input
-                                    type="time"
-                                    aria-label={`意向${index + 1}结束时间`}
+                                  <TimePicker
+                                    label={`意向${index + 1}结束时间`}
                                     value={window.end}
-                                    onChange={(e) =>
+                                    onChange={(value) =>
                                       update({
                                         windows: draft.windows.map((w, i) =>
                                           i === index
-                                            ? { ...w, end: e.target.value }
+                                            ? { ...w, end: value }
                                             : w,
                                         ),
                                       })
@@ -432,18 +436,19 @@ export function StudentSchedulingPanel({
       {saved?.mode === "fixed" && !editingIntent && (
         <section className="schedule-plan-section" aria-label="推荐排课方案">
           <div className="row between"><h4>推荐排课方案</h4><input aria-label="搜索推荐老师" placeholder="搜索老师姓名" value={query} onChange={e => setQuery(e.target.value)}/></div>
-          <p className="muted">{saved.priority === "teacher" ? "优先匹配合适的老师；缺少的课次可在日历中继续补排。" : "优先满足目标课次；组合方案明确展示各位老师承担的节数。"}</p>
+          <p className="muted">{saved.priority === "teacher" ? "优先匹配合适的主老师，无法覆盖的课次由其他合适老师补齐；确认前可继续调整。" : "优先满足目标课次；组合方案明确展示各位老师承担的节数。"}</p>
           <div className="schedule-recommendation-grid">{sortedPlans.map(plan => {
             const teacher = data.teachers.find(t => t.id === plan.primaryTeacherId)!;
             const fit = teacherFit(data, student, teacher);
             const names = [...new Set(plan.slots.map(s => s.teacherId).filter(Boolean))];
             return <article className="schedule-match-card" key={teacher.id}>
-              <div className="schedule-match-heading"><Avatar name={teacher.name}/><strong>{teacher.name}</strong><Badge tone={plan.primaryCount === plan.requiredCount ? "success" : "warning"}>本老师可排 {plan.primaryCount}/{plan.requiredCount} 节</Badge></div>
+              <div className="schedule-match-heading"><Avatar name={teacher.name}/><strong>{teacher.name}</strong><Badge tone={plan.complete ? "success" : "warning"}>方案可排 {plan.coveredCount}/{plan.requiredCount} 节</Badge></div>
               <dl className="schedule-match-meta"><div><dt>SO</dt><dd>{teacher.so}</dd></div><div><dt>口音等级</dt><dd>{teacher.accent || "未填写"}</dd></div><div><dt>老师等级</dt><dd>{teacher.level || "未填写"}</dd></div></dl>
               <div className="row wrap">{studentMaterials(data, student).filter(c => saved.materialIds?.includes(c.id) && teacher.materialIds?.includes(c.id)).map(c => <Badge key={c.id} tone="success">可教 {c.name}</Badge>)}</div>
               <div className="schedule-match-reasons"><strong>推荐原因</strong><div className="row wrap">{[...fit.matchedPrimary, ...fit.matchedSecondary].map(reason => <Badge key={reason}>{reason}</Badge>)}</div>{!fit.matchedPrimary.length && !fit.matchedSecondary.length && <small>{plan.primaryCount ? "教材与授课时间匹配，暂无其他偏好命中。" : "教材匹配，当前意向时间内暂无可排课次。"}</small>}{fit.warnings.map(w => <small key={w}>{w}</small>)}</div>
-              <dl className="schedule-plan-details"><div><dt>整个方案</dt><dd>可排 {plan.coveredCount}/{plan.requiredCount} 节 · {plan.teacherCount} 位老师</dd></div>{plan.teacherCount > 1 && <div><dt>老师分工</dt><dd>{names.map(id => `${data.teachers.find(t => t.id === id)?.name} ${plan.slots.filter(s => s.teacherId === id).length} 节`).join(" · ")}</dd></div>}<div><dt>待安排</dt><dd>{plan.requiredCount - plan.coveredCount} 节</dd></div><div><dt>本周已排课数</dt><dd>{data.lessons.filter(l => l.teacherId === teacher.id && l.status !== "已取消" && l.date >= workloadStart && l.date < addDays(workloadStart, 7)).length} 节（所有学员）</dd></div></dl>
-              <div className="schedule-match-actions"><Button variant="primary" disabled={!plan.primaryCount || preview || !can("schedule.create")} onClick={() => onFixedPlan(plan, saved)}>查看排课方案</Button><Button variant="ghost" onClick={() => onViewTeacher(teacher.id)}>查看老师资料</Button></div>
+              <dl className="schedule-plan-details"><div><dt>主老师承担</dt><dd>{plan.primaryCount} 节</dd></div><div><dt>整个方案</dt><dd>可排 {plan.coveredCount}/{plan.requiredCount} 节 · {plan.teacherCount} 位老师</dd></div>{plan.teacherCount > 1 && <div><dt>老师分工</dt><dd>{names.map(id => `${data.teachers.find(t => t.id === id)?.name} ${plan.slots.filter(s => s.teacherId === id).length} 节`).join(" · ")}</dd></div>}<div><dt>待安排</dt><dd>{plan.requiredCount - plan.coveredCount} 节</dd></div><div><dt>本周已排课数</dt><dd>{data.lessons.filter(l => l.teacherId === teacher.id && l.status !== "已取消" && l.date >= workloadStart && l.date < addDays(workloadStart, 7)).length} 节（所有学员）</dd></div></dl>
+              {names.filter(id=>id!==teacher.id).map(id=>{const backup=data.teachers.find(t=>t.id===id)!;const match=teacherFit(data,student,backup);return <div key={id} className="schedule-match-reasons"><strong>{backup.name} · 补充 {plan.slots.filter(s=>s.teacherId===id).length} 节</strong><small>{[...match.matchedPrimary,...match.matchedSecondary].join("、") || "教材与时间符合要求"}；补充主老师无法覆盖的课次。</small></div>;})}
+              <div className="schedule-match-actions"><Button variant="primary" disabled={!plan.coveredCount || !!accountIssue || preview || !can("schedule.create")} onClick={() => onFixedPlan(plan, saved)}>查看排课方案</Button><Button variant="ghost" onClick={() => onViewTeacher(teacher.id)}>查看老师资料</Button></div>
             </article>;
           })}</div>
           {!sortedPlans.length && <EmptyState title="暂无可排课方案" description="请核对老师可授教材、学员时间或修改搜索条件。"/>}

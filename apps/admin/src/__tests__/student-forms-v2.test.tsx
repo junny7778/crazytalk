@@ -120,7 +120,6 @@ describe("学生原表表单与客户操作", () => {
     const fields = {
       学生中文名: "表单数字化验收",
       年龄: "/",
-      小孩性格: "慢热",
       喜欢的老师类型: "耐心",
       教材: "Power Up 1",
     };
@@ -152,6 +151,7 @@ describe("学生原表表单与客户操作", () => {
     );
     await choose("性别", "女");
     await choose("外教上课经验", "有");
+    await choose("小孩性格", "内向型（慢热 一开始比较害羞，需要老师耐心引导）");
     await testAct(async () => {
       fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
     });

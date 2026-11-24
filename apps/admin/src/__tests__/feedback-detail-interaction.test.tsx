@@ -276,7 +276,7 @@ it("先按待办优先级排序再分页，状态筛选保留搜索条件，办�
   await testAct(async () => { fireEvent.click(screen.getByRole("button", {name: "保存客服处理"})); });
   await waitFor(() => expect(records()).toHaveLength(2));
   await choose("反馈状态", "已完成");
-  expect(screen.getByText("共 26 条反馈")).toBeTruthy();
+  expect(screen.getByText("共 26 条 · 每页 25 条")).toBeTruthy();
 });
 
 it("看板待处理入口显示实际状态", () => {

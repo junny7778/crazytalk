@@ -1,21 +1,19 @@
-import StudentCourses from "../StudentCourses";
-import { SchedulingAccountNotice } from "./SchedulingAccountNotice";
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useDemo } from "@crazytalk/shared/react";
 import {
-  DEMO_TODAY,
+  availabilitySummary,
   getScheduleCredits,
   getStudentScheduleProgress,
-  schedulingAccountIssue,
-  availabilitySummary,
+  schedulingBookingIssue,
+  teacherSchedulingAccountIssue,
   type Student,
   type Teacher,
-  type Lesson,
 } from "@crazytalk/shared";
-import { Avatar, Badge, Button, EmptyState, Tabs } from "@crazytalk/ui";
-import CourseSyncLink from "../CourseSyncLink";
+import { useDemo } from "@crazytalk/shared/react";
+import { Avatar, Button } from "@crazytalk/ui";
+import { Link } from "react-router-dom";
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
+import StudentCourses from "../StudentCourses";
+import TeacherSchedule from "../TeacherSchedule";
+import { SchedulingAccountNotice, TeacherSchedulingAccountNotice } from "./SchedulingAccountNotice";
 
 type Props = {
   person:
@@ -24,7 +22,6 @@ type Props = {
   onStart: (mode: "auto" | "custom") => void;
   onLesson: (id: string) => void;
   onReschedule: (id: string) => void;
-  onTeacherCalendar: () => void;
   onTeacherProfile: () => void;
 };
 export function ScheduleOverview({
@@ -32,11 +29,9 @@ export function ScheduleOverview({
   onStart,
   onLesson,
   onReschedule,
-  onTeacherCalendar,
   onTeacherProfile,
 }: Props) {
   const { data, can, preview } = useDemo();
-  const [history, setHistory] = useState(false);
   const student = person.kind === "student" ? person.value : undefined;
   const teacher = person.kind === "teacher" ? person.value : undefined;
   const credits = student ? getScheduleCredits(data, student.id, 0, 1) : null;
@@ -49,20 +44,17 @@ export function ScheduleOverview({
       : teacher?.status === "已离职"
         ? "老师已离职，不可新增排课"
         : "";
-  const accountIssue = student ? schedulingAccountIssue(data, student.id) : "";
+  const accountIssue = student ? schedulingBookingIssue(data,student.id) : teacher ? teacherSchedulingAccountIssue(teacher) : "";
   const issue = accountIssue ? "" : credits?.error;
   const lessons = data.lessons
     .filter((l) =>
       student ? l.studentId === student.id : l.teacherId === person.value.id,
     )
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
-  const displayed = lessons.filter((l) =>
-    history
-      ? l.date < DEMO_TODAY || l.status === "已取消"
-      : l.date >= DEMO_TODAY && l.status !== "已取消",
-  );
-  const scheduledLessons = lessons.filter(l => l.status !== "已取消");
-  const scheduledMinutes = scheduledLessons.reduce((sum, l) => sum + l.duration, 0);
+  const scheduledLessons = lessons.filter((l) => l.status !== "已取消");
+  const unfinishedCount = scheduledLessons.filter(
+    lesson => lesson.status === "未开始" || lesson.status === "待确认",
+  ).length;
   const balanceKnown =
     !!student &&
     (!!data.orders?.some((o) => o.studentIds.includes(student.id)) ||
@@ -72,10 +64,6 @@ export function ScheduleOverview({
     !!data.orders?.some(
       (o) => o.studentIds.includes(student.id) && o.studentIds.length > 1,
     );
-  const label = (l: Lesson) =>
-    student
-      ? data.teachers.find((t) => t.id === l.teacherId)?.name
-      : data.students.find((s) => s.id === l.studentId)?.name;
   return (
     <div className="stack schedule-overview" aria-label="排课概况">
       <section className="schedule-summary-card stack">
@@ -84,7 +72,12 @@ export function ScheduleOverview({
             <Avatar name={person.value.name} />
             <div>
               <h3>{person.value.name}</h3>
-              <small>ID：{person.kind === "teacher" ? person.value.teacherNumber : person.value.id}</small>
+              <small>
+                ID：
+                {person.kind === "teacher"
+                  ? person.value.teacherNumber
+                  : person.value.id}
+              </small>
             </div>
           </div>
           {student ? (
@@ -175,10 +168,10 @@ export function ScheduleOverview({
                   </dd>
                 </div>
                 <div>
-                  <dt>全部已排时长</dt>
+                  <dt>未完成课节</dt>
                   <dd>
-                    {scheduledMinutes}
-                    <small> 分钟</small>
+                    {unfinishedCount}
+                    <small> 节</small>
                   </dd>
                 </div>
                 <div>
@@ -190,9 +183,6 @@ export function ScheduleOverview({
                   </dd>
                 </div>
               </dl>
-              <small>
-                实际可排空档请查看课表，已排课程、请假及临时安排按现有规则校验。
-              </small>
             </>
           )
         )}
@@ -227,6 +217,7 @@ export function ScheduleOverview({
           </div>
         )}
         {student && <SchedulingAccountNotice student={student} />}
+        {teacher && <TeacherSchedulingAccountNotice key={teacher.id} teacher={teacher}/>}
         {student &&
           data.tasks
             .filter(
@@ -254,74 +245,8 @@ export function ScheduleOverview({
           className="schedule-summary-card stack"
           aria-label="已安排课程"
         >
-          <div className="row between wrap">
-            <h3>已安排课程</h3>
-            <div className="row wrap">
-              <Tabs
-                value={history ? "history" : "upcoming"}
-                onChange={(v) => {
-                  setHistory(v === "history");
-                }}
-                items={[
-                  { value: "upcoming", label: "未来课程" },
-                  { value: "history", label: "历史与取消" },
-                ]}
-              />
-              <Button size="sm" onClick={onTeacherCalendar}>
-                查看完整课表
-              </Button>
-            </div>
-          </div>
-          {displayed.length ? (
-            <div className="schedule-lessons-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>日期时间</th>
-                    <th>{student ? "老师" : "学员"}</th>
-                    <th>时长</th>
-                    <th>状态 / 同步</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayed.map((l) => (
-                    <tr key={l.id}>
-                      <td>
-                        {l.date}
-                        <br />
-                        {l.time}
-                      </td>
-                      <td>{label(l)}</td>
-                      <td>{l.duration} 分钟</td>
-                      <td>
-                        <Badge tone="neutral">{l.status}</Badge>
-                        <CourseSyncLink lesson={l} />
-                      </td>
-                      <td>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onLesson(l.id)}
-                        >
-                          查看详情
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyState
-              title={history ? "暂无历史课程" : "暂无已安排课程"}
-              description={
-                history
-                  ? "已结束和已取消的课程会显示在这里。"
-                  : "选择排课方式，预览确认后将在这里显示。"
-              }
-            />
-          )}
+          <h3>已安排课程</h3>
+          <TeacherSchedule key={person.value.id} teacherId={person.value.id} />
         </section>
       )}
     </div>

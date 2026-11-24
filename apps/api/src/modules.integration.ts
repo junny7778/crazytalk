@@ -35,15 +35,15 @@ export async function verifyModules(origin: string, headers: Record<string, stri
   assert.ok((await read()).catalog.some(c => c.id === materialId));
   await send({ type: "student.details.update", id: student.id, patch: { material: "专项教材" }, expected: { material: student.material } });
   assert.equal((await read()).students.find(s => s.id === student.id)!.material, "专项教材");
-  await send({ type: "student.import", mode: "skip", batchId: randomUUID(), students: [{ ...emptyStudentProfile(), name: "期初专项", chineseName: "期初专项" }] });
+  await send({ type: "student.import", mode: "skip", batchId: randomUUID(), students: [{ ...emptyStudentProfile(), material: "专项教材", materialIds: [materialId], name: "期初专项", chineseName: "期初专项" }] });
   const opening = (await read()).students.find(s => s.chineseName === "期初专项")!;
   await send({ type: "student.balance.open", id: opening.id, balance: 12, reason: "账单核对" });
   assert.equal((await read()).students.find(s => s.id === opening.id)!.balance, 12);
   await send({ type: "student.balance.open", id: opening.id, balance: 12, reason: "重复核对" }, 400);
   state = await read();
   const sourceTeacher = state.teachers[0];
-  const teacherA = { ...sourceTeacher, id: randomUUID(), name: "专项老师甲", phone: "13911110001", classInUid: "99111", status: "在职" };
-  const teacherB = { ...sourceTeacher, id: randomUUID(), name: "专项老师乙", phone: "13911110002", classInUid: "99112", status: "在职" };
+  const teacherA = { ...sourceTeacher, materialIds: [materialId], id: randomUUID(), name: "专项老师甲", phone: "13911110001", classInUid: "99111", status: "在职" };
+  const teacherB = { ...sourceTeacher, materialIds: [materialId], id: randomUUID(), name: "专项老师乙", phone: "13911110002", classInUid: "99112", status: "在职" };
   await send({ type: "teacher.save", teacher: teacherA });
   await send({ type: "teacher.save", teacher: teacherB });
   const bookingOwner = state.accounts.find(a=>a.roleId === "ops" && a.classInUid)!;

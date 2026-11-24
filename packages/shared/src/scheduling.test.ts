@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
@@ -7,7 +8,7 @@ import {
   getStudentScheduleProgress,
 } from "./scheduling";
 function fixture() {
-  const data = createSeed();
+  const data = bindSchedulingStaff(createSeed());
   data.lessons = [];
   data.leaves = [];
   const teacher = data.teachers[0];
@@ -82,7 +83,7 @@ describe("独立学员排课意向与自动匹配", () => {
   it("固定课排除后续周请假，灵活课可选其他时间", () => {
     const { data, teacher, student, intent } = fixture();
     // Existing lessons provide a genuine teacher conflict in the later week.
-    const base = createSeed().lessons[0];
+    const base = bindSchedulingStaff(createSeed()).lessons[0];
     data.lessons = [
       {
         ...base,
@@ -108,7 +109,7 @@ describe("独立学员排课意向与自动匹配", () => {
   });
   it("已有一节课只算部分完成；匹配不重复排已有课程", () => {
     const { data, teacher, student, intent } = fixture();
-    const base = createSeed().lessons[0];
+    const base = bindSchedulingStaff(createSeed()).lessons[0];
     data.lessons = [
       {
         ...base,
@@ -150,7 +151,7 @@ describe("独立学员排课意向与自动匹配", () => {
   it("历史周期内课程仍计入进度，不会随今天推进重新待排", () => {
     const { data, teacher, student, intent } = fixture();
     const historical = { ...intent, startDate: "2026-10-19", frequency: 1 };
-    const base = createSeed().lessons[0];
+    const base = bindSchedulingStaff(createSeed()).lessons[0];
     data.lessons = ["2026-10-19", "2026-10-26"].map((date, i) => ({
       ...base,
       id: `past-${i}`,
@@ -169,7 +170,7 @@ describe("独立学员排课意向与自动匹配", () => {
   });
   it("固定补排优先延续已有时间，不因较早空档改变后续时间", () => {
     const { data, teacher, student, intent } = fixture();
-    const base = createSeed().lessons[0];
+    const base = bindSchedulingStaff(createSeed()).lessons[0];
     data.lessons = [
       {
         ...base,
@@ -191,7 +192,7 @@ describe("独立学员排课意向与自动匹配", () => {
   });
   it("已有不同的每周上课时间不能被称为固定课已完成或自动固定补排", () => {
     const { data, teacher, student, intent } = fixture();
-    const base = createSeed().lessons[0];
+    const base = bindSchedulingStaff(createSeed()).lessons[0];
     data.lessons = [
       { date: "2026-11-23", time: "18:00" },
       { date: "2026-11-30", time: "19:00" },
@@ -223,7 +224,7 @@ describe("跨老师计划与提交边界", () => {
     const { data, teacher, student, intent } = fixture();
     data.lessons = [
       {
-        ...createSeed().lessons[0],
+        ...bindSchedulingStaff(createSeed()).lessons[0],
         id: "busy",
         studentId: "other",
         teacherId: teacher.id,
@@ -251,7 +252,7 @@ describe("跨老师计划与提交边界", () => {
     data.teachers.push(second);
     data.lessons = [
       {
-        ...createSeed().lessons[0],
+        ...bindSchedulingStaff(createSeed()).lessons[0],
         id: "busy",
         studentId: "other",
         teacherId: second.id,

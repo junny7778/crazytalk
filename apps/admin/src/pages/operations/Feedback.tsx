@@ -1069,7 +1069,7 @@ export default function Feedback() {
           )}
           {tab !== "actions" ? (
             <Panel>
-              <div className="feedback-list-tools">
+              <div className="record-list-tools">
                 <SearchInput
                   value={query}
                   onChange={(value) => update("q", value)}
@@ -1236,21 +1236,18 @@ export default function Feedback() {
                   ))}
                 </div>
               )}
-              <div className="feedback-list-summary">
-                <div className="row">
-                  {activeFilters && !params.has("from") && (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => setParams({ view: "全部" })}
-                    >
-                      <X size={12} />
-                      清除筛选
-                    </Button>
-                  )}
-                  <small>共 {filtered.length} 条反馈</small>
+              {activeFilters && !params.has("from") && (
+                <div className="feedback-list-summary">
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setParams({ view: "全部" })}
+                  >
+                    <X size={12} />
+                    清除筛选
+                  </Button>
                 </div>
-              </div>
+              )}
               <div className="table-wrap">
                 <table className="feedback-records-table">
                   <thead>

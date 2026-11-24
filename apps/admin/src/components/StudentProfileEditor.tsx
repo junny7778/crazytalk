@@ -1,12 +1,15 @@
 import MaterialPicker from "./MaterialPicker";
 import { studentMaterialIds } from "@crazytalk/shared";
-import ClassInHandoverPreview from "./ClassInHandoverPreview";
 import {studentOrganization} from "@crazytalk/shared";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDemo } from "@crazytalk/shared/react";
 import {
   emptyStudentProfile,
+  matchingSurveyOptions,
+  maxSurveyInterests,
+  studentSurveyDetails,
+  studentSurveyInterests,
   studentProfileSchema,
   type Student,
   type StudentProfileInput,
@@ -14,7 +17,7 @@ import {
 } from "@crazytalk/shared";
 import { Button, Drawer, Field, Select, Modal, useToast } from "@crazytalk/ui";
 import "../pages/student-profile.css";
-function Choice({
+function Choice<Option extends string>({
   label,
   value,
   onChange,
@@ -23,23 +26,20 @@ function Choice({
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
-  options: string[];
+  onChange: (value: Option | "") => void;
+  options: readonly Option[];
   disabled?: boolean;
 }) {
   return (
     <Select
       aria-label={label}
       value={value}
-      onValueChange={onChange}
+      onValueChange={(next) => onChange(options.find((option) => option === next) ?? "")}
       disabled={disabled}
     >
       <option value="">未填写</option>
-      {[...new Set([...options, ...(value ? [value] : [])])]
-        .filter(Boolean)
-        .map((value) => (
-          <option key={value}>{value}</option>
-        ))}
+      {value && !options.some((option) => option === value) && <option disabled>{value}</option>}
+      {options.map((option) => <option key={option}>{option}</option>)}
     </Select>
   );
 }
@@ -56,13 +56,18 @@ export default function StudentProfileEditor({
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [draft, setDraft] = useState<StudentProfileInput>(() =>
-    student ? studentProfileSchema.parse(can("field.student_phone") ? student : { ...student, phone: "", email: "" }) : emptyStudentProfile(),
+    student ? studentProfileSchema.parse({
+      ...student,
+      ...studentSurveyDetails(student),
+      ...(!can("field.student_phone") && { phone: "", email: "" }),
+    }) : emptyStudentProfile(),
   );
   const organization = studentOrganization(data.accounts, draft.owner, draft.roster, draft.ownerAccountId);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const formRoot = useRef<HTMLDivElement>(null);
   const initialProfile = useRef(draft);
+  const initialStored = useRef(student ?? draft);
   const initialDraft = useRef(JSON.stringify(draft));
   const hasReports =
     !!student && data.reports.some((report) => report.studentId === student.id);
@@ -127,6 +132,11 @@ export default function StudentProfileEditor({
         "email",
         "age",
         "ageText",
+        "ageGroup",
+        "membershipDuration",
+        "listeningHours",
+        "preferredLessonTime",
+        "learningNotes",
         "gender",
         "project",
         "channel",
@@ -145,7 +155,7 @@ export default function StudentProfileEditor({
         changed.map((key) => [key, profile[key]]),
       );
       const expected: Partial<StudentEditableInput> = Object.fromEntries(
-        changed.map((key) => [key, initialProfile.current[key]]),
+        changed.map((key) => [key, initialStored.current[key]]),
       );
       const result = await act(
         student
@@ -244,7 +254,7 @@ export default function StudentProfileEditor({
             </Field>
             <Field error={fieldErrors.age} label="年龄">
               <input
-                value={draft.ageText || (draft.age ?? "")}
+                value={draft.age ?? (matchingSurveyOptions.ageGroup.some((option) => option === draft.ageText) ? "" : draft.ageText)}
                 onChange={(event) => {
                   const value = event.target.value;
                   patch({
@@ -263,9 +273,17 @@ export default function StudentProfileEditor({
             <Field label="性别">
               <Choice
                 label="性别"
+                options={matchingSurveyOptions.gender}
                 value={draft.gender}
                 onChange={(gender) => patch({ gender })}
-                options={["男", "女"]}
+              />
+            </Field>
+            <Field label="年龄段">
+              <Choice
+                label="年龄段"
+                options={matchingSurveyOptions.ageGroup}
+                value={draft.ageGroup ?? ""}
+                onChange={(value) => patch({ ageGroup: value })}
               />
             </Field>
           </div>
@@ -273,29 +291,85 @@ export default function StudentProfileEditor({
         <section>
           <h3>学习特点与偏好</h3>
           <div className="student-profile-fields">
+            <Field label="口语基础">
+              <Choice
+                label="口语基础"
+                options={matchingSurveyOptions.level}
+                value={matchingSurveyOptions.level.find((option) => option.slice(0, 2) === draft.level) ?? draft.level}
+                onChange={(level) => patch({ level: level.slice(0, 2) })}
+              />
+            </Field>
             <Field label="小孩性格">
-              <input
+              <Choice
+                label="小孩性格"
+                options={matchingSurveyOptions.personality}
                 value={draft.personality}
-                onChange={(event) => patch({ personality: event.target.value })}
+                onChange={(personality) => patch({ personality })}
+              />
+            </Field>
+            <Field label="兴趣爱好" hint={`最多选择 ${maxSurveyInterests} 项`}>
+              <Select
+                aria-label="兴趣爱好"
+                multiple
+                maxSelected={maxSurveyInterests}
+                placeholder="请选择兴趣爱好"
+                value={studentSurveyInterests(draft.interests)}
+                onValueChange={(interests) => patch({ interests: interests.join("、") })}
+              >
+                {matchingSurveyOptions.interests.map((interest) => <option key={interest}>{interest}</option>)}
+              </Select>
+              {draft.interests && studentSurveyInterests(draft.interests).join("、") !== draft.interests && (
+                <div className="row wrap">
+                  <small className="muted">当前兴趣记录：{draft.interests}</small>
+                  <Button size="xs" variant="ghost" onClick={() => patch({ interests: "" })}>清除兴趣记录</Button>
+                </div>
+              )}
+            </Field>
+            <Field label="加入体系时长">
+              <Choice
+                label="加入体系时长"
+                options={matchingSurveyOptions.membership}
+                value={draft.membershipDuration ?? ""}
+                onChange={(value) => patch({ membershipDuration: value })}
+              />
+            </Field>
+            <Field label="听力输入总时长">
+              <Choice
+                label="听力输入总时长"
+                options={matchingSurveyOptions.listening}
+                value={draft.listeningHours ?? ""}
+                onChange={(value) => patch({ listeningHours: value })}
               />
             </Field>
             <Field label="外教上课经验">
               <Choice
                 label="外教上课经验"
-                value={draft.foreignTeacherExperience}
-                onChange={(foreignTeacherExperience) =>
-                  patch({ foreignTeacherExperience })
-                }
-                options={["有", "无"]}
+                options={matchingSurveyOptions.experience}
+                value={draft.foreignTeacherExperience === "无" ? "没有" : draft.foreignTeacherExperience}
+                onChange={(experience) => patch({ foreignTeacherExperience: experience === "没有" ? "无" : experience })}
               />
             </Field>
-            <Field label="口语等级"><Choice label="口语等级" value={draft.level} onChange={level=>patch({level})} options={["L0","L1","L2","L3","L4","待评估"]}/></Field>
-            <Field label="兴趣爱好"><input value={draft.interests || ""} onChange={e=>patch({interests:e.target.value})}/></Field>
             <Field label="喜欢的老师类型">
               <textarea
                 value={draft.preferences}
                 onChange={(event) => patch({ preferences: event.target.value })}
               />
+            </Field>
+          </div>
+        </section>
+        <section>
+          <h3>上课偏好与备注</h3>
+          <div className="student-profile-fields">
+            <Field label="预选上课时段">
+              <Choice
+                label="预选上课时段"
+                options={matchingSurveyOptions.times}
+                value={draft.preferredLessonTime ?? ""}
+                onChange={(value) => patch({ preferredLessonTime: value })}
+              />
+            </Field>
+            <Field label="其他备注">
+              <textarea rows={3} value={draft.learningNotes ?? ""} onChange={(event) => patch({ learningNotes: event.target.value })} />
             </Field>
           </div>
         </section>
@@ -320,9 +394,8 @@ export default function StudentProfileEditor({
                 {data.accounts.filter(a => a.roleId === "ops" && (a.enabled || a.id === draft.ownerAccountId)).map(a => <option key={a.id} value={a.id} disabled={!a.enabled}>{a.name} · {a.team || "未分队"} / {a.group || "未分组"}</option>)}
               </Select>
             </Field>
-            {student && draft.ownerAccountId !== student.ownerAccountId && <ClassInHandoverPreview studentIds={[student.id]} ownerId={draft.ownerAccountId || ""}/>}
-            <Field label="所属队伍"><input readOnly disabled={organization.team === "待分配"} className="student-organization-value" value={organization.team}/></Field>
-            <Field label="所属组别"><input readOnly disabled={organization.group === "待分配"} className="student-organization-value" value={organization.group}/></Field>
+            <Field label="所属队伍"><input disabled className="student-organization-value" value={organization.team}/></Field>
+            <Field label="所属组别"><input disabled className="student-organization-value" value={organization.group}/></Field>
           </div>
         </section>
         <section><h3>学习教材</h3><MaterialPicker label="学习教材" catalog={data.catalog} value={studentMaterialIds(data, draft)} onChange={materialIds => patch({materialIds})}/></section>

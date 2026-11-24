@@ -1,6 +1,6 @@
 import "./ClassInLinkForm.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { businessMode, businessRequest } from "@crazytalk/shared/react";
+import { businessRequest } from "@crazytalk/shared/react";
 import { Button, Field, useToast } from "@crazytalk/ui";
 import { z } from "zod";
 
@@ -41,7 +41,6 @@ export default function ClassInLinkForm({phone,name,uid,role,targetId,onSave,onA
   <Field label="ClassIn 账号" required><input disabled={busy||!!obtained} placeholder="手机号或邮箱" value={account} onChange={e=>{setAccount(e.target.value);onAccountChange?.("",e.target.value);}}/></Field>
   {!obtained && <p className="muted">{role === "staff" ? "填写已注册的 ClassIn 手机号或邮箱，可与后台登录账号不同。关联后，后台角色不变。" : "请填写已注册的 ClassIn 手机号或邮箱，并核对账号是否正确。关联成功后，该账号将加入本机构。"}</p>}
   {obtained && role !== "staff" && <p role="status">已取得 UID：{obtained.uid}</p>}
-  {!businessMode() && <p className="muted">演示模式：模拟账号关联，不会创建真实 ClassIn 账号。</p>}
   {children}
   {changed && <label><input type="checkbox" disabled={busy} checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>确认更换原 UID {uid} 的关联{role === "student" ? "，先取消当前学员的未开始预约，再按预览处理课时并重新排课" : "，已有课程不会自动迁移"}</label>}
   <div className="stack">

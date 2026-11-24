@@ -43,6 +43,7 @@ import {
 import { businessMode, useDemo } from "@crazytalk/shared/react";
 import {
   DEMO_TODAY,
+  configureBusinessClock,
   addDays,
   isRegularTime,
   availabilitySummary,
@@ -182,6 +183,7 @@ export default function Teachers() {
   const [trainingOnly, setTrainingOnly] = useState(false);
   const [card, setCard] = useState<ProfileCardContent | null>(null);
   const [edit, setEdit] = useState<Teacher | null>(null);
+  const [focusScheduling, setFocusScheduling] = useState(false);
   const editId = edit?.id;
   useEffect(() => {
     setPhotoError("");
@@ -279,6 +281,7 @@ export default function Teachers() {
 
   const [leave, setLeave] = useState(false);
   const [offboard, setOffboard] = useState(false);
+  const [payrollEndDate, setPayrollEndDate] = useState(DEMO_TODAY);
   const [offboardBusy, setOffboardBusy] = useState(false);
   const offboardSubmitting = useRef(false);
   const [start, setStart] = useState(addDays(DEMO_TODAY, 1));
@@ -591,6 +594,7 @@ export default function Teachers() {
                     className="teacher-offboard-action"
                     onClick={() => {
                       setReason("");
+                      setPayrollEndDate(businessMode() ? configureBusinessClock() : DEMO_TODAY);
                       setOffboard(true);
                     }}
                   >
@@ -743,7 +747,16 @@ export default function Teachers() {
             />
             <div style={{ marginTop: 24 }}>
               {tab === "availability" ? (
-                <div className="stack">
+                <div className="stack teacher-availability-panel">
+                  {can("teacher.edit") && (
+                    <div className="row" style={{ justifyContent: "flex-end" }}>
+                      <Button variant="primary" size="sm" onClick={() => {
+                        setTrainingOnly(false);
+                        setFocusScheduling(true);
+                        setEdit({ ...teacher, ...availabilityDraft });
+                      }}>编辑排课信息</Button>
+                    </div>
+                  )}
                   <dl className="teacher-profile-grid teacher-scheduling-summary" aria-label="排课信息">
                     <div>
                       <dt>开课日期</dt>
@@ -1396,9 +1409,18 @@ export default function Teachers() {
                           setEdit({ ...edit, level: value })
                         }
                       >
-                        {["A", "B+", "B", "C"].map((v) => (
+                        {["T1", "T2", "T3", "T4"].map((v) => (
                           <option key={v}>{v}</option>
                         ))}
+                      </Select>
+                    </Field>
+                    <Field label="计薪方式">
+                      <Select value={edit.payMode ?? ""} onValueChange={mode => {
+                        setEdit({ ...edit, payMode: mode === "OP" || mode === "NP" ? mode : undefined });
+                      }}>
+                        <option value="">请选择</option>
+                        <option value="OP">OP · 固定课表计薪</option>
+                        <option value="NP">NP · 预约结果计薪</option>
                       </Select>
                     </Field>
                   </div>
@@ -1565,7 +1587,12 @@ export default function Teachers() {
                     </Field>
                   )}
                 </fieldset>
-                <div className="stack-sm">
+                <div className="stack-sm" ref={(node) => {
+                  if (node && focusScheduling) {
+                    node.scrollIntoView({ block: "start" });
+                    setFocusScheduling(false);
+                  }
+                }}>
                   <h3 className="teacher-form-section-title">排课信息</h3>
                   <fieldset
                     disabled={!can("teacher.edit")}
@@ -1823,14 +1850,14 @@ export default function Teachers() {
             <Button disabled={offboardBusy} onClick={() => setOffboard(false)}>取消</Button>
             <Button
               variant="danger-solid"
-              disabled={!reason.trim() || teacher?.status === "已离职"}
+              disabled={!reason.trim() || !payrollEndDate || teacher?.status === "已离职"}
               loading={offboardBusy}
               onClick={async () => {
                 if (!teacher || offboardSubmitting.current) return;
                 offboardSubmitting.current = true;
                 setOffboardBusy(true);
                 try {
-                  await run({type:"teacher.offboard",teacherId:teacher.id,reason}, () => setOffboard(false));
+                  await run({type:"teacher.offboard",teacherId:teacher.id,reason,payrollEndDate}, () => setOffboard(false));
                 } finally {
                   offboardSubmitting.current = false;
                   setOffboardBusy(false);
@@ -1853,6 +1880,17 @@ export default function Teachers() {
                   : "老师离职后将无法再安排上课，目前该老师没有需要继续上课的学员。"}
             </span>
           </div>
+          <Field label="计薪结束时间" required>
+            <DatePicker
+              aria-label="计薪结束时间"
+              min={DEMO_TODAY}
+              required
+              disabled={offboardBusy}
+              value={payrollEndDate}
+              onValueChange={setPayrollEndDate}
+            />
+          </Field>
+          <small>确认后老师立即离职。固定课时底薪计至所选日期（含当天）。</small>
           <Field label="离职原因" required>
             <textarea
               disabled={offboardBusy}

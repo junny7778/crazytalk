@@ -22,7 +22,7 @@ const interestNotes: [RegExp, string][] = [
 ];
 export function studentProfileCard(student: Student, lessons: DemoState["lessons"]): ProfileCardContent {
   const first = lessons.filter(l => l.studentId === student.id && l.status !== "已取消").sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))[0];
-  const age = student.age != null ? `${student.age} years old` : student.ageText.replace(/幼儿/g,"Young child").replace(/少儿/g,"Child").replace(/大童/g,"Older child").replace(/岁/g," years");
+  const age = student.age != null ? `${student.age} years old` : (student.ageGroup ?? student.ageText).replace(/幼儿/g,"Young child").replace(/少儿/g,"Child").replace(/大童/g,"Older child").replace(/岁/g," years");
   const personality = /内向|慢热/.test(student.personality) ? "Slow to warm up. Use a gentle voice, be patient and build rapport first." : /活泼|外向|自来熟/.test(student.personality) ? "Outgoing. Encourage expression and keep activities focused." : "To be completed by the coordinator.";
   const interests = interestNotes.filter(([pattern]) => pattern.test(student.interests || "")).map(([,note])=>note);
   return {title: "Student profile", text: [

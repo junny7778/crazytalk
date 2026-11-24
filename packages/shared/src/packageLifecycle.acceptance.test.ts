@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { expect, it } from "vitest";
 import { transition } from "./domain";
 import { emptyStudentProfile, type Command } from "./model";
@@ -7,10 +8,10 @@ import { purchasedDelivery } from "./projectMetrics";
 import { getStudentSummary } from "./studentSummary";
 
 it("购课、后续加入、续费、补赠和不同学员上课均落到同一套餐", () => {
-  let data = createSeed();
+  let data = bindSchedulingStaff(createSeed());
   const execute = (cmd: Command) => { data = transition(data, cmd).data; };
   const enroll = (name: string) => {
-    execute({ type: "student.create", student: { ...emptyStudentProfile(), chineseName: name, material:"Power Up 1",materialIds:["m1"] } });
+    execute({ type: "student.create", student: { ...emptyStudentProfile(), ownerAccountId: "u2", chineseName: name, material:"Power Up 1",materialIds:["m1"] } });
     return data.students[0].id;
   };
   const a = enroll("小安");

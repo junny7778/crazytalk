@@ -212,7 +212,7 @@ export function rosterValues(
         : ""),
     起始教材: s.material,
     性别: s.gender,
-    年龄: s.ageText || s.age || "",
+    年龄: s.age ?? s.ageGroup ?? s.ageText,
     基础: s.level,
     性格: s.personality,
     孩子兴趣爱好: s.interests ?? "",

@@ -75,7 +75,7 @@ describe("学生反馈表数字化专项", () => {
       screen.getByRole("textbox", { name: "搜索学员姓名或 ID、老师、反馈或跟进内容" }),
       { target: { value: "麦克风" } },
     ); });
-    expect(screen.getByText("共 1 条反馈")).toBeTruthy();
+    expect(screen.getByText("共 1 条 · 每页 25 条")).toBeTruthy();
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "显示列" })); });
     await testAct(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "教务" })); });
     expect(screen.getByRole("columnheader", { name: "教务" })).toBeTruthy();

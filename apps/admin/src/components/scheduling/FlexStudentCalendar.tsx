@@ -1,34 +1,15 @@
-import { StudentLessonDrawer } from "../StudentLessonDrawer";
-import { z } from "zod";
-import { scheduleIntentSchema } from "@crazytalk/shared";
-import { materialMatchIssue, studentMaterials } from "@crazytalk/shared";
-import StudentCourses from "../StudentCourses";
-import { CalendarStatusLegend, calendarLessonStatus } from "../CalendarStatusLegend";
+import { schedulingBookingIssue, teacherSchedulingAccountIssue } from "@crazytalk/shared";
+import { TeacherSchedulingAccountNotice } from "./SchedulingAccountNotice";
+import { addDays,compareTeacherFit,DEMO_TODAY,getStudentScheduleProgress,isAvailable,matchesScheduleWindow,materialMatchIssue,minutes,studentMaterials,teacherFit,type ScheduleIntent } from "@crazytalk/shared";
+import { useDemo } from "@crazytalk/shared/react";
+import { Avatar,Button,Field,Modal,Select,useToast } from "@crazytalk/ui";
+import { Check,ChevronLeft,ChevronRight } from "lucide-react";
+import { useEffect,useLayoutEffect,useMemo,useRef,useState } from "react";
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
+import { StudentLessonDrawer } from "../StudentLessonDrawer";
 import ClassInBookingPreview from "./ClassInBookingPreview";
 import { useScheduleCredits } from "./useScheduleCredits";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight } from "lucide-react";
-import { useDemo } from "@crazytalk/shared/react";
-import {
-  addDays,
-  DEMO_TODAY,
-  isAvailable,
-  teacherFit, compareTeacherFit,
-  getStudentScheduleProgress,
-  minutes,
-  type ScheduleIntent,
-} from "@crazytalk/shared";
-import { Avatar, Button, Field, Select, Tabs, Modal, useToast } from "@crazytalk/ui";
-export type CustomSlot = { date: string; time: string; teacherId: string; material: string };
-type Slot = CustomSlot;
-const customDraftSchema = z.object({intent:scheduleIntentSchema, repeatWeeks:z.number().int().positive(), slots:z.array(z.object({date:z.string(),time:z.string(),teacherId:z.string(),material:z.string()}))});
-export function customDraftKey(accountId: string, studentId: string, teacherId = "") { return `ct-custom-calendar:${accountId}:${studentId}:${teacherId}`; }
-export function readCustomDraft(key: string) {
-  const raw = localStorage.getItem(key);
-  if (!raw) return undefined;
-  try { const parsed = customDraftSchema.safeParse(JSON.parse(raw)); return parsed.success ? parsed.data : undefined; } catch { return undefined; }
-}
+type Slot = { date: string; time: string; teacherId: string; material: string };
 
 const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const dayOf = (d: string) => new Date(`${d}T12:00:00+08:00`).getUTCDay();
@@ -40,7 +21,7 @@ export function FlexStudentCalendar({
   teacherId,
   initialTime,
   initialTimes = [],
-  onPickTime,
+  onConfirmTimes,
   repeatWeeks = 1,
   intent,
   onComplete,
@@ -52,7 +33,7 @@ export function FlexStudentCalendar({
   teacherId?: string;
   initialTime?: {date: string; time: string};
   initialTimes?: {date: string; time: string}[];
-  onPickTime?: (slot: {date: string; time: string}) => void;
+  onConfirmTimes?: (slots: {date: string; time: string}[]) => void;
   repeatWeeks?: number;
   onClose?: () => void;
   onStageChange?: (stage: "setup" | "preview") => void;
@@ -62,7 +43,7 @@ export function FlexStudentCalendar({
   studentId: string;
   intent: ScheduleIntent;
 }) {
-  const { data, act, can, preview, accountId } = useDemo();
+  const { data, act, can, preview } = useDemo();
   const toast = useToast();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -72,24 +53,14 @@ export function FlexStudentCalendar({
     monday(initialTime?.date || (intent.startDate < DEMO_TODAY ? DEMO_TODAY : intent.startDate)),
   );
   const [slots, setSlots] = useState<Slot[]>([]);
-  const draftKey = customDraftKey(accountId, studentId, teacherId);
-  const [savedDraft, setSavedDraft] = useState(() => studentId ? readCustomDraft(draftKey) : undefined);
-  const [draftStarted, setDraftStarted] = useState(false);
-  useEffect(() => {
-    if (!studentId || !draftStarted) return;
-    if (slots.length) localStorage.setItem(draftKey, JSON.stringify({intent, repeatWeeks, slots}));
-    else localStorage.removeItem(draftKey);
-  }, [draftKey, studentId, draftStarted, intent, repeatWeeks, slots]);
-  const [calendarMode, setCalendarMode] = useState("edit");
   const [viewedLesson, setViewedLesson] = useState<string | null>(null);
-  const [view, setView] = useState("week");
   const materials = student ? studentMaterials(data, student).filter(c => !intent.materialIds || intent.materialIds.includes(c.id)) : [];
   const [material, setMaterial] = useState(materials[0]?.name || "");
   const [multiSelect, setMultiSelect] = useState(false);
-  const [selectedTimes, setSelectedTimes] = useState<{date: string; time: string}[]>(initialTimes.length > 1 ? initialTimes : []);
+  const [selectedTimes, setSelectedTimes] = useState<{date: string; time: string}[]>(initialTimes.length > (studentId ? 1 : 0) ? initialTimes : !studentId && initialTime ? [initialTime] : []);
   const [reviewing, setReviewing] = useState(false);
   useEffect(() => { onStageChange?.(reviewing ? "preview" : "setup"); }, [reviewing, onStageChange]);
-  useEffect(() => { onDirtyChange?.(slots.length > 0 || (!!studentId && selectedTimes.length > 0)); }, [slots.length, studentId, selectedTimes.length, onDirtyChange]);
+  useEffect(() => { onDirtyChange?.(slots.length > 0 || (selectedTimes.length > 0)); }, [slots.length, studentId, selectedTimes.length, onDirtyChange]);
   const [editor, setEditor] = useState<{
     date: string;
     time: string;
@@ -108,18 +79,8 @@ export function FlexStudentCalendar({
   const [hover, setHover] = useState("");
   const [error, setError] = useState("");
   const scroll = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (scroll.current)
-      scroll.current.scrollTop = Math.max(
-        0,
-        ((Math.min(...intent.windows.map((w) => minutes(w.start)), 19 * 60) -
-          0) /
-          30 -
-          1) *
-          48,
-      );
-  }, [week, intent]);
-  const dates = Array.from({ length: view === "day" ? 1 : 7 }, (_, i) => addDays(week, i));
+  const [entrySlot] = useState(initialTime);
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(week, i));
   const lessons = data.lessons.filter(
     (l) => (studentId ? l.studentId === studentId : l.teacherId === teacherId) && l.status !== "已取消",
   );
@@ -127,19 +88,16 @@ export function FlexStudentCalendar({
     date: string,
     time: string,
     other: { date: string; time: string; duration?: number },
+    duration = intent.duration,
   ) =>
     date === other.date &&
     minutes(time) < minutes(other.time) + (other.duration ?? intent.duration) &&
-    minutes(other.time) < minutes(time) + intent.duration;
+    minutes(other.time) < minutes(time) + duration;
   const inIntent = (date: string, time: string) =>
-    intent.windows.some(
-      (w) =>
-        w.day === dayOf(date) &&
-        time >= w.start &&
-        minutes(time) + intent.duration <= minutes(w.end),
-    );
+    matchesScheduleWindow({ date, time }, intent.duration, intent);
   function candidates(date: string, time: string, ignore = -1, textbook = material) {
     if (
+      (studentId && !!schedulingBookingIssue(data, studentId)) ||
       date < DEMO_TODAY ||
       slots.some((s, i) => i !== ignore && overlap(date, time, s))
     )
@@ -151,6 +109,7 @@ export function FlexStudentCalendar({
     return data.teachers
       .filter(
         (t) =>
+          !teacherSchedulingAccountIssue(t) &&
           (!teacherId || t.id === teacherId) &&
           (!student || !materialMatchIssue(data, student, t, textbook)) &&
           !isAvailable(
@@ -192,7 +151,49 @@ export function FlexStudentCalendar({
       }
     }
     return result;
-  }, [data, slots, week, drag, intent.duration, studentId, material, teacherId, view]);
+  }, [data, slots, week, drag, intent.duration, studentId, material, teacherId]);
+  const firstAvailable = cellTimes.size ? Math.min(...Array.from(cellTimes.values(), minutes)) : 0;
+  const anchorTime = entrySlot && monday(entrySlot.date) === week ? minutes(entrySlot.time) : firstAvailable;
+  function scrollToAvailable() {
+    if (scroll.current) scroll.current.scrollTop = Math.max(0, (Math.floor(anchorTime / 30) - 1) * 48);
+  }
+  useLayoutEffect(scrollToAvailable, [week, anchorTime]);
+  const selectingStudentTimes = !!teacherId && !studentId;
+  const boxStart = useRef<{x: number; y: number} | null>(null);
+  const suppressClick = useRef(false);
+  const [box, setBox] = useState<{left:number; top:number; width:number; height:number} | null>(null);
+  function pickTimes(times: typeof selectedTimes, toggle: boolean) {
+    const teacher = data.teachers.find(t => t.id === teacherId);
+    if (!data.catalog.some(c => c.type === "教材" && c.enabled && teacher?.materialIds?.includes(c.id))) {
+      toast("请先设置老师的可授教材", {tone: "hint"});
+      return;
+    }
+    const next = [...selectedTimes];
+    for (const t of times) {
+      const index = next.findIndex(s => s.date === t.date && s.time === t.time);
+      if (index >= 0) {
+        if (toggle) next.splice(index, 1);
+      } else if (!next.some(s => overlap(t.date, t.time, s))) next.push(t);
+      else if (toggle) toast("与已选时段重叠", {tone: "hint"});
+    }
+    if (!selectedTimes.length && next.length) toast("拖动鼠标可批量框选时段", {tone: "hint"});
+    setSelectedTimes(next);
+  }
+  function pointerBox(event: React.PointerEvent<HTMLDivElement>) {
+    const start = boxStart.current;
+    if (!start) return null;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - bounds.left, y = event.clientY - bounds.top;
+    return {left: Math.min(start.x, x), top: Math.min(start.y, y), width: Math.abs(x-start.x), height: Math.abs(y-start.y)};
+  }
+  // A half-hour cell can contain both a course and the next selectable start time.
+  function sharesCell(date: string, time: string, duration: number) {
+    const start = minutes(time);
+    const firstRow = clock(start - start % 30);
+    const lastMinute = start + duration - 1;
+    const lastRow = clock(lastMinute - lastMinute % 30);
+    return [firstRow, lastRow].some(row => cellTimes.has(`${date}/${row}`));
+  }
   const editingTeachers = editor
     ? candidates(editor.date, editor.time, editor.index)
     : [];
@@ -203,8 +204,6 @@ export function FlexStudentCalendar({
     if (next.some((s, index) => !candidates(s.date, s.time, editor.index).some(t => t.id === id) || next.some((other, j) => index !== j && overlap(s.date, s.time, other)))) {
       setError("选中或重复课次存在时间冲突，未加入课表，请修改时间或重复周期。"); return;
     }
-    setDraftStarted(true);
-    setSavedDraft(undefined);
     setSlots(editor.index < 0 ? [...slots, ...next] : slots.map((s, i) => i === editor.index ? next[0] : s));
     setSelectedTimes([]);
     setEditor(null);
@@ -227,7 +226,7 @@ export function FlexStudentCalendar({
     setHover("");
   }
   const [scheduleRevision] = useState(() => data.students.find(s => s.id === studentId)?.scheduleRevision ?? 0);
-  const credits = useScheduleCredits(studentId, intent.duration, slots.length);
+  const credits = useScheduleCredits(studentId, intent.duration, slots.length, slots.map(s=>s.teacherId));
   const [submitting, setSubmitting] = useState(false);
   useEffect(() => { onBusyChange?.(submitting); }, [submitting, onBusyChange]);
   const submitLock = useRef(false);
@@ -250,7 +249,6 @@ export function FlexStudentCalendar({
       });
       if (!mounted.current) return;
       toast(result.message);
-      localStorage.removeItem(draftKey);
       setSlots([]);
       setEditor(null);
       setError("");
@@ -277,54 +275,69 @@ export function FlexStudentCalendar({
     <section className="flex-student-calendar stack" aria-label="自定义排课日历">
       <ClassInOperationFeedback studentId={studentId}/>
       <StudentLessonDrawer lessonId={viewedLesson} onClose={() => setViewedLesson(null)}/>
-      {savedDraft && !draftStarted && <div className="row wrap"><span>有尚未完成的排课草稿</span><Button disabled={preview || !can("schedule.create")} onClick={() => {setSlots(savedDraft.slots);setDraftStarted(true);setWeek(monday(savedDraft.slots[0]?.date || intent.startDate));setSavedDraft(undefined);}}>继续上次编排</Button><Button variant="ghost" onClick={() => {localStorage.removeItem(draftKey);setSavedDraft(undefined);}}>使用当前方案</Button></div>}
-      <Tabs value={calendarMode} onChange={setCalendarMode} items={[{value:"read",label:"查看课表"},{value:"edit",label:"操作排课"}]}/>
-      {calendarMode === "read" && student && <StudentCourses student={student} timetableOnly/>}
-      <div hidden={calendarMode === "read" && !!student}>
+      <div >
       <fieldset disabled={submitting} className="stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
       {student && <Field label="日历匹配教材"><Select value={material} onValueChange={value => {setMaterial(value);setSelectedTimes([]);}}>{materials.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</Select></Field>}
-      <div hidden={reviewing} className={`stack ${calendarMode === "read" ? "custom-calendar-read" : ""}`}>
+      <div hidden={reviewing} className="stack">
       {student && !intent.windows.length && (
         <p className="muted">
           尚未填写意向时间，可直接在日历中选择可用时间排课。
         </p>
       )}
-      <div className="row between wrap"><label className="row" hidden={calendarMode === "read" || !student}><input type="checkbox" checked={multiSelect} onChange={e => {setMultiSelect(e.target.checked); setSelectedTimes([]);}}/>多选上课时间</label><Tabs value={view} onChange={value => {setView(value);if(value === "week") setWeek(monday(week));}} items={[{value:"week",label:"周视图"},{value:"day",label:"日视图"}]}/></div>
+      {student && <label className="row"><input type="checkbox" checked={multiSelect} onChange={e => {setMultiSelect(e.target.checked); setSelectedTimes([]);}}/>多选上课时间</label>}
       {student && selectedTimes.length > 0 && <div className="row"><span>已选 {selectedTimes.length} 个时段</span><Button onClick={() => setEditor({...selectedTimes[0], index:-1})}>为选中时段选择老师</Button><Button variant="ghost" onClick={() => setSelectedTimes([])}>取消选择</Button></div>}
-      <div className="row between wrap">
-        <div className="fixed-plan-week-nav">
-          <button
-            className="icon-button"
-            aria-label={view === "day" ? "上一天" : "上一周"}
-            onClick={() => setWeek(addDays(week, view === "day" ? -1 : -7))}
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <strong>
-            {week.replaceAll("-", "/")}{view === "week" && ` - ${addDays(week, 6).replaceAll("-", "/")}`}
-          </strong>
-          <button
-            className="icon-button"
-            aria-label={view === "day" ? "下一天" : "下一周"}
-            onClick={() => setWeek(addDays(week, view === "day" ? 1 : 7))}
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
-        <small>
-          每节 {intent.duration} 分钟 · 本周已有{" "}
-          {
-            lessons.filter((l) => l.date >= week && l.date < addDays(week, 7))
-              .length
-          }{" "}
-          节 · 本次已选 {slots.length} 节 · 每周参考目标 {intent.frequency} 节
-        </small>
+      <div className="fixed-plan-week-nav schedule-week-navigation">
+        <Button size="sm" aria-label="上一周" onClick={() => setWeek(addDays(week, -7))}><ChevronLeft size={18}/></Button>
+        <strong>{week.replaceAll("-", "/")} - {addDays(week, 6).replaceAll("-", "/")}</strong>
+        <Button size="sm" aria-label="下一周" onClick={() => setWeek(addDays(week, 7))}><ChevronRight size={18}/></Button>
+        <Button size="sm" onClick={() => {
+          const currentWeek = monday(DEMO_TODAY);
+          if (week === currentWeek) scrollToAvailable();
+          else setWeek(currentWeek);
+        }}>本周</Button>
       </div>
       <div className="fixed-calendar-scroll" ref={scroll}>
         <div
           className="fixed-calendar"
+          onPointerDown={event => {
+            suppressClick.current = false;
+            if (!selectingStudentTimes || preview || !can("schedule.create") || event.button !== 0 || event.pointerType !== "mouse") return;
+            const cell = (event.target as HTMLElement).closest<HTMLButtonElement>(".flex-time-cell");
+            if (!cell) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            boxStart.current = {x: event.clientX - bounds.left, y: event.clientY - bounds.top};
+            cell.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={event => {
+            const rect = pointerBox(event);
+            if (rect && (suppressClick.current || Math.max(rect.width, rect.height) > 4)) {
+              suppressClick.current = true;
+              setBox(rect);
+            }
+          }}
+          onPointerUp={event => {
+            const rect = pointerBox(event);
+            if (rect && (suppressClick.current || Math.max(rect.width, rect.height) > 4)) {
+              suppressClick.current = true;
+              const grid = event.currentTarget;
+              const bounds = grid.getBoundingClientRect();
+              const times = Array.from(grid.querySelectorAll<HTMLElement>(".flex-time-cell.available")).filter(cell => {
+                const r = cell.getBoundingClientRect();
+                return r.right > bounds.left + rect.left && r.left < bounds.left + rect.left + rect.width &&
+                  r.bottom > bounds.top + rect.top && r.top < bounds.top + rect.top + rect.height;
+              }).map(cell => ({date: cell.dataset.date!, time: cell.dataset.time!}));
+              if (times.length) pickTimes(times, false);
+            }
+            boxStart.current = null;
+            setBox(null);
+          }}
+          onPointerCancel={() => {boxStart.current = null; setBox(null);}}
+          onClickCapture={event => {
+            if (suppressClick.current) {event.stopPropagation(); suppressClick.current = false;}
+          }}
           style={{ gridTemplateRows: "44px repeat(48,48px)", gridTemplateColumns: `64px repeat(${dates.length},minmax(70px,1fr))` }}
         >
+          {box && <div className="schedule-selection-box" style={box}/>}
           <div className="fixed-calendar-head">时间</div>
           {dates.map((date) => (
             <div className={`fixed-calendar-head ${date === DEMO_TODAY ? "today" : ""}`} key={date}>
@@ -353,6 +366,10 @@ export function FlexStudentCalendar({
                 (s, n) => n !== drag && overlap(date, time, s),
               );
               const available = cellTimes.has(`${date}/${baseTime}`);
+              const besideCourse = available && (
+                lessons.some(l => overlap(date, baseTime, l, 30)) ||
+                slots.some(s => overlap(date, baseTime, s, 30))
+              );
               const state = past
                 ? "已过期"
                 : booked
@@ -368,19 +385,29 @@ export function FlexStudentCalendar({
                 <button
                   type="button"
                   key={key}
+                  data-date={date} data-time={time}
+                  aria-pressed={selectingStudentTimes ? selectedTimes.some(s => s.date === date && s.time === time) : undefined}
                   aria-label={`${date} ${time} ${state}${preferred ? " 意向时间" : ""}`}
                   aria-disabled={
                     !available || preview || !can("schedule.create")
                   }
-                  className={`flex-time-cell ${available ? "available" : "unavailable"} ${past ? "expired" : ""} ${preferred ? "intent" : ""} ${hover === key || selectedTimes.some(s => s.date === date && s.time === time) ? "drop-target" : ""}`}
+                  className={`flex-time-cell ${besideCourse ? "beside-course" : ""} ${available ? "available" : "unavailable"} ${past ? "expired" : ""} ${preferred ? "intent" : ""} ${hover === key || selectedTimes.some(s => s.date === date && s.time === time) ? "drop-target" : ""}`}
                   style={{ gridColumn: d + 2, gridRow: i + 2 }}
                   onClick={() => {
-                    if (calendarMode === "edit" && available && !preview && can("schedule.create")) {
-                      if (!studentId) { onPickTime?.({date, time}); return; }
+                    if (preview || !can("schedule.create")) return;
+                    if (!available) {
+                      const reason = past ? "该日期已过期" : booked ? "该时段已有课程" : pending ? "该时段已有待保存课程"
+                        : teacherId ? isAvailable(data, teacherId, date, time, intent.duration, studentId, undefined, false, true)[0] : "";
+                      toast(reason || "该时段没有符合当前排课条件的老师", { tone: "hint" });
+                      return;
+                    }
+                    if (!studentId) {
+                      pickTimes([{date, time}], true);
+                      return;
+                    }
                       if (multiSelect) { setSelectedTimes(current => current.some(s => s.date === date && s.time === time) ? current.filter(s => s.date !== date || s.time !== time) : [...current,{date,time}]); return; }
                       setEditor({ date, time, index: -1 });
                       setError("");
-                    }
                   }}
                   onDragOver={(e) => {
                     if (available && drag !== null) {
@@ -394,7 +421,7 @@ export function FlexStudentCalendar({
                     if (!preview && can("schedule.create")) drop(date, time);
                   }}
                 >
-                  {available && <span>＋{time !== baseTime ? ` ${time}` : ""}</span>}
+                  {available && <span>＋{besideCourse || time !== baseTime ? ` ${time}` : ""}</span>}
                   {preferred && <small>{available ? "意向时间" : "意向 · 不可安排"}</small>}
                 </button>
               );
@@ -406,7 +433,7 @@ export function FlexStudentCalendar({
               s.date < addDays(week, dates.length) && (
                 <button
                   key={`${index}-${s.date}-${s.time}`}
-                  className="fixed-course flex-pending"
+                  className={`fixed-course flex-pending ${sharesCell(s.date, s.time, intent.duration) ? "beside-slot" : ""}`}
                   draggable={!preview && can("schedule.create")}
                   aria-label={`${s.date} ${s.time} 待保存 ${data.teachers.find((t) => t.id === s.teacherId)?.name}`}
                   style={{
@@ -454,8 +481,8 @@ export function FlexStudentCalendar({
                 type="button"
                 onClick={() => setViewedLesson(l.id)}
                 key={l.id}
-                className="fixed-course flex-booked"
-                data-status={calendarMode === "read" ? l.status : undefined}
+                className={`fixed-course flex-booked ${sharesCell(l.date, l.time, l.duration) ? "beside-slot" : ""}`}
+
                 style={{
                   gridColumn: dates.indexOf(l.date) + 2,
                   gridRow: "2 / -1",
@@ -469,21 +496,21 @@ export function FlexStudentCalendar({
                   {studentId ? data.teachers.find((t) => t.id === l.teacherId)?.name : data.students.find(s => s.id === l.studentId)?.name}
                 </strong>
                 <small>
-                  {calendarMode === "read" ? calendarLessonStatus(l.status) : "已排课"}{inIntent(l.date, l.time) ? " · 意向时间" : ""}
+                  已排课{inIntent(l.date, l.time) ? " · 意向时间" : ""}
                 </small>
               </button>
             ))}
         </div>
       </div>
-      {calendarMode === "read" && <CalendarStatusLegend lessons={lessons}/>}
-      <div className="flex-calendar-legend" hidden={calendarMode === "read"}>
+      <div className="flex-calendar-legend">
         {[
-          ["intent", "意向时间"],
+          ...(student && intent.windows.length ? [["intent", "学员意向"]] : []),
           ["available", "可排课"],
           ["unavailable", "不可安排"],
-          ["pending", "待保存"],
-          ["booked", "已排课"],
           ["expired", "已过期"],
+          ["selected", "当前选中"],
+          ["pending", "待确认"],
+          ["booked", "已排课"],
         ].map(([style, label]) => (
           <span key={label}>
             <i className={style} />
@@ -491,6 +518,13 @@ export function FlexStudentCalendar({
           </span>
         ))}
       </div>
+      {selectingStudentTimes && selectedTimes.length > 0 && <div className="batch-bar students-batch-bar" aria-label="已选排课时段">
+        <span>已选 {selectedTimes.length} 个时段</span>
+        <div className="row">
+          <Button variant="ghost" onClick={() => setSelectedTimes([])}>取消选择</Button>
+          <Button variant="primary" disabled={preview || !can("schedule.create")} onClick={() => onConfirmTimes?.([...selectedTimes])}>确认时段</Button>
+        </div>
+      </div>}
       {editor && (
         <Modal
           open
@@ -555,6 +589,7 @@ export function FlexStudentCalendar({
                 onChange={(e) => setTeacherQuery(e.target.value)}
               />
             </div>
+            {data.teachers.filter(t=>t.status!=="已离职" && (!teacherId || t.id===teacherId) && teacherSchedulingAccountIssue(t) && (!student || !materialMatchIssue(data,student,t,material)) && t.name.toLowerCase().includes(teacherQuery.toLowerCase())).map(t=><div key={t.id} className="stack"><button type="button" className="flex-teacher-choice" disabled>{t.name} · 未绑定 ClassIn</button><TeacherSchedulingAccountNotice teacher={t}/></div>)}
             {error && <p role="alert">{error}</p>}
             <div
               className="flex-teacher-options"
@@ -638,10 +673,11 @@ export function FlexStudentCalendar({
           部分已选课程已不可安排，请点击课程重新选择老师或移除。
         </p>
       )}
+      {data.teachers.filter(t=>slots.some(s=>s.teacherId===t.id) && teacherSchedulingAccountIssue(t)).map(t=><TeacherSchedulingAccountNotice key={t.id} teacher={t}/>)}
       {student && <ClassInBookingPreview studentId={studentId} teacherIds={slots.map(row => row.teacherId)}/>}
       {student && credits.node}
       </fieldset>
-      <div className="fixed-plan-footer schedule-flow-actions" style={{display: calendarMode === "read" || !student ? "none" : undefined}}>
+      <div className="fixed-plan-footer schedule-flow-actions" style={{display: !student ? "none" : undefined}}>
         <span>
           <strong>
             已安排 {progress.scheduledCount}/{progress.requiredCount} 节

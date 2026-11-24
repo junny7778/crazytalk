@@ -736,157 +736,7 @@
   background: var(--ct-danger-bg);
 }
 
-.teacher-schedule-scroll {
-  overflow-x: auto;
-}
-.teacher-schedule-week {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(140px, 1fr));
-  min-width: 980px;
-  border: 1px solid var(--ct-gray-200);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.teacher-schedule-day {
-  min-width: 0;
-  border-right: 1px solid var(--ct-gray-200);
-}
-.teacher-schedule-day:last-child {
-  border-right: 0;
-}
-.teacher-schedule-day header {
-  display: flex;
-  justify-content: space-between;
-  padding: 12px;
-  background: var(--ct-gray-50);
-  font-size: 12px;
-}
-.teacher-schedule-events {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-  padding: 10px;
-  min-height: 240px;
-}
-.teacher-schedule-event {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--ct-brand-200);
-  border-left: 3px solid var(--ct-brand-500);
-  border-radius: 8px;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
 
-.teacher-schedule-month-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-}
-.teacher-schedule-month-nav {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.teacher-schedule-month-nav strong {
-  min-width: 112px;
-  text-align: center;
-  font-size: 16px;
-}
-.teacher-schedule-month-nav .btn {
-  padding: 0 10px;
-}
-.teacher-schedule-weekday {
-  padding: 12px;
-  background: var(--ct-gray-50);
-  font-size: 13px;
-  font-weight: 500;
-  text-align: center;
-}
-.teacher-schedule-day {
-  border-top: 1px solid var(--ct-gray-200);
-}
-.teacher-schedule-day:nth-child(7n) {
-  border-right: 0;
-}
-.teacher-schedule-day header {
-  background: transparent;
-  padding: 8px 10px 0;
-}
-.teacher-schedule-day header span {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-}
-.teacher-schedule-day header .is-today {
-  background: var(--ct-brand-700);
-  color: white;
-}
-.teacher-schedule-day.is-outside {
-  background: var(--ct-gray-50);
-  color: var(--ct-gray-400);
-}
-.teacher-schedule-events {
-  min-height: 100px;
-  padding: 8px;
-}
-.teacher-schedule-event {
-  padding: 8px;
-  gap: 5px;
-}
-
-.teacher-schedule-event:focus-visible {
-  outline: 2px solid var(--ct-gray-500);
-  outline-offset: 2px;
-}
-.teacher-lesson-tooltip {
-  position: fixed;
-  z-index: 1600;
-  width: 260px;
-  max-height: 220px;
-  overflow: auto;
-  padding: 14px;
-  background: white;
-  border: 1px solid var(--ct-gray-200);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(31, 35, 41, 0.14);
-  font-size: 12px;
-}
-.teacher-lesson-tooltip dl {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 8px 12px;
-  margin: 12px 0 0;
-}
-.teacher-lesson-tooltip dt {
-  color: var(--ct-gray-500);
-}
-.teacher-lesson-tooltip dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.teacher-schedule-event-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-.teacher-schedule-event-heading > a {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  text-align: left;
-}
-.teacher-schedule-event-heading > :last-child {
-  flex-shrink: 0;
-}
-.teacher-schedule-event-time {
-  font-weight: 400;
-}
 
 .lesson-records-table {
   max-height: 65vh;
@@ -1103,3 +953,70 @@
 .classin-log-table td:first-child {
   white-space: nowrap;
 }
+
+.teacher-availability-panel .weekly-slot-grid {
+  max-height: min(600px, 75vh);
+}
+
+.half-payroll { min-width: 0; container-type: inline-size; }
+.record-list-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.record-list-tools .search-input { flex: 1 1 220px; width: min(100%, 360px); max-width: 320px; }
+.record-list-tools > .field { flex: 0 1 132px; min-width: 0; margin: 0; }
+.record-list-tools > .row { margin-left: auto; }
+.record-list-tools .field > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.record-list-tools .field .ct-select-trigger,
+.record-list-tools .search-input {
+  height: 40px;
+  min-height: 40px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.payroll-filters > .search-input + .field { flex-basis: 228px; }
+.payroll-actions { display: flex; align-items: center; gap: 10px; }
+.payroll-actions { justify-content: flex-end; }
+.payroll-results { min-width: 0; }
+.payroll-results .table-wrap { overflow-x: auto; }
+.payroll-results td, .payroll-results th { white-space: nowrap; }
+.payroll-results .badge + .badge { margin-inline-start: 4px; }
+.payroll-rule-section > h3 { margin-bottom: 16px; }
+.payroll-rule-section + .payroll-rule-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ct-gray-200);
+}
+.payroll-rule-fields input[readonly] { background: var(--ct-gray-50); }
+@container (max-width: 820px) { .payroll-rule-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 520px) { .payroll-rule-fields { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 980px) { .payroll-wide { display: none; } }
+@container (max-width: 600px) {
+  .payroll-filters { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .payroll-filters > .search-input, .payroll-filters > .search-input + .field { grid-column: 1 / -1; width: 100%; max-width: none; }
+  .payroll-filters > * { min-width: 0; }
+}
+
+.payroll-totals { display: grid; grid-template-columns: 1fr 1fr; }
+.payroll-totals > div { padding: 0 14px; border-inline-start: 1px solid var(--ct-gray-200); }
+.payroll-totals > div:first-child { padding-left: 0; border: 0; }
+.payroll-totals span, .payroll-totals strong { display: block; }
+.payroll-totals strong { font-size: 1.5rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.payroll-statement details { border: 1px solid var(--ct-gray-200); border-radius: 8px; }
+.payroll-statement summary { padding: 12px; cursor: pointer; font-weight: 600; }
+.payroll-statement form { display: grid; gap: 12px; }
+.payroll-statement .table-wrap { overflow-x: auto; }
+.payroll-statement td { white-space: normal; }
+.payroll-statement td:first-child { white-space: nowrap; }

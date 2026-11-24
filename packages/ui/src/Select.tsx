@@ -20,14 +20,15 @@ export type SelectProps = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   "value" | "onChange" | "children"
 > & {
-  value: string | number;
-  onValueChange: (value: string) => void;
   children: ReactNode;
   placeholder?: string;
   size?: "compact" | "form";
   searchable?: boolean;
   name?: string;
-};
+} & (
+  | { multiple?: false; value: string | number; onValueChange: (value: string) => void; maxSelected?: never; checkboxOptions?: never }
+  | { multiple: true; value: readonly string[]; onValueChange: (value: string[]) => void; maxSelected?: number; checkboxOptions?: boolean }
+);
 function text(nodes: ReactNode): string {
   return React.Children.toArray(nodes)
     .map((node) =>
@@ -69,6 +70,9 @@ function optionsFrom(nodes: ReactNode): Option[] {
 export function Select({
   value,
   onValueChange,
+  multiple,
+  checkboxOptions,
+  maxSelected,
   children,
   placeholder = "请选择",
   size = "compact",
@@ -79,8 +83,15 @@ export function Select({
   onKeyDown,
   ...props
 }: SelectProps) {
-  const options = useMemo(() => optionsFrom(children), [children]);
-  const selected = options.find((o) => o.value === String(value));
+  const sourceOptions = useMemo(() => optionsFrom(children), [children]);
+  const selectedValues = multiple ? value : [String(value)];
+  const limitReached = multiple && maxSelected !== undefined && value.length >= maxSelected;
+  const options = sourceOptions.map((option) => limitReached && !selectedValues.includes(option.value)
+    ? { ...option, disabled: true }
+    : option);
+  const selected = options.find((option) => selectedValues.includes(option.value));
+  const selectedLabel = multiple ? options.filter((option) => value.includes(option.value)).map((option) => option.label).join("、") : selected?.label;
+
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeValue, setActive] = useState<string | undefined>();
@@ -126,6 +137,12 @@ export function Select({
   }
   function choose(option: Option) {
     if (option.disabled) return;
+    if (multiple) {
+      onValueChange(value.includes(option.value)
+        ? value.filter((item) => item !== option.value)
+        : [...value, option.value]);
+      return;
+    }
     onValueChange(option.value);
     setOpen(false);
     setQuery("");
@@ -201,9 +218,9 @@ export function Select({
           }}
         >
           <span
-            className={`ct-select-value ${selected ? "" : "ct-select-placeholder"}`}
+            className={`ct-select-value ${selectedLabel ? "" : "ct-select-placeholder"}`}
           >
-            {selected?.label || placeholder}
+            {selectedLabel || placeholder}
           </span>
           <ChevronDown
             size={16}
@@ -275,6 +292,7 @@ export function Select({
             id={listId}
             ref={list}
             role="listbox"
+            aria-multiselectable={multiple || undefined}
             aria-label={props["aria-label"] || selected?.label || placeholder}
             tabIndex={searchable ? -1 : 0}
             aria-activedescendant={!searchable ? activeId : undefined}
@@ -287,7 +305,7 @@ export function Select({
                 key={`${option.index}-${option.value}`}
                 id={`${listId}-${option.index}`}
                 role="option"
-                aria-selected={String(value) === option.value}
+                aria-selected={selectedValues.includes(option.value)}
                 aria-disabled={option.disabled || undefined}
                 disabled={option.disabled}
                 data-active={active?.value === option.value || undefined}
@@ -297,8 +315,13 @@ export function Select({
                 }}
                 onClick={() => choose(option)}
               >
+                {checkboxOptions && (
+                  <span className="ct-select-option-checkbox" aria-hidden="true">
+                    {selectedValues.includes(option.value) && <Check size={12} strokeWidth={3} />}
+                  </span>
+                )}
                 <span>{option.label}</span>
-                {String(value) === option.value && (
+                {!checkboxOptions && selectedValues.includes(option.value) && (
                   <Check size={16} aria-hidden="true" />
                 )}
               </button>
@@ -311,9 +334,9 @@ export function Select({
           </div>
         </Popover.Content>
       </Popover.Portal>
-      {name && (
-        <input type="hidden" name={name} value={value} disabled={disabled} />
-      )}
+      {name && selectedValues.map((item) => (
+        <input key={item} type="hidden" name={name} value={item} disabled={disabled} />
+      ))}
     </Popover.Root>
   );
 }

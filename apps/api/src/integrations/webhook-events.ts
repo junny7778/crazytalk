@@ -35,6 +35,7 @@ export async function applyClassInEvent(tx: Transaction, input: unknown) {
     for (const [person, uid] of [["老师", mapping.teacherUid], ["学员", mapping.studentUid]] as const) {
       const member = summary.Data.find(item => item.Uid === uid);
       if (!member) return "考勤摘要缺少课节成员";
+      if (lesson.attendanceFinal?.[person]) continue;
       state = transition(state, { type: "lesson.attendance", id: lesson.id, person,
         result: member.AttendanceTime > 0 ? "到堂" : "缺席",
         at: new Date(summary.ClassEndTime * 1000).toISOString(), operator: "ClassIn 回调" }).data;
@@ -49,6 +50,7 @@ export async function applyClassInEvent(tx: Transaction, input: unknown) {
       }
     }
     lesson = state.lessons.find(item => item.id === mapping.lessonId)!;
+    lesson.classInAttendanceReceived = true;
     if (lesson.attendance === "无数据" || lesson.attendance === "账号待关联") lesson.attendance = "正常";
     if (lesson.status === "未开始") lesson.status = "待确认";
   } else if (event.Cmd === "End") {

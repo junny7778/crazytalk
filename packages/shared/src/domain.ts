@@ -1,3 +1,7 @@
+import { cancellationParty, needsLessonOutcomeReview } from "./lessonAttendance";
+import { schedulingBookingIssue } from "./schedulingAccounts";
+import { matchingSurveyOptions, studentSurveyPrefill } from "./studentSurvey";
+import { applyHalfMonthCommand, changeTeacherRate, rememberLessonPay } from "./halfMonthPayroll";
 import { initializeTeacherNumbers, newTeacherNumber } from "./teacherNumbers";
 import { materialMatchIssue, studentMaterials } from "./materials";
 import { teacherOffboardImpact, refreshOffboardRebooking } from "./teacherOffboard";
@@ -5,7 +9,7 @@ import { getStudentScheduleProgress } from "./scheduling";
 import { isUnstartedBooking, cancelForRebooking } from "./classInChanges";
 import { migrateStudentOwners } from "./organization";
 import { teacherFit } from "./teacherMatch";
-import { accountBalanceAlignmentIssue, accountBalanceReviewIssue, sharedClassIn, schedulingAccountIssue, mergeBalanceSources, sharedBalanceGroup, createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
+import { accountBalanceAlignmentIssue, accountBalanceReviewIssue, sharedClassIn, mergeBalanceSources, sharedBalanceGroup, createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
 import { officePay } from "./officePay";
 import {payTermsSchema} from "./model";
 import {studentSurveyAnswers} from "./model";
@@ -495,6 +499,15 @@ export function transition(
     l.deducted = shouldDeduct;
     if (shouldDeduct) l.confirmedUnits = nextUnits;
   }
+  function settleCancellation(l: Lesson, cancellation: NonNullable<Lesson["cancellation"]>) {
+    const { kind, responsibility, at, waived } = cancellation;
+    const charge = cancellationCharge(l, responsibility, kind, waived, at);
+    if (charge !== undefined && (charge > 0 || l.deducted)) deduct(l, charge > 0, charge || undefined);
+    rememberLessonPay(data, l, recordedAt);
+    l.cancellation = cancellation;
+    l.status = "已取消";
+    return charge;
+  }
   function notifyAbsence(l: Lesson, person: "学员" | "老师", at: string) {
     l.attendanceMessages ??= {};
     l.attendanceMessages[person] ??= at;
@@ -505,6 +518,7 @@ export function transition(
     l.autoSettlementPaused = true;
     l.attendance = person === "老师" || l.teacherAttendance?.includes("缺席") ? "老师缺席" : "学员缺席";
     if (person === "老师") {
+      rememberLessonPay(data, l, recordedAt);
       l.teacherAttendance = ["缺席"];
       deduct(l, false);
       l.status = "已完成";
@@ -964,6 +978,7 @@ export function transition(
     }
     case "survey.issue": {
       const s = student(command.id);
+      if (s.surveyToken) throw new Error("学员已有固定问卷链接");
       s.surveyToken = command.token || crypto.randomUUID();
       s.surveySecret = command.secret;
       if (s.surveySubmittedAt) s.surveyPreviousSubmittedAt = s.surveySubmittedAt;
@@ -972,8 +987,9 @@ export function transition(
     }
     case "survey.submit": {
       const s = required(data.students.find(s=>s.surveyToken===command.token && !!command.token),"问卷链接已失效");
-      if(s.surveySubmittedAt) throw new Error("问卷已提交");
+      if(s.surveySubmittedAt && (!command.revision || !command.submittedAt || command.submittedAt <= s.surveySubmittedAt)) throw new Error("问卷已提交");
       const answers=studentSurveyAnswers.parse(command.answers);
+      const previousProfile = studentSurveyPrefill(s);
       s.surveyOriginal = answers;
       s.surveySubmittedAt = command.submittedAt || recordedAt;
       delete s.surveyPreviousSubmittedAt;
@@ -985,9 +1001,17 @@ export function transition(
         }
         s.gender = answers.gender;
         s.level = answers.level.slice(0, 2);
-        if (answers.ageGroup && s.age == null) s.ageText = answers.ageGroup;
-        if (answers.interests.length) s.interests = answers.interests.join("、");
-        if (answers.experience) s.foreignTeacherExperience = answers.experience === "没有" ? "无" : "有";
+        s.ageGroup = answers.ageGroup;
+        s.membershipDuration = answers.membership;
+        s.listeningHours = answers.listening;
+        s.preferredLessonTime = answers.times;
+        s.learningNotes = answers.needs;
+        if (s.age == null && (!s.ageText || matchingSurveyOptions.ageGroup.some((option) => option === s.ageText)))
+          s.ageText = answers.ageGroup;
+        if (answers.interests.length || previousProfile.interests.length)
+          s.interests = answers.interests.join("、");
+        if (answers.experience || previousProfile.experience)
+          s.foreignTeacherExperience = answers.experience === "没有" ? "无" : answers.experience;
       } else {
         Object.assign(s, {age: answers.age, ageText: String(answers.age), level: answers.level,
           interests: answers.interests, foreignTeacherExperience: answers.experience, preferences: answers.needs});
@@ -1052,6 +1076,7 @@ export function transition(
       if (orders.some(o => o.id === command.id) || data.credits.some(row => row.purchaseId === command.id)) { message = "订单已登记"; break; }
       orders.push({id:command.id,studentIds:members,units:command.units,balance:command.units,date,kind:command.kind,channel:buyer.channel,project:buyer.project});
       data.credits.unshift({id:id(),studentId:buyer.id,orderId:command.id,purchaseId:command.id,purchaseStudentIds:[...members],date,type:command.kind,units:command.units,balance:command.units,note:command.note,operator:command.operator || "教务",recordedAt});
+      if (command.kind === "续费") data.credits[0].renewalPayRuleVersion = data.payRuleChanges?.length ?? 0;
       const sources = orders.filter(order => order.studentIds.some(id => members.includes(id)));
       if (sources.length > 1) mergeBalanceSources(data, sources[0], sources, members);
       event("套餐订单", `登记 ${command.units} 课时，${members.length} 位学员共用`, buyer.id);
@@ -1111,6 +1136,7 @@ export function transition(
       });
       const entry = data.credits[0];
       if (purchase) {
+        if (command.kind === "续费") entry.renewalPayRuleVersion = data.payRuleChanges?.length ?? 0;
         entry.purchaseId = command.purchaseId || entry.id;
         entry.purchaseStudentIds = [...(source?.studentIds ?? [s.id])];
       }
@@ -1418,7 +1444,7 @@ export function transition(
       break;
     }
     case "lesson.schedule": {
-      const accountIssue = schedulingAccountIssue(data, command.studentId);
+      const accountIssue = schedulingBookingIssue(data, command.studentId, command.slots.map(slot => slot.teacherId ?? command.teacherId));
       if (accountIssue) throw new Error(accountIssue);
       migratePackageBalances(data);
       const s = student(command.studentId);
@@ -1540,6 +1566,8 @@ export function transition(
     }
     case "lesson.reschedule": {
       const l = lesson(command.id);
+      const accountIssue = schedulingBookingIssue(data, l.studentId, [command.teacherId]);
+      if (accountIssue) throw new Error(accountIssue);
       if (l.status !== "未开始") throw new Error("只能调整尚未开始的课程");
       if (command.teacherId !== l.teacherId) throw new Error("换老师需先取消原预约，再重新排课");
       const t = teacher(command.teacherId);
@@ -1567,6 +1595,8 @@ export function transition(
       const before = `${l.date} ${l.time}`;
       if (l.kind === "固定课" && !l.fixedOrigin)
         l.fixedOrigin = { date: l.date, time: l.time };
+      if (command.responsibility === "老师")
+        l.teacherRescheduleDates = [...new Set([...(l.teacherRescheduleDates ?? []), l.date])];
       l.date = command.date;
       l.time = command.time;
       l.teacherId = command.teacherId;
@@ -1606,15 +1636,13 @@ export function transition(
       const l = lesson(command.id);
       if (l.status === "已取消") throw new Error("这节课已经取消");
       if (!command.reason.trim()) throw new Error("请选择取消原因");
-      if(command.kind){
-        const at=command.cancelledAt || recordedAt;
-        const charge = cancellationCharge(l, command.responsibility, command.kind, !!command.waived, at);
-        l.cancellation={kind:command.kind,at,responsibility:command.responsibility,waived:!!command.waived};
-        if (charge !== undefined && (charge > 0 || l.deducted)) deduct(l, charge > 0, charge || undefined);
-      }
+      const charge = command.kind ? settleCancellation(l, {
+        kind: command.kind, at: command.cancelledAt || recordedAt,
+        responsibility: command.responsibility, waived: !!command.waived,
+      }) : undefined;
       l.status = "已取消";
       l.note = `${command.responsibility}原因：${command.reason}`;
-      addTask({
+      if (charge === undefined) addTask({
         studentId: l.studentId,
         title: "核实取消课程课时",
         sourceType: "lesson",
@@ -1626,7 +1654,8 @@ export function transition(
         relatedType: "lesson",
         relatedId: l.id,
       });
-      message = "本地课程已取消，余额保持不变，扣课处理已生成核实待办";
+      message = charge === undefined ? "课程已取消，扣课处理已生成核实待办" :
+        charge === 0 ? "课程已取消，本节不扣课时" : `课程已取消，本节扣 ${charge} 课时`;
       break;
     }
     case "lesson.changeTeacher": {
@@ -1649,7 +1678,7 @@ export function transition(
       if (!command.ids.length) throw new Error("请选择需要确认的课程");
       for (const lessonId of command.ids) {
         const l = lesson(lessonId);
-        if (l.status !== "待确认")
+        if (l.status !== "待确认" && !(command.conclusion && needsLessonOutcomeReview(l)))
           throw new Error("这节课已经处理，请刷新后查看");
         if (l.attendance === "账号待关联") throw new Error("请先关联学员账号");
         if (command.decision === "不扣" && !command.reason.trim())
@@ -1657,21 +1686,36 @@ export function transition(
         if (command.conclusion) {
           if (!command.reason.trim()) throw new Error("请填写核实依据");
           if (command.conclusion === "老师缺席" && command.decision !== "不扣") throw new Error("老师缺席不能扣课");
-          l.incident = {reason:command.conclusion, minutes:command.minutes, note:command.reason.trim(), operator:command.operator || "教务", at:recordedAt};
+          const party = cancellationParty(command.conclusion);
+          const network = command.conclusion.includes("网络");
+          if (network && !command.networkOutcome) throw new Error("请选择网络故障后的实际上课结果");
+          if (party && !command.cancelledAt) throw new Error("请填写实际取消时间");
+          l.incident = {...(network ? { networkOutcome: command.networkOutcome } : {}), reason:command.conclusion, minutes:command.minutes, note:command.reason.trim(), operator:command.operator || "教务", at:recordedAt};
+          if (party || command.conclusion === "教材错误或重复" || (network && command.networkOutcome === "取消")) {
+            const responsibility = party ?? (network ? (command.conclusion.startsWith("老师") ? "老师" : "学员") : "平台");
+            const kind = party ? (party === "学员" ? "学员请假" : "老师请假") : network ? "已核实网络故障" : "教材错误或重复";
+            settleCancellation(l, { kind, responsibility, at: command.cancelledAt ?? recordedAt, waived: false });
+            l.note = command.reason;
+            event("核实取消课程", command.conclusion + " · " + command.reason, l.studentId, l.teacherId, {relatedType:"lesson",relatedId:l.id});
+            continue;
+          }
           if (command.conclusion === "老师缺席" || command.conclusion === "学员缺席") {
             const person = command.conclusion === "老师缺席" ? "老师" : "学员";
             confirmAbsence(l, person);
             notifyAbsence(l, person, recordedAt);
-          } else if (command.conclusion === "正常上课") {
+          } else if (command.conclusion === "正常上课" || (network && command.networkOutcome === "正常完课")) {
             l.attendance = "正常";
+            l.attendanceFinal = { 老师: true, 学员: true };
             l.teacherAttendance = ["正常"];
             l.studentAttendance = ["正常"];
           } else if (command.conclusion === "老师迟到" || command.conclusion === "老师早退") {
+            (l.attendanceFinal ??= {}).老师 = true;
             l.attendance = command.conclusion;
             l.teacherAttendance = [command.conclusion === "老师迟到" ? "迟到" : "早退"];
           }
         }
         deduct(l, command.decision !== "不扣", command.units);
+        rememberLessonPay(data, l, recordedAt);
         l.status = "已完成";
         if (command.decision === "缺席") {
           l.attendance = "学员缺席";
@@ -1684,13 +1728,13 @@ export function transition(
         s.lastLesson = l.date;
         event(
           "确认上课",
-          `${l.date} ${l.time} · ${command.decision}`,
+          [l.date + " " + l.time, command.decision, command.conclusion, command.reason].filter(Boolean).join(" · "),
           l.studentId,
           l.teacherId,
           { relatedType: "lesson", relatedId: l.id },
         );
       }
-      message = `已确认 ${command.ids.length} 节课`;
+      message = `已核定 ${command.ids.length} 节课`;
       break;
     }
     case "lesson.correct": {
@@ -1709,12 +1753,18 @@ export function transition(
       deduct(l, command.deduct, command.units);
       if (
         command.attendance !== undefined &&
-        command.attendance !== l.attendance
+        (command.attendance !== l.attendance ||
+          (command.attendance === "正常" && /迟到|早退|缺席/.test(l.incident?.reason ?? "")))
       ) {
         l.attendance = command.attendance;
         delete l.teacherAttendance;
         delete l.studentAttendance;
-        if (l.incident?.reason.endsWith("缺席")) delete l.incident;
+        if (l.incident && /缺席|迟到|早退/.test(l.incident.reason)) delete l.incident;
+        if (command.attendance === "正常") {
+          l.attendanceFinal = { 老师: true, 学员: true };
+          l.teacherAttendance = ["正常"];
+          l.studentAttendance = ["正常"];
+        }
       }
       if (command.result !== undefined) l.status = command.result;
       const changes = [
@@ -1964,6 +2014,7 @@ export function transition(
         break;
       }
       record.jointVerdict = command.jointVerdict;
+      if (record.tmResult !== command.result) record.tmPayRuleVersion = command.result === "处理成功" ? (data.payRuleChanges?.length ?? 0) : undefined;
       record.tmResult = command.result;
       record.tmDate = command.date;
       record.tmNote = command.note;
@@ -2089,6 +2140,27 @@ export function transition(
           ])
         : "";
 
+      delete parsedTeacher.data.payRateHistory;
+      delete parsedTeacher.data.payModeHistory;
+      delete parsedTeacher.data.payrollEndDate;
+      if (found) {
+        if (found.payMode && parsedTeacher.data.payMode && found.payMode !== parsedTeacher.data.payMode) {
+          const day = new Date(Date.parse(recordedAt) + 8 * 3600000).toISOString().slice(0, 10);
+          const history = (found.payModeHistory ??= []);
+          if (history.at(-1)?.until !== day) history.push({ until: day, mode: found.payMode });
+        }
+        changeTeacherRate(found, parsedTeacher.data.rate, recordedAt);
+        parsedTeacher.data.payRateHistory = found.payRateHistory;
+        parsedTeacher.data.payScheduleHistory = found.payScheduleHistory;
+        const effective = parsedTeacher.data.availabilityFrom || DEMO_TODAY;
+        const previous = found.availabilityFrom || found.startDate || "";
+        if (effective > previous && (JSON.stringify(found.availability) !== JSON.stringify(parsedTeacher.data.availability) ||
+            found.availabilityFrom !== parsedTeacher.data.availabilityFrom)) {
+          parsedTeacher.data.payScheduleHistory = [...(found.payScheduleHistory ?? []),
+            { from: previous, until: effective, slots: found.availability }];
+          parsedTeacher.data.availabilityFrom = effective;
+        }
+      }
       parsedTeacher.data.teacherNumber = found?.teacherNumber || newTeacherNumber(data.teachers);
       if (found) Object.assign(found, parsedTeacher.data);
       else data.teachers.push(parsedTeacher.data);
@@ -2149,11 +2221,25 @@ export function transition(
     case "teacher.offboard": {
       const t = teacher(command.teacherId);
       if (t.status === "已离职") { message = "该老师已办理离职"; break; }
+      const payrollEndDate = businessDate(command.payrollEndDate ?? DEMO_TODAY);
+      if (payrollEndDate < DEMO_TODAY) throw new Error("计薪结束时间只能选择今天或之后的日期");
       const impact = teacherOffboardImpact(data, t.id);
+      for (const course of impact.lessons) {
+        course.cancellation = { kind: "老师离职", at: recordedAt, responsibility: "平台", waived: true };
+      }
       const related = data.students.filter(s => s.teacherId === t.id ||
         impact.lessons.some(l => l.studentId === s.id) ||
         data.slotLocks?.some(l => l.studentId === s.id && l.teacherId === t.id));
       t.status = "已离职";
+      t.payrollEndDate = payrollEndDate;
+      if (t.payMode === "OP" && t.availability.length) {
+        t.payScheduleHistory ??= [];
+        t.payScheduleHistory.push({
+          from: t.availabilityFrom || t.startDate || "",
+          until: addDays(payrollEndDate, 1),
+          slots: t.availability,
+        });
+      }
       for (const s of related) {
         const courseIds = cancelForRebooking(data, s.id, "老师离职，不扣学员课时", t.id);
         if (s.teacherId === t.id) { s.teacherId = ""; s.teacherName = ""; }
@@ -2172,10 +2258,19 @@ export function transition(
           note:`需要重新安排 ${durations.length} 节课，请通知相关学员。`,
           rebooking:{slots:durations.map(duration => ({duration}))}});
       }
-      event("老师离职", command.reason, "", t.id);
+      event("老师离职", `${command.reason}，计薪结束时间 ${payrollEndDate}（含当天）`, "", t.id);
       message = related.length ? "已办理离职，相关教学安排已解除，待上课程已取消。" : "已办理离职。";
       break;
     }
+    case "halfPay.rules":
+    case "halfPay.officeRate":
+    case "halfPay.teacherRate":
+    case "halfPay.adjust":
+    case "halfPay.review":
+    case "halfPay.serious":
+    case "halfPay.status":
+      applyHalfMonthCommand(data, command, recordedAt);
+      break;
     case "pay.terms": {
       const t=payTermsSchema.parse(command.terms);teacher(t.teacherId);
       if(data.settlements?.some(p=>p.teacherId===t.teacherId && p.month===t.month))throw new Error("本周期已确认");
@@ -2186,6 +2281,8 @@ export function transition(
     }
     case "pay.freeze": {
       const t=required(data.payTerms?.find(p=>p.teacherId===command.teacherId && p.month===command.month),"请先登记计薪条件");
+      if (data.halfMonthPayroll?.some(item => item.teacherId === t.teacherId && item.period.startsWith(t.month) && item.snapshot))
+        throw new Error("本月已按半月确认薪资");
       if(data.settlements?.some(p=>p.teacherId===t.teacherId && p.month===t.month))break;
       const lines=officePay(data,t);if(!lines.length || lines.some(r=>r.teacher===null || r.office===null))throw new Error("没有可确认明细或仍有待核金额");
       (data.settlements??=[]).push({teacherId:t.teacherId,month:t.month,so:t.so,at:recordedAt,lines});break;
@@ -2212,6 +2309,9 @@ export function transition(
           data.payroll.find((p) => p.id === payId),
           "找不到工资单",
         );
+        if (command.status === "已确认" && data.halfMonthPayroll?.some(item =>
+          item.teacherId === p.teacherId && item.period.startsWith(p.month) && item.snapshot))
+          throw new Error("本月已按半月确认薪资");
         if (command.status === "已确认" && p.status !== "待确认")
           throw new Error("只能确认待确认的工资单");
         if (command.status === "已发放" && p.status !== "已确认")
@@ -2455,6 +2555,7 @@ export function transition(
       if(command.report.screenshot && !l.incident &&
         !(l.attendanceMessages?.学员 && !l.studentIn) && !(l.attendanceMessages?.老师 && !l.teacherIn) && ["待确认","未开始"].includes(l.status) && l.attendance==="正常") {
         deduct(l,true,l.confirmedUnits ?? l.plannedUnits ?? scheduleUnits(l.duration));
+        rememberLessonPay(data, l, recordedAt);
         l.status="已完成";student(l.studentId).lastLesson=l.date;
       }
       const latest = data.reports

@@ -1,3 +1,5 @@
+import { teacherSchedulingAccountIssue } from "@crazytalk/shared";
+import { TeacherSchedulingAccountNotice } from "./SchedulingAccountNotice";
 import { materialMatchIssue, studentMaterials } from "@crazytalk/shared";
 import StudentCourses from "../StudentCourses";
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
@@ -102,6 +104,7 @@ export function FixedPlanCalendar({
       return [];
     return teachers.filter(
       (t) =>
+        !teacherSchedulingAccountIssue(t) &&
         !materialMatchIssue(data, student!, t, source?.material || materials[0]?.name || "") &&
         !isAvailable(data, t.id, date, time, intent.duration, studentId).length,
     );
@@ -156,6 +159,8 @@ export function FixedPlanCalendar({
     if (!teachers.some((t) => t.id === id)) return ["老师不符合授课要求"];
     const materialIssue = materialMatchIssue(data, student!, teachers.find(t => t.id === id)!, r.material || materials[0]?.name || "");
     if (materialIssue) return [materialIssue];
+    const accountIssue = teacherSchedulingAccountIssue(teachers.find(t=>t.id===id)!);
+    if (accountIssue) return [accountIssue];
     if (r.date < DEMO_TODAY) return ["上课日期已过期"];
     const overlap = rows.some(
       (other) =>
@@ -228,7 +233,7 @@ export function FixedPlanCalendar({
     setMessage("");
   }
   const [scheduleRevision] = useState(() => data.students.find(s => s.id === studentId)?.scheduleRevision ?? 0);
-  const credits = useScheduleCredits(studentId, intent.duration, ready.length);
+  const credits = useScheduleCredits(studentId, intent.duration, ready.length, editable.map(r=>r.teacherId).filter(Boolean));
   const [submitting, setSubmitting] = useState(false);
   useEffect(() => { onBusyChange?.(submitting); }, [submitting, onBusyChange]);
   const submitLock = useRef(false);
@@ -345,19 +350,6 @@ export function FixedPlanCalendar({
         >
           <ChevronRight size={18} />
         </button>
-      </div>
-      <div className="fixed-calendar-legend">
-        <span>
-          <i className="available" />
-          可排课
-        </span>
-        <span>
-          <i className="unavailable" />
-          不可安排
-        </span>
-        <span><i className="booked" />已排课</span>
-        <span><i className="intent" />学员意向</span>
-        <small>拖动课程仅调整本节；需在学员意向内且有老师可用。</small>
       </div>
       <div className="fixed-calendar-scroll">
         <div
@@ -502,6 +494,19 @@ export function FixedPlanCalendar({
           ))}
         </div>
       </div>
+      <div className="fixed-calendar-legend">
+        <span>
+          <i className="available" />
+          可排课
+        </span>
+        <span>
+          <i className="unavailable" />
+          不可安排
+        </span>
+        <span><i className="booked" />已排课</span>
+        <span><i className="intent" />学员意向</span>
+        <small>拖动课程仅调整本节；需在学员意向内且有老师可用。</small>
+      </div>
       {extra && (
         <Modal
           open
@@ -552,6 +557,7 @@ export function FixedPlanCalendar({
             </div>
             <Field label="本节教材"><Select value={focused.material || ""} onValueChange={material => update(focused, {material, teacherId: "", confirmed: false})}>{materials.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</Select></Field>
             <Field label="本节可用老师"><div className="flex-teacher-options">{available.map(t => <button type="button" className="flex-teacher-choice" key={t.id} aria-pressed={focused.teacherId === t.id} onClick={() => update(focused,{teacherId:t.id,confirmed:false})}><strong>{t.name}</strong><small>{t.so} · 口音 {t.accent} · 等级 {t.level}</small><Badge tone="success">教材与时间匹配</Badge></button>)}</div></Field>
+            {teachers.filter(t=>teacherSchedulingAccountIssue(t)).map(t=><div key={t.id}><button className="flex-teacher-choice" disabled>{t.name} · 未绑定 ClassIn</button><TeacherSchedulingAccountNotice teacher={t}/></div>)}
             {!available.length && (
               <p>该时间暂无符合要求的老师，可暂留缺口，或返回修改排课信息。</p>
             )}
@@ -622,6 +628,7 @@ export function FixedPlanCalendar({
       {message && !focused && <p role="alert">{message}</p>}
       </div>
       {reviewing && <section aria-label="本次排课核对"><h4>本次安排 {ready.length} 节 · 仍有 {editable.length-ready.length+missingTimeCount} 节待处理</h4><div className="schedule-lessons-scroll"><table><thead><tr><th>日期时间</th><th>老师</th><th>教材</th><th>时长</th></tr></thead><tbody>{ready.map(r => <tr key={rowKey(r)}><td>{r.date} {r.time}</td><td>{data.teachers.find(t => t.id === r.teacherId)?.name}</td><td>{r.material}</td><td>{intent.duration} 分钟</td></tr>)}</tbody></table></div></section>}
+      {teachers.filter(t=>editable.some(r=>r.teacherId===t.id) && teacherSchedulingAccountIssue(t)).map(t=><TeacherSchedulingAccountNotice key={t.id} teacher={t}/>)}
       <ClassInBookingPreview studentId={studentId} teacherIds={ready.map(row => row.teacherId)}/>
       {credits.node}
       </div>

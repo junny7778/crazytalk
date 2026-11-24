@@ -1,4 +1,5 @@
-import {clickSchedule, selectSchedule, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
+import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
+import {clickSchedule, selectSchedule, startTeacherStudent, addCalendarLesson} from "./schedulingTestActions";
 import { transferableAbortController } from "node:util";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
@@ -46,6 +47,7 @@ beforeEach(() => {
 vi.stubGlobal("AbortController",class{constructor(){return transferableAbortController();}});
   localStorage.clear();
   demoRepository.reset();
+  bindSchedulingStaff(demoRepository.read());
   demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
   const fixture = demoRepository.read();
   fixture.students[2].name = "排课测试学员";
@@ -96,7 +98,7 @@ describe("独立验收：教师时间与排课", () => {
     });
     mount();
     await clickSchedule("生成排课方案");
-    expect(screen.queryByRole("button", { name: "生成排课预览" })).toBeNull();
+    expect(screen.getByText("方案可排 7/8 节")).toBeTruthy();
     await testAct(async () => {
       fireEvent.click(screen.getByRole("button", { name: "修改排课信息" }));
     });
@@ -111,7 +113,7 @@ describe("独立验收：教师时间与排课", () => {
         screen.getByRole("button", { name: "生成排课方案" }),
       );
     });
-    expect(screen.getByText("本老师可排 4/4 节")).toBeTruthy();
+    expect(screen.getByText("方案可排 4/4 节")).toBeTruthy();
   });
   it("未开放时间不会自动推荐，手动协调必须经老师确认", async()=>{
  const data=demoRepository.read();data.lessons=[];data.teachers=[data.teachers[0]];data.teachers[0].availability=[];data.students[3].scheduleIntent={mode:"fixed",startDate:"2026-11-23",weeks:1,duration:25,frequency:1,windows:[{day:1,start:"19:00",end:"20:00"}]};
@@ -121,13 +123,13 @@ describe("独立验收：教师时间与排课", () => {
 
   it("排课成功定位新日期并展示课程，重复安排被阻止", async()=>{
  const d=demoRepository.read();d.lessons=[];d.leaves=[];d.teachers[0].availability=[{day:1,start:"18:00",end:"21:00"}];d.teachers[0].availabilityFrom="";
- mount("/schedule?teacher=t1&date=2026-11-23");await clickSchedule("为该老师排课");await selectStudentCard("排课测试学员");await addCalendarLesson("2026-11-23","18:30");await clickSchedule("预览排课");await clickSchedule("确认排课");expect(screen.getByText(/课程已保存，可在下方查看同步状态/)).toBeTruthy();expect(screen.getByRole("region",{name:"已安排课程"}).textContent).toContain("18:30");
- await clickSchedule("为该老师排课");await selectStudentCard("排课测试学员");expect(screen.queryByRole("button",{name:/2026-11-23 18:30 可排课/})).toBeNull();expect(screen.getByRole("button",{name:"预览排课"}).hasAttribute("disabled")).toBe(true);
+ mount("/schedule?teacher=t1&date=2026-11-23");await clickSchedule("为该老师排课");await startTeacherStudent("排课测试学员");await addCalendarLesson("2026-11-23","18:30");await clickSchedule("预览排课");await clickSchedule("确认排课");expect(screen.getByText(/课程已保存，可在下方查看同步状态/)).toBeTruthy();expect(screen.getByRole("region",{name:"已安排课程"}).textContent).toContain("18:30");
+ await clickSchedule("为该老师排课");await startTeacherStudent("排课测试学员");expect(screen.queryByRole("button",{name:/2026-11-23 18:30 可排课/})).toBeNull();expect(screen.getByRole("button",{name:"预览排课"}).hasAttribute("disabled")).toBe(true);
 
 });
 
   it("旧数据迁移保留余额、课程与原有分钟时段，不把新时间覆盖旧设置", () => {
-    const data = createSeed();
+    const data = bindSchedulingStaff(createSeed());
     data.classInAccounts = data.students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
     const teacher = data.teachers[0];
     const {
@@ -153,7 +155,7 @@ describe("独立验收：教师时间与排课", () => {
   });
 
   it("老师已确认也不能把临时课安排到部分请假区间", () => {
-    const data = createSeed();
+    const data = bindSchedulingStaff(createSeed());
     data.classInAccounts = data.students.map((student,index)=>({id:`verified-${student.id}`,phone:"",uid:String(123456+index),studentIds:[student.id]}));
     data.lessons = [];
     const teacher = data.teachers[0];
@@ -174,7 +176,7 @@ describe("独立验收：教师时间与排课", () => {
         slots: [{ date: "2026-11-09", time: "18:00" }],
         duration: 25,
         kind: "临时课",
-        material: "Think 1",
+        material: data.students.find(s => s.id === "s4")!.material,
         confirmedTeacher: true,
       }),
     ).toThrow(/请假/);
@@ -186,7 +188,7 @@ describe("独立验收：教师时间与排课", () => {
         slots: [{ date: "2026-11-09", time: "18:40" }],
         duration: 25,
         kind: "临时课",
-        material: "Think 1",
+        material: data.students.find(s => s.id === "s4")!.material,
         confirmedTeacher: true,
       }).data.lessons,
     ).toHaveLength(1);

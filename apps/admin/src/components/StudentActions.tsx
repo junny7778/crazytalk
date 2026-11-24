@@ -1,3 +1,5 @@
+import { schedulingBookingIssue } from "@crazytalk/shared";
+import { TimePicker } from "@crazytalk/ui";
 import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { formatMaterialProgress } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
@@ -88,6 +90,7 @@ export function StudentActionModal({
   const [teacherId, setTeacher] = useState(student.teacherId || (businessMode() ? data.teachers[0]?.id || "" : "t1"));
   const [lessonId, setLesson] = useState("");
   const [ack, setAck] = useState(false);
+  const [moveResponsibility, setMoveResponsibility] = useState<"老师" | "学员" | "平台">("平台");
   const [error, setError] = useState("");
   const [visitAttempted, setVisitAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -118,6 +121,7 @@ export function StudentActionModal({
     orderKey.current=crypto.randomUUID();
     setNote("");
     setAck(false);
+    setMoveResponsibility("平台");
     const nextFeedbackId = data.feedback.some(
       (item) => item.id === initialFeedbackId && item.studentId === student.id,
     )
@@ -171,7 +175,7 @@ export function StudentActionModal({
         : future;
   const rescheduleConflicts =
     action === "reschedule" && chosenLesson
-      ? isAvailable(
+      ? [schedulingBookingIssue(data, student.id, [teacherId]), ...isAvailable(
           data,
           teacherId,
           date,
@@ -180,7 +184,7 @@ export function StudentActionModal({
           student.id,
           chosenLesson.id,
           outsideRegular,
-        )
+        )].filter(Boolean)
       : [];
   const hasConflicts = rescheduleConflicts.length > 0;
   function selectLesson(nextId: string) {
@@ -288,6 +292,7 @@ export function StudentActionModal({
             time,
             teacherId,
             reason: note,
+            responsibility: moveResponsibility,
             confirmedTeacher: ack,
             confirmationNote: note,
           };
@@ -524,11 +529,10 @@ export function StudentActionModal({
         )}
         {action === "reschedule" && (
           <Field label="新的上课时间">
-            <input
-              type="time"
-              step="60"
+            <TimePicker
+              label="新的上课时间"
               value={time}
-              onChange={(e) => setTime(e.target.value)}
+              onChange={(value) => setTime(value)}
             />
           </Field>
         )}
@@ -536,6 +540,11 @@ export function StudentActionModal({
           targetTeacher && (
             <small>老师常规时间：{availabilitySummary(targetTeacher)}</small>
           )}
+        {action === "reschedule" && <Field label="调课发起方">
+          <Select value={moveResponsibility} onValueChange={value => setMoveResponsibility(value === "老师" || value === "学员" ? value : "平台")}>
+            <option>平台</option><option>老师</option><option>学员</option>
+          </Select>
+        </Field>}
         {action === "reschedule" && chosenLesson && (
           <div className="student-change-preview" aria-label="调课安排预览">
             <div>
@@ -623,7 +632,7 @@ export function StudentActionModal({
         {action==="visit" && <><div className="form-grid">
           <Field label="回访节点"><Select value={visitStage} onValueChange={setVisitStage}>{["首三节","首月","月度跟进","换师后三节","续费跟进"].map(s=><option key={s}>{s}</option>)}</Select></Field>
           <Field label="星级评价" required error={visitAttempted && !stars ? "请选择星级" : undefined}><Select value={String(stars)} onValueChange={v=>setStars(Number(v))}><option value="0">请选择星级</option>{[1,2,3,4,5].map(n=><option key={n} value={String(n)}>{n} 星</option>)}</Select></Field>
-          </div>{[1,2,5].includes(stars) && <Field label="反馈截图"><input className="media-file-field" type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>setVisitEvidence(String(r.result));r.readAsDataURL(f);}}}/></Field>}
+          </div>{[1,2,5].includes(stars) && <Field label="反馈截图"><label className="admin-file-picker"><span>{visitEvidence ? "更换截图" : "选择截图"}</span><input aria-label="反馈截图" type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>setVisitEvidence(String(r.result));r.readAsDataURL(f);}}}/></label></Field>}
         </>}
         {
           <Field

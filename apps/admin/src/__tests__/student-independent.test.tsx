@@ -137,7 +137,6 @@ describe("独立学员数字化验收", () => {
     const fields: Record<string, string> = {
       学生中文名: "完整建档验收",
       年龄: "/",
-      小孩性格: "活泼",
       喜欢的老师类型: "幽默耐心",
       教材: "New Book",
       "起始单元／页码": "p.23",
@@ -151,6 +150,7 @@ describe("独立学员数字化验收", () => {
     await choose("上课老师", `${activeTeacher.name} · ${activeTeacher.so}`);
     await choose("性别", "女");
     await choose("外教上课经验", "有");
+    await choose("小孩性格", "活泼外向型（自来熟，不怯场，喜欢表达）");
     await testAct(async () => {
       fireEvent.click(screen.getByRole("button", { name: "保存学员资料" }));
     });
@@ -208,7 +208,7 @@ describe("独立学员数字化验收", () => {
       orderStatus: "正常",
       renewalStatus: "是",
       gender: "女",
-      personality: "活泼",
+      personality: "活泼外向型（自来熟，不怯场，喜欢表达）",
       foreignTeacherExperience: "有",
       legacyComplaints: "0",
       legacyCompensations: "2",

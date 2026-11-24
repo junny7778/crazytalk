@@ -3,7 +3,7 @@ import StudentClasses from "../components/StudentClasses";
 import ProfileCard from "../components/ProfileCard";
 import { studentProfileCard, type ProfileCardContent } from "../../../../packages/shared/src/profileCards";
 import {rosterValues} from "../lib/customerRoster";
-import { studentOrganization } from "@crazytalk/shared";
+import { matchingSurveyOptions, studentOrganization, studentSurveyDetails } from "@crazytalk/shared";
 import {SurveyLink} from "../components/StudentSurvey";
 import StudentClassIn from "../components/StudentClassIn";
 import { formatStudentProgress } from "@crazytalk/shared";
@@ -35,7 +35,7 @@ import StudentCredits from "../components/StudentCredits";
 import StudentRecordDrawer from "../components/StudentRecordDrawer";
 import StudentFeedbackDrawer from "../components/StudentFeedbackDrawer";
 import FeedbackEditor from "./operations/FeedbackEditor";
-import { studentFieldGroups, studentFieldValue } from "../lib/studentFields";
+import { studentOverviewFieldGroups, studentFieldValue } from "../lib/studentFields";
 import type {
   StudentActivity,
   StudentRecordTarget,
@@ -184,12 +184,23 @@ export default function StudentDetail() {
     name: "学生中文名",
     firstLessonDate: "首次上课日期",
   };
+  const surveyDetails = studentSurveyDetails(student);
   const displayedValue = (
     key: Parameters<typeof studentFieldValue>[1],
   ): ReactNode => {
     switch (key) {
       case "name":
         return student.chineseName;
+      case "age":
+        return student.age != null
+          ? `${student.age} 岁`
+          : matchingSurveyOptions.ageGroup.some((option) => option === student.ageText) ? null : student.ageText;
+      case "ageGroup":
+      case "membershipDuration":
+      case "listeningHours":
+      case "preferredLessonTime":
+      case "learningNotes":
+        return surveyDetails[key];
       case "teacherName":
         return currentTeacher;
       case "material":
@@ -436,7 +447,7 @@ export default function StudentDetail() {
       {tab === "profile" && (
         <>
           <ClassInOperationFeedback studentId={student.id}/><div className="profile-service-grid"><SurveyLink key={"survey-"+student.id} student={student}/><StudentClassIn key={student.id} student={student}/></div><StudentClasses studentId={student.id}/>
-          {studentFieldGroups
+          {studentOverviewFieldGroups
             .filter(
               (group) =>
                 !["换老师记录", "月度上课情况", "课中相关"].includes(
@@ -447,6 +458,7 @@ export default function StudentDetail() {
               const order = [
                 "学生基本信息",
                 "学习特点与偏好",
+                "上课偏好与备注",
                 "订单与续课",
                 "教学安排",
               ];
@@ -572,7 +584,7 @@ export default function StudentDetail() {
       )}
       {student.roster && (
         (tab === "profile" ? [
-          ["学习背景", ["基础","孩子兴趣爱好","是否有坚持拍周一视频","对体系了解程度","加入体系时间","备注"]]
+          ["学习背景", ["是否有坚持拍周一视频","对体系了解程度","加入体系时间","备注"]]
         ] : tab === "courses" ? [["教学记录", ["换老师原因","6月","7月","8月","9月","10月","11月上课状态","11月"]]]
           : tab === "service" ? [["回访记录", ["首三节课回访","二次回访","首月回访"]]]
           : tab === "credits" ? [["续费记录", ["停课日期","拉群日期（充值）","套餐共用","续费次数","应跟进月份","续费套餐","续费跟进日期","续费状态","实际续费日期","不续费原因"]]] : []

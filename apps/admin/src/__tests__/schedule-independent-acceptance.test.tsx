@@ -1,4 +1,5 @@
-import {clickSchedule, selectSchedule, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
+import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
+import {clickSchedule, selectSchedule, startTeacherStudent, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
 import { transferableAbortController } from "node:util";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
@@ -31,10 +32,6 @@ async function mount(path = "/schedule?teacher=t1&date=2026-11-23") {
     const generate = screen.getByRole("button",{name:"生成排课方案"});
     if (!generate.hasAttribute("disabled")) await clickSchedule("生成排课方案");
   }
-  else if (path.includes("teacher=")) {
-    fireEvent.click(screen.getByRole("button", {name:"查看完整课表"}));
-    fireEvent.click(screen.getByRole("tab", { name: "操作排课" }));
-  }
 }
 function fixture() {
   const data = demoRepository.read();
@@ -63,6 +60,7 @@ beforeEach(() => {
   vi.stubGlobal("AbortController", class { constructor(){return transferableAbortController();} });
   localStorage.clear();
   demoRepository.reset();
+  bindSchedulingStaff(demoRepository.read());
   demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index) => ({id:"verified-"+student.id,phone:"",uid:String(990000+index),studentIds:[student.id]}));
   vi.stubGlobal(
     "ResizeObserver",
@@ -79,11 +77,31 @@ afterEach(() => {
 });
 describe("独立验收：新增排课工作流", () => {
   it("老师点击单个可用空档立即打开排课面板并带入时间", async()=>{
- const {student}=fixture();await mount();await clickSchedule("T. Carol 2026-11-23 18:00 可排课");
- expect(screen.getByText("2026-11-23 18:00 · 已选时段")).toBeTruthy();await selectStudentCard(student.name,student.id);
+ const {student}=fixture();await mount();await clickSchedule("为该老师排课");
+ const calendar = document.querySelector(".fixed-calendar-scroll")!;
+ expect(calendar.scrollTop).toBe(35 * 48);
+ calendar.scrollTop = 640;
+ await clickSchedule(/2026-11-23 18:00 可排课/);
+ expect(calendar.scrollTop).toBe(640);
+ expect(screen.queryByRole("dialog")).toBeNull();await clickSchedule("确认时段");await selectStudentCard(student.name,student.id);
  expect(screen.getByRole("dialog").textContent).toContain("2026-11-23");expect(screen.getByRole("dialog").textContent).toContain("18:00");
 
 });
+  it("老师未登记教材时点击空档说明原因", async () => {
+    const {teacher} = fixture();
+    teacher.materialIds = [];
+    await mount();
+    await clickSchedule("为该老师排课");
+    await clickSchedule(/2026-11-23 18:00 可排课/);
+    expect(screen.getByText("请先设置老师的可授教材")).toBeTruthy();
+    expect(screen.queryByText(/· 已选时段/)).toBeNull();
+    const book = demoRepository.read().catalog.find(c => c.enabled && c.type === "教材")!;
+    await selectSchedule("可授教材", book.name);
+    expect(demoRepository.read().teachers.find(t => t.id === teacher.id)?.materialIds).toEqual([book.id]);
+    await clickSchedule(/2026-11-23 18:00 可排课/);
+    await clickSchedule("确认时段");
+    expect(screen.getByRole("dialog", {name:"选择学员"})).toBeTruthy();
+  });
   it("修改意向并保存清理旧老师日历，再次查看使用新意向", async () => {
     const { student } = fixture();
     await mount(`/schedule?student=${student.id}`);
@@ -147,9 +165,9 @@ describe("独立验收：新增排课工作流", () => {
   });
 });
 
-it("老师完整日历的多选时段全部带入自定义预览",async()=>{
- const {student}=fixture();await mount();await testAct(async()=>{fireEvent.click(screen.getByLabelText("多选上课时间"));});
- await clickSchedule("T. Carol 2026-11-23 18:00 可排课");await clickSchedule("T. Carol 2026-11-23 19:00 可排课");await clickSchedule("使用已选时间排课");await selectStudentCard(student.name,student.id);
+it("按老师排课的多选时段全部带入自定义预览",async()=>{
+ const {student}=fixture();await mount();await clickSchedule("为该老师排课");await startTeacherStudent(student.name,student.id);await testAct(async()=>{fireEvent.click(screen.getByLabelText("多选上课时间"));});
+ await clickSchedule(/2026-11-23 18:00 可排课/);await clickSchedule(/2026-11-23 19:00 可排课/);await clickSchedule("为选中时段选择老师");
  await testAct(async()=>{fireEvent.click(document.querySelector("[role=dialog] .flex-teacher-choice")!);});await clickSchedule("加入课表");await clickSchedule("预览排课");
  const review=screen.getByRole("region",{name:"自定义排课预览"});expect(within(review).getAllByRole("row")).toHaveLength(3);expect(review.textContent).toContain("18:00");expect(review.textContent).toContain("19:00");expect(demoRepository.read().lessons).toHaveLength(0);
 });

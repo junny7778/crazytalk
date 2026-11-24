@@ -78,7 +78,7 @@ describe("独立反馈验收：关键边界", () => {
         { target: { value: "ZebraQ72" } },
       );
     });
-    expect(screen.getByText("共 1 条反馈")).toBeTruthy();
+    expect(screen.getByText("共 1 条 · 每页 25 条")).toBeTruthy();
   });
   it("项目筛选采用反馈保存的历史快照，不随学员当前项目漂移", () => {
     const data = demoRepository.read();
@@ -87,7 +87,7 @@ describe("独立反馈验收：关键边界", () => {
     student.project = "独立验收新项目";
     expect(record.source).not.toBe("独立验收新项目");
     mount("/feedback?project=" + encodeURIComponent("独立验收新项目"));
-    expect(screen.getByText("共 0 条反馈")).toBeTruthy();
+    expect(screen.getByText("共 0 条 · 每页 25 条")).toBeTruthy();
   });
   it("编辑已有资料时保留明确空白的教务字段，不从学员补写", async () => {
     const record = demoRepository.read().feedback[0];

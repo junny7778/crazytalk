@@ -52,10 +52,12 @@ export function StudentLessonDrawer({
   onClose,
   onReschedule,
   cancelDirectly = false,
+  showStudentInDetails = false,
 }: {
   lessonId: string | null;
   onClose: () => void;
   cancelDirectly?: boolean;
+  showStudentInDetails?: boolean;
   onReschedule?: (lessonId: string) => void;
 }) {
   const { data, can, act } = useDemo();
@@ -252,7 +254,7 @@ export function StudentLessonDrawer({
         open
         onClose={() => saving ? onClose() : requestClose("close")}
         title={cancelDirectly ? "取消课程" : "课程详情"}
-        description={`${student?.name || "学员"} · ${lesson.date} ${lesson.time}`}
+        description={showStudentInDetails ? undefined : `${student?.name || "学员"} · ${lesson.date} ${lesson.time}`}
         width={620}
         footer={
           editing ? (
@@ -326,6 +328,12 @@ export function StudentLessonDrawer({
             <span className="muted">{lesson.kind}</span>
           </div>
           <dl className="sc-facts">
+            {showStudentInDetails && (
+              <div>
+                <dt>学员</dt>
+                <dd>{student?.name || "未关联学员"}</dd>
+              </div>
+            )}
             <div>
               <dt>上课时间</dt>
               <dd>

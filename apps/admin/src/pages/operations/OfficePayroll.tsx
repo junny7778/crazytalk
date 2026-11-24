@@ -2,7 +2,7 @@ import { DEMO_TODAY } from "@crazytalk/shared";
 import { useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
 import { officePay, type PayTerms, type DemoState } from "@crazytalk/shared";
-import { Select, EmptyState, Field, Button, Panel } from "@crazytalk/ui";
+import { DatePicker, Select, EmptyState, Field, Button, Panel } from "@crazytalk/ui";
 export default function OfficePayroll() {
   const { data, can } = useDemo();
   const [month, setMonth] = useState(DEMO_TODAY.slice(0, 7)),
@@ -19,10 +19,10 @@ export default function OfficePayroll() {
     <Panel title="老师与 SO 周期对账">
       <div className="report-filters">
         <Field label="结算月">
-          <input
-            type="month"
+          <DatePicker
+            mode="month"
             value={month}
-            onChange={(e) => setMonth(e.target.value)}
+            onValueChange={(value) => { if (value) setMonth(value); }}
           />
         </Field>
         <Field label="办公室">

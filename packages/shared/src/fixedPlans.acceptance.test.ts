@@ -1,9 +1,12 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { it, expect } from "vitest";
 import { createSeed } from "./seed";
 import { getFixedSchedulePlans } from "./fixedPlans";
 import { addDays, type ScheduleIntent } from "./model";
 function fixture() {
   const data = createSeed();
+  bindSchedulingStaff(data);
+  data.classInAccounts = data.students.map((student, index) => ({id: `verified-${student.id}`, phone: "", uid: String(990000 + index), studentIds: [student.id]}));
   data.lessons = [];
   data.leaves = [];
   data.teachers = data.teachers.slice(0, 3);
@@ -83,6 +86,8 @@ it("独立验收：部分覆盖方案不优先于完整可补齐时段", () => {
 });
 it("独立验收：Richard真实种子意向生成8节，记录计算耗时", () => {
   const data = createSeed();
+  bindSchedulingStaff(data);
+  data.classInAccounts = data.students.map((student, index) => ({id: `verified-${student.id}`, phone: "", uid: String(990000 + index), studentIds: [student.id]}));
   const student =
     data.students.find((s) => s.name === "Richard") || data.students[0];
   const intent: ScheduleIntent = {
@@ -110,4 +115,26 @@ it('独立验收：单次加课不改变固定计划完成状态', async () => {
  expect(result.data.lessons[1]).toMatchObject({kind:'临时课',scheduleExtra:true});
  expect(result.data.lessons[1].fixedOrigin).toBeUndefined();
  expect(getStudentScheduleProgress(result.data,student.id,intent)).toMatchObject({complete:true,scheduledCount:1});
+});
+
+it("老师优先：主老师节数相同时选备选老师能补齐的时段", () => {
+  const { data, student, intent } = fixture();
+  const [primary, backup] = data.teachers;
+  data.teachers = [primary, backup];
+  student.personality = "内向";
+  primary.tags = ["tt-34", "tt-35"];
+  backup.tags = [];
+  const windows = [1, 2, 3].map(day => ({ day, start: "19:00", end: "19:25" }));
+  primary.availability = [windows[0]];
+  backup.availability = [windows[2]];
+  const [plan] = getFixedSchedulePlans(data, student.id, {
+    ...intent, priority: "teacher", weeks: 1, frequency: 2, windows,
+  });
+  expect(plan).toMatchObject({
+    primaryTeacherId: primary.id, primaryCount: 1, coveredCount: 2,
+    slots: [
+      { date: "2026-11-23", teacherId: primary.id },
+      { date: "2026-11-25", teacherId: backup.id },
+    ],
+  });
 });

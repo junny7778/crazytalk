@@ -108,7 +108,7 @@ afterEach(() => {
 describe("统一同步入口", () => {
   it("课程入口跳转对应日志，日志不提供重试工作台", async () => {
     fixture();
-    const router = mount("/lessons?tab=all&view=unsynced");
+    const router = mount("/lessons?tab=all&syncCategory=同步失败");
     expect(screen.queryByRole("button", { name: "重新同步" })).toBeNull();
     expect(screen.queryByText("课程取消尚未同步到 ClassIn")).toBeNull();
     const syncLink = (
@@ -180,7 +180,7 @@ describe("统一同步入口", () => {
     const router = mount();
     await becomeReader();
     await act(async () => {
-      await router.navigate("/lessons?view=unsynced");
+      await router.navigate("/lessons?syncCategory=同步失败");
     });
     expect(
       await screen.findAllByText("同步异常 · 请联系有权限的管理员"),

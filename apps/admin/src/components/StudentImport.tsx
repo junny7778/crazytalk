@@ -137,15 +137,19 @@ export default function StudentImport({
           style={{ justifyContent: "space-between", flexWrap: "wrap" }}
         >
           <Field label="选择学员表">
-            <input
-              type="file"
-              accept=".xlsx"
-              disabled={loading}
-              onChange={(event) => {
-                void upload(event.target.files?.[0]);
-                event.target.value = "";
-              }}
-            />
+            <label className="admin-file-picker">
+              <span>{loading ? "正在读取…" : "选择文件"}</span>
+              <input
+                aria-label="选择学员表"
+                type="file"
+                accept=".xlsx"
+                disabled={loading}
+                onChange={(event) => {
+                  void upload(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+              />
+            </label>
           </Field>
           <Button
             onClick={() => {

@@ -25,7 +25,7 @@ function valid(intent: ScheduleIntent) {
     )
   );
 }
-function inWindow(slot: Slot, duration: number, intent: ScheduleIntent) {
+export function matchesScheduleWindow(slot: Slot, duration: number, intent: ScheduleIntent) {
   return intent.windows.some(
     (w) =>
       w.day === dayOf(slot.date) &&
@@ -52,7 +52,7 @@ function existing(
         l.date >= start &&
         l.date < addDays(start, 7) &&
         l.duration === intent.duration &&
-        inWindow(l, l.duration, intent),
+        matchesScheduleWindow(l, l.duration, intent),
     );
 }
 export function getStudentScheduleProgress(

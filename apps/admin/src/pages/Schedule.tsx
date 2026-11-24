@@ -1,55 +1,46 @@
-import { businessMode, businessRequest } from "@crazytalk/shared/react";
-import CourseSyncLink from "../components/CourseSyncLink";
-import { DatePicker } from "@crazytalk/ui";
-import DataTransferButton from "../components/DataTransferButton";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams, Link, useBlocker } from "react-router-dom";
+import { schedulingBookingIssue } from "@crazytalk/shared";
+import { TimePicker } from "@crazytalk/ui";
 import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  Check,
-  Clock3,
-} from "lucide-react";
-import { useDemo } from "@crazytalk/shared/react";
-import {
-  overlapsLeave,
-  isAvailable,
-  isRegularTime,
-  availabilitySummary,
-  addDays,
-  DEMO_TODAY,
-  formatDate,
-  type Lesson,
-  type Teacher,
-  type Command,
-  getStudentScheduleProgress,
-  type Student,
-  type FixedPlan,
-  type ScheduleIntent,
+addDays,
+availabilitySummary,
+type Command,
+DEMO_TODAY,
+type FixedPlan,
+formatDate,
+getStudentScheduleProgress,
+isAvailable,
+isRegularTime,
+type Lesson,
+type ScheduleIntent,
+type Student,
+type Teacher
 } from "@crazytalk/shared";
+import { businessMode,useDemo } from "@crazytalk/shared/react";
 import {
-  Select,
-  Avatar,
-  Badge,
-  Button,
-  Drawer,
-  EmptyState,
-  Field,
-  Modal,
-  PageHeader,
-  SearchInput,
-  Tabs,
-  useToast,
+Avatar,
+Badge,
+Button,DatePicker,Drawer,
+EmptyState,
+Field,
+Modal,
+PageHeader,
+SearchInput,Select,Tabs,
+useToast
 } from "@crazytalk/ui";
-import "./Schedule.css";
-import "../components/weekly-calendar.css";
-import { CalendarStatusLegend, calendarLessonStatus } from "../components/CalendarStatusLegend";
-import { FixedPlanCalendar } from "../components/scheduling/FixedPlanCalendar";
+import {
+Clock3,
+Plus
+} from "lucide-react";
+import { useEffect,useMemo,useState } from "react";
+import { Link,useBlocker,useSearchParams } from "react-router-dom";
+import CourseSyncLink from "../components/CourseSyncLink";
+import DataTransferButton from "../components/DataTransferButton";
 import { CustomSchedulingPanel } from "../components/scheduling/CustomSchedulingPanel";
-import { StudentSchedulingPanel } from "../components/scheduling/StudentSchedulingPanel";
+import { FixedPlanCalendar } from "../components/scheduling/FixedPlanCalendar";
 import { ScheduleOverview } from "../components/scheduling/ScheduleOverview";
+import { StudentSchedulingPanel } from "../components/scheduling/StudentSchedulingPanel";
+import "../components/weekly-calendar.css";
+import "./Schedule.css";
 type Slot = { date: string; time: string };
 const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const minute = (time: string) =>
@@ -58,7 +49,6 @@ const clock = (n: number) =>
   `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
 const dayOf = (date: string) => new Date(`${date}T12:00:00+08:00`).getUTCDay();
 const monday = (date: string) => addDays(date, -((dayOf(date) + 6) % 7));
-const same = (a: Slot, b: Slot) => a.date === b.date && a.time === b.time;
 const active = (lesson: Lesson) => lesson.status !== "已取消";
 export default function Schedule() {
   const { data, act, can, preview } = useDemo();
@@ -77,24 +67,24 @@ export default function Schedule() {
   const [panel, setPanel] = useState(
     params.get("teacher") && !params.get("student") ? "teachers" : "pending",
   );
-  const [calendarMode, setCalendarMode] = useState<"read" | "edit">("read");
-  const [flow, setFlow] = useState<"overview" | "auto" | "custom" | "calendar">(
-    "overview",
-  );
+  const [flow, setFlow] = useState<"overview" | "auto" | "custom">("overview");
   const [workflowStage, setWorkflowStage] = useState<"setup" | "preview">(
     "setup",
   );
   const [workflowDirty, setWorkflowDirty] = useState(false);
-  const [customDraftKey, setCustomDraftKey] = useState("");
+  useEffect(() => {
+    // Remove unfinished schedules saved by earlier versions.
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("ct-custom-calendar:")) localStorage.removeItem(key);
+    }
+  }, []);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
   const [studentQuery, setStudentQuery] = useState("");
   const [studentFilter, setStudentFilter] = useState("all");
-  const [multiSelect, setMultiSelect] = useState(false);
   function leaveWorkflow(action: () => void) {
     if (workflowBusy) return;
-    if (workflowDirty || (flow === "calendar" && selected.length) || fixedPlan)
-      setLeaveAction(() => action);
+    if (workflowDirty || fixedPlan) setLeaveAction(() => action);
     else action();
   }
   function resetWorkflow() {
@@ -123,11 +113,11 @@ export default function Schedule() {
     teacherName: string;
     count: number;
   } | null>(null);
-  const duration = 25;
   const [selected, setSelected] = useState<Slot[]>([]);
   const [lessonId, setLessonId] = useState<string | null>(null);
   const [modal, setModal] = useState<"schedule" | "reschedule" | null>(null);
   const [rescheduleConfirmed, setRescheduleConfirmed] = useState(false);
+  const [moveResponsibility, setMoveResponsibility] = useState<"老师" | "学员" | "平台">("平台");
   const [error, setError] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState(DEMO_TODAY);
   const [rescheduleTime, setRescheduleTime] = useState("19:00");
@@ -136,7 +126,6 @@ export default function Schedule() {
   );
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [calendarNode, setCalendarNode] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     if (routeStudentId) {
       resetWorkflow();
@@ -144,10 +133,7 @@ export default function Schedule() {
       setPanel("pending");
     }
   }, [routeStudentId]);
-  const hasDraft =
-    workflowDirty ||
-    !!fixedPlan ||
-    (flow === "calendar" && selected.length > 0);
+  const hasDraft = workflowDirty || !!fixedPlan;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       (hasDraft || workflowBusy) &&
@@ -168,22 +154,6 @@ export default function Schedule() {
   const teacher =
     data.teachers.find((t) => t.id === selectedTeacher) || data.teachers[0];
   const lesson = data.lessons.find((l) => l.id === lessonId);
-  const calendarAnchor = useMemo(() => {
-    const windows =
-      panel === "pending" ? student?.scheduleIntent?.windows : undefined;
-    const starts =
-      windows?.map((w) => minute(w.start)) ||
-      teacher?.availability.map((w) => minute(w.start));
-    return starts?.length ? Math.min(...starts) : 17 * 60;
-  }, [panel, student?.scheduleIntent, teacher?.availability]);
-  const attachCalendar = useCallback(
-    (node: HTMLDivElement | null) => {
-      setCalendarNode(node);
-      if (node)
-        node.scrollTop = Math.max(0, ((calendarAnchor - 480) * 40) / 30 - 40);
-    },
-    [calendarAnchor, selectedTeacher, weekStart],
-  );
   function navigateView(
     next: string,
     date = base,
@@ -237,7 +207,9 @@ export default function Schedule() {
       (t) =>
         t.status === "在职" &&
         (!so || t.so === so) &&
-        `${t.name} ${t.teacherNumber}`.toLowerCase().includes(query.toLowerCase()),
+        `${t.name} ${t.teacherNumber}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
     )
     .sort(
       (a, b) =>
@@ -258,14 +230,6 @@ export default function Schedule() {
       setScheduleResult(null);
     });
   }
-  const columns =
-    view === "week"
-      ? Array.from({ length: 7 }, (_, i) => ({
-          id: addDays(weekStart, i),
-          date: addDays(weekStart, i),
-          teacher,
-        }))
-      : filtered.map((t) => ({ id: t.id, date: base, teacher: t }));
   function usage(t: Teacher, date?: string) {
     const dates = date
       ? [date]
@@ -319,7 +283,7 @@ export default function Schedule() {
   const moveNeedsConfirmation =
     moveOutside || Boolean(moveTeacher?.needConfirm);
   const movePrecheck = lesson
-    ? isAvailable(
+    ? schedulingBookingIssue(data, lesson.studentId, [rescheduleTeacher]) || isAvailable(
         data,
         rescheduleTeacher,
         rescheduleDate,
@@ -406,345 +370,7 @@ export default function Schedule() {
     a.click();
     URL.revokeObjectURL(url);
   }
-  const slots = Array.from({ length: 32 }, (_, i) => clock(480 + i * 30));
   const profileTeacher = data.teachers.find((t) => t.id === profileTeacherId);
-  const calendarToolbar = (
-    <div className="schedule-topbar">
-      <div className="row gap-12">
-        <div className="schedule-date">
-          <button
-            className="icon-button"
-            aria-label={view === "week" ? "上一周" : "前一天"}
-            onClick={() =>
-              navigateView(view, addDays(base, view === "week" ? -7 : -1))
-            }
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <strong>
-            {view === "week"
-              ? `${formatDate(weekStart)} — ${formatDate(addDays(weekStart, 6))}`
-              : `${formatDate(base)} ${weekdays[dayOf(base)]}`}
-          </strong>
-          <button
-            className="icon-button"
-            aria-label={view === "week" ? "下一周" : "后一天"}
-            onClick={() =>
-              navigateView(view, addDays(base, view === "week" ? 7 : 1))
-            }
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      </div>
-      {panel === "teachers" && (
-        <Tabs
-          value={view}
-          onChange={(v) => navigateView(v)}
-          items={[
-            { value: "week", label: "周视图" },
-            { value: "day", label: "日视图" },
-          ]}
-        />
-      )}
-    </div>
-  );
-  const viewingCalendar = calendarMode === "read";
-  const calendarLessons = data.lessons.filter((lesson) =>
-    (viewingCalendar || active(lesson)) &&
-    columns.some((column) => lesson.teacherId === column.teacher.id && lesson.date === column.date) &&
-    minute(lesson.time) >= 480 && minute(lesson.time) < 1440,
-  );
-  const teacherCalendar = teacher ? (
-    <section className="schedule-board">
-      <div className="schedule-board-heading">
-        <div className="row gap-12">
-          {view === "week" ? (
-            <>
-              <Avatar name={teacher.name} />
-              <h3>{teacher.name}</h3>
-              {teacher.needConfirm && (
-                <Badge tone="warning">排课前需确认</Badge>
-              )}
-            </>
-          ) : (
-            <>
-              <CalendarDays size={20} />
-              <div>
-                <h3>老师日程对照</h3>
-                <small>点击老师姓名，查看这位老师的一周</small>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="schedule-usage">
-          {view === "week" ? (
-            <>
-              本周订课率 <strong>{usage(teacher)}%</strong>
-            </>
-          ) : (
-            <>{columns.length} 位老师</>
-          )}
-        </div>
-      </div>
-      {view === "week" && (
-        <dl className="schedule-teacher-facts" aria-label="老师授课信息">
-          <div>
-            <dt>SO</dt>
-            <dd>{teacher.so || "未填写"}</dd>
-          </div>
-          <div>
-            <dt>口音等级</dt>
-            <dd>{teacher.accent || "未填写"}</dd>
-          </div>
-          <div>
-            <dt>导师等级</dt>
-            <dd>{teacher.level || "未填写"}</dd>
-          </div>
-          <div>
-            <dt>可教类别</dt>
-            <dd>{teacher.categories.join(" / ") || "未填写"}</dd>
-          </div>
-          <div className="schedule-teacher-facts-wide">
-            <dt>常规上课时间</dt>
-            <dd>
-              {availabilitySummary(teacher)}
-              {teacher.availabilityFrom && (
-                <small>{teacher.availabilityFrom} 起适用</small>
-              )}
-            </dd>
-          </div>
-          {teacher.availabilityNote && (
-            <div className="schedule-teacher-facts-wide">
-              <dt>排课备注</dt>
-              <dd>{teacher.availabilityNote}</dd>
-            </div>
-          )}
-        </dl>
-      )}
-      {calendarToolbar}
-      {viewingCalendar && columns.length > 0 && calendarLessons.length === 0 ? (
-        <EmptyState title={view === "week" ? "该周暂无课程" : "当天暂无课程"} />
-      ) : (
-        <div className="schedule-grid-scroll" ref={attachCalendar}>
-          <div
-            className={`schedule-grid ${viewingCalendar ? "calendar-read" : ""}`}
-            style={{
-              minWidth:
-                view === "day"
-                  ? 64 + Math.max(columns.length, 1) * 112
-                  : undefined,
-              gridTemplateColumns: `64px repeat(${Math.max(columns.length, 1)},minmax(${view === "day" ? 112 : 108}px,1fr))`,
-              gridTemplateRows: `52px repeat(${slots.length},40px)`,
-            }}
-          >
-            <div className="schedule-corner">时间</div>
-            {columns.map((col, ci) => (
-              <button
-                key={col.id}
-                className={`schedule-col-head ${col.date === DEMO_TODAY ? "today" : ""}`}
-                style={{ gridColumn: ci + 2, gridRow: 1 }}
-                onClick={() => {
-                  if (view === "day") {
-                    setTeacher(col.teacher.id);
-                    navigateView("week", col.date, col.teacher.id);
-                  }
-                }}
-              >
-                {view === "week" ? (
-                  <>
-                    <strong>{weekdays[dayOf(col.date)]}</strong>
-                    <small>
-                      {col.date.slice(5)}
-                      {col.date === DEMO_TODAY ? " · 今天" : ""}
-                    </small>
-                  </>
-                ) : (
-                  <>
-                    <strong>{col.teacher.name}</strong>
-                    <small>{col.teacher.so}</small>
-                  </>
-                )}
-              </button>
-            ))}
-            {slots.map((time, ri) => (
-              <div
-                key={time}
-                className={`schedule-time ${time.endsWith("00") ? "hour" : ""}`}
-                style={{ gridColumn: 1, gridRow: ri + 2 }}
-              >
-                {time}
-              </div>
-            ))}
-            {columns.map((col, ci) =>
-              slots.map((time, ri) => {
-                if (viewingCalendar) {
-                  return <div key={`${col.id}-${time}`} className="schedule-cell" style={{ gridColumn: ci + 2, gridRow: ri + 2 }} />;
-                }
-                const slot = { date: col.date, time };
-                const occupied = data.lessons.some(
-                  (l) =>
-                    l.teacherId === col.teacher.id &&
-                    l.date === col.date &&
-                    active(l) &&
-                    minute(l.time) <= minute(time) &&
-                    minute(l.time) + l.duration > minute(time),
-                );
-                const leave = data.leaves.some(
-                  (l) =>
-                    l.teacherId === col.teacher.id &&
-                    ["已通过", "已登记"].includes(l.status) &&
-                    overlapsLeave(col.date, time, duration, l.start, l.end),
-                );
-                const conflicts = isAvailable(
-                  data, col.teacher.id, col.date, time, duration,
-                  panel === "pending" ? studentId : undefined,
-                );
-                const past = col.date < DEMO_TODAY;
-                const blocked = conflicts.length > 0 || past;
-                const selectedHere =
-                  selectedTeacher === col.teacher.id &&
-                  selected.some((s) => same(s, slot));
-                const intentWindow =
-                  panel === "pending" &&
-                  Boolean(
-                    student?.scheduleIntent?.windows.some(
-                      (w) =>
-                        w.day === dayOf(slot.date) &&
-                        minute(slot.time) >= minute(w.start) &&
-                        minute(slot.time) + duration <= minute(w.end),
-                    ),
-                  );
-                const intent =
-                  intentWindow &&
-                  slot.date >= (student?.scheduleIntent?.startDate || "") &&
-                  slot.date <
-                    addDays(
-                      student?.scheduleIntent?.startDate || DEMO_TODAY,
-                      (student?.scheduleIntent?.weeks || 1) * 7,
-                    );
-                return (
-                  <button
-                    key={`${col.id}-${time}`}
-                    type="button"
-                    aria-label={`${col.teacher.name} ${col.date} ${time} ${occupied ? "已排课" : leave ? "请假" : blocked ? "不可安排" : "可排课"}`}
-                    aria-pressed={selectedHere}
-                    title={
-                      intentWindow && !intent
-                        ? "不在排课周期内，请切换至开始日期之后"
-                        : blocked
-                          ? past ? "已过期" : conflicts.join("；")
-                          : "可排课"
-                    }
-                    disabled={
-                      blocked ||
-                      (panel === "pending" && !intent) ||
-                      !can("schedule.create")
-                    }
-                    className={`schedule-cell ${blocked ? "closed" : "open"} ${leave ? "leave" : ""} ${selectedHere ? "selected" : ""} ${intentWindow ? "intent" : ""} ${intentWindow && !intent ? "outside-intent-period" : ""} ${past ? "past" : ""}`}
-                    style={{ gridColumn: ci + 2, gridRow: ri + 2 }}
-                    onClick={(e) => {
-                      setTeacher(col.teacher.id);
-                      if (panel === "pending" || multiSelect || e.shiftKey) {
-                        setSelected((prev) =>
-                          selectedTeacher !== col.teacher.id
-                            ? [slot]
-                            : prev.some((s) => same(s, slot))
-                              ? prev.filter((s) => !same(s, slot))
-                              : [...prev, slot],
-                        );
-                      } else {
-                        setSelected([slot]);
-                        if (panel === "teachers") beginSchedule();
-                      }
-                    }}
-                  >
-                    {selectedHere ? (
-                      <>
-                        <Check size={14} />
-                        <span>已选</span>
-                      </>
-                    ) : leave ? (
-                      "请假"
-                    ) : intentWindow && !intent ? (
-                      slot.date < (student?.scheduleIntent?.startDate || "") ? (
-                        "尚未开始"
-                      ) : (
-                        "周期已结束"
-                      )
-                    ) : intent ? (
-                      blocked ? (
-                        "意向 · 不可排"
-                      ) : (
-                        "意向"
-                      )
-                    ) : !blocked ? (
-                      <span className="cell-plus">+</span>
-                    ) : (
-                      ""
-                    )}
-                  </button>
-                );
-              }),
-            )}
-            {columns.map((col, ci) =>
-              calendarLessons
-                .filter((l) => l.teacherId === col.teacher.id && l.date === col.date)
-                .map((l) => {
-                  const s = data.students.find((s) => s.id === l.studentId);
-                  return (
-                    <button
-                      key={l.id}
-                      onClick={() => setLessonId(l.id)}
-                      data-status={viewingCalendar ? l.status : undefined}
-                      className={`schedule-lesson ${l.kind === "临时课" ? "temporary" : ""} ${l.date < DEMO_TODAY ? "past" : ""} ${l.conflict ? "conflict" : ""}`}
-                      style={{
-                        gridColumn: ci + 2,
-                        gridRow: `${2 + Math.floor((minute(l.time) - 480) / 30)} / span ${Math.ceil(((minute(l.time) % 30) + l.duration) / 30)}`,
-                      }}
-                    >
-                      <strong>
-                        {s?.name}
-                        {l.conflict && " ⚠"}
-                      </strong>
-                      <small>
-                        {l.time}–{clock(minute(l.time) + l.duration)}
-                        {viewingCalendar && ` · ${calendarLessonStatus(l.status)}`}
-                      </small>
-                    </button>
-                  );
-                }),
-            )}
-            {!columns.length && (
-              <div className="no-columns">没有符合筛选条件的老师</div>
-            )}
-          </div>
-        </div>
-      )}
-      <CalendarHorizontalScroll node={calendarNode} />
-      {viewingCalendar && calendarLessons.length > 0 && <CalendarStatusLegend lessons={calendarLessons} />}
-      {!viewingCalendar && (
-        <div className="schedule-legend">
-          <span><i className="legend-open" />可排课</span>
-          <span><i className="legend-fixed" />已排课</span>
-          <span><i className="legend-closed" />不可安排</span>
-          <span><i className="legend-leave" />请假</span>
-          <small>每格 30 分钟，可在排课时调整到具体分钟</small>
-        </div>
-      )}
-      {view === "day" && (
-        <div className="schedule-day-rates">
-          {columns.map((c) => (
-            <span key={c.id}>
-              {c.teacher.name} <strong>{usage(c.teacher, base)}%</strong>
-            </span>
-          ))}
-        </div>
-      )}
-    </section>
-  ) : (
-    <EmptyState title="暂无老师" description="请先维护老师资料。" />
-  );
   return (
     <div className="schedule-page">
       <PageHeader
@@ -908,16 +534,15 @@ export default function Schedule() {
                 <div>
                   <h3>
                     {panel === "pending" ? student?.name : teacher?.name} ·{" "}
-                    {flow === "calendar" && modal !== "schedule"
-                      ? "完整课表"
-                      : "安排课程"}
+                    安排课程
                   </h3>
                   <small>
-                    ID: {panel === "pending" ? student?.id : teacher?.teacherNumber}
+                    ID:{" "}
+                    {panel === "pending" ? student?.id : teacher?.teacherNumber}
                   </small>
                 </div>
               </div>
-              {(flow !== "calendar" || modal === "schedule") && (
+              {
                 <ol className="schedule-steps" aria-label="排课步骤">
                   <li
                     aria-current={
@@ -939,16 +564,7 @@ export default function Schedule() {
                     ② 预览确认
                   </li>
                 </ol>
-              )}
-              {flow === "calendar" && modal !== "schedule" && (
-                <Button
-                  variant="ghost"
-                  disabled={workflowBusy}
-                  onClick={() => leaveWorkflow(resetWorkflow)}
-                >
-                  返回概况
-                </Button>
-              )}
+              }
             </div>
           )}
           {flow === "overview" && (panel === "pending" ? student : teacher) && (
@@ -968,19 +584,19 @@ export default function Schedule() {
                 }
               }}
               onReschedule={(id) => {
-                const selectedLesson = data.lessons.find(l => l.id === id)!;
+                const selectedLesson = data.lessons.find((l) => l.id === id)!;
                 setLessonId(id);
                 setRescheduleDate(selectedLesson.date);
                 setRescheduleTime(selectedLesson.time);
                 setRescheduleTeacher(selectedLesson.teacherId);
                 setReason("");
                 setRescheduleConfirmed(false);
+                setMoveResponsibility("平台");
                 setError("");
                 setModal("reschedule");
               }}
               onLesson={setLessonId}
               onTeacherProfile={() => setProfileTeacherId(selectedTeacher)}
-              onTeacherCalendar={() => { setCalendarMode("read"); setFlow("calendar"); }}
             />
           )}
           {flow === "auto" && student && (
@@ -1044,7 +660,6 @@ export default function Schedule() {
                 teacherId={panel === "teachers" ? selectedTeacher : ""}
                 initialTime={selected[0]}
                 initialTimes={selected}
-                onDraftKeyChange={setCustomDraftKey}
                 startDate={base}
                 onDirtyChange={setWorkflowDirty}
                 onBusyChange={setWorkflowBusy}
@@ -1063,47 +678,6 @@ export default function Schedule() {
                 }}
               />
             </div>
-          )}
-          {flow === "calendar" && modal !== "schedule" && (
-            <>
-              {can("schedule.create") && (
-                <Tabs
-                  value={calendarMode}
-                  onChange={(mode) => {
-                    setCalendarMode(mode === "edit" ? "edit" : "read");
-                    setSelected([]);
-                  }}
-                  items={[
-                    { value: "read", label: "查看课表" },
-                    { value: "edit", label: "操作排课" },
-                  ]}
-                />
-              )}
-              {calendarMode === "edit" && (
-                <div className="row wrap">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={multiSelect}
-                      onChange={(e) => setMultiSelect(e.target.checked)}
-                    />{" "}
-                    多选上课时间
-                  </label>
-                  <small>点击空档安排课程，点击已有课程查看详情。</small>
-                </div>
-              )}
-              {calendarMode === "edit" && can("schedule.create") && (
-                <Button
-                  onClick={() => {
-                    setSelected([]);
-                    beginSchedule();
-                  }}
-                >
-                  为该老师排课
-                </Button>
-              )}
-              {teacherCalendar}
-            </>
           )}
           {flow === "overview" &&
             !(panel === "pending" ? student : teacher) && (
@@ -1175,7 +749,6 @@ export default function Schedule() {
               variant="primary"
               disabled={workflowBusy}
               onClick={() => {
-                if (modal === "schedule" && customDraftKey) localStorage.removeItem(customDraftKey);
                 leaveAction?.();
                 if (blocker.state === "blocked") blocker.proceed();
                 setLeaveAction(null);
@@ -1246,6 +819,7 @@ export default function Schedule() {
                   setRescheduleTeacher(lesson.teacherId);
                   setReason("");
                   setRescheduleConfirmed(false);
+                  setMoveResponsibility("平台");
                   setError("");
                   setModal("reschedule");
                 }}
@@ -1364,6 +938,7 @@ export default function Schedule() {
                       teacherId: rescheduleTeacher,
                       reason,
                       confirmedTeacher: rescheduleConfirmed,
+                      responsibility: moveResponsibility,
                       confirmationNote: reason,
                     },
                     () => {
@@ -1399,11 +974,10 @@ export default function Schedule() {
               />
             </Field>
             <Field label="上课时间" required>
-              <input
-                type="time"
-                step="60"
+              <TimePicker
+                label="上课时间"
                 value={rescheduleTime}
-                onChange={(e) => setRescheduleTime(e.target.value)}
+                onChange={(value) => setRescheduleTime(value)}
               />
             </Field>
           </div>
@@ -1425,6 +999,11 @@ export default function Schedule() {
           <small>
             如需换老师，请到学员档案办理换师，取消原预约后重新排课。
           </small>
+          <Field label="调课发起方">
+            <Select value={moveResponsibility} onValueChange={value => setMoveResponsibility(value === "老师" || value === "学员" ? value : "平台")}>
+              <option>平台</option><option>老师</option><option>学员</option>
+            </Select>
+          </Field>
           <Field label="调整原因">
             <input
               value={reason}
@@ -1466,46 +1045,6 @@ export default function Schedule() {
           )}
         </div>
       </Modal>
-    </div>
-  );
-}
-
-function CalendarHorizontalScroll({ node }: { node: HTMLDivElement | null }) {
-  const [position, setPosition] = useState({ left: 0, max: 0 });
-  useEffect(() => {
-    if (!node) return;
-    const sync = () =>
-      setPosition({
-        left: node.scrollLeft,
-        max: Math.max(0, node.scrollWidth - node.clientWidth),
-      });
-    sync();
-    const observer = new ResizeObserver(sync);
-    observer.observe(node);
-    if (node.firstElementChild) observer.observe(node.firstElementChild);
-    node.addEventListener("scroll", sync, { passive: true });
-    return () => {
-      observer.disconnect();
-      node.removeEventListener("scroll", sync);
-    };
-  }, [node]);
-  if (!node || position.max <= 0) return null;
-  return (
-    <div className="schedule-horizontal-scroll">
-      <span>左右拖动查看更多老师</span>
-      <input
-        type="range"
-        aria-label="日历横向滚动"
-        min={0}
-        max={position.max}
-        value={Math.min(position.left, position.max)}
-        step={1}
-        onChange={(e) => {
-          const left = Number(e.target.value);
-          node.scrollLeft = left;
-          setPosition({ ...position, left });
-        }}
-      />
     </div>
   );
 }

@@ -483,10 +483,7 @@ export default function Settings() {
                           </td><td>{a.team || "—"}</td><td>{a.group || "—"}</td>
                           <td>
                             {["ops", "tm"].includes(a.roleId) ? a.classInUid ? (
-                              <div className="stack" style={{ gap: 4 }}>
-                                <span className="muted">已关联</span>
-                                <span>{a.classInAccount || "账号已关联"}</span>
-                              </div>
+                              a.classInAccount || a.classInUid
                             ) : (
                               <div className="row">
                                 <span className="muted">未关联</span>

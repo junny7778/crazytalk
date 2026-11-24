@@ -1076,7 +1076,7 @@ it.each(["ops", "tm"])("%s 的 ClassIn 关联独立提交，不保存账号编�
   const saved = demoRepository.read().accounts.find(a=>a.id===account.id)!;
   expect(saved).toMatchObject({...account, classInUid:"998800", classInAccount:"staff@example.com"});
   row=within(screen.getByRole("table")).getByText(account.name).closest("tr")!;
-  expect(within(row).getByText("已关联")).toBeTruthy();
+  expect(within(row).queryByText("已关联")).toBeNull();
   expect(within(row).getByText("staff@example.com")).toBeTruthy();
   expect(within(row).queryByRole("button", {name:"关联"})).toBeNull();
 });

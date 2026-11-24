@@ -1,3 +1,4 @@
+import { CourseViewSwitch, CourseWeekNavigation } from "./CourseCalendarControls";
 import { DatePicker } from "@crazytalk/ui";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { useId, useMemo, useState } from "react";
@@ -183,26 +184,7 @@ export default function StudentCourses({
         title="课表"
         action={
           <div className="row wrap student-course-actions">
-            <div className="sc-view-switch" aria-label="课程显示方式">
-              <Button
-                size="sm"
-                aria-pressed={view === "list"}
-                variant={view === "list" ? "primary" : "ghost"}
-                onClick={() => setView("list")}
-              >
-                <List size={14} />
-                列表
-              </Button>
-              <Button
-                size="sm"
-                aria-pressed={view === "calendar"}
-                variant={view === "calendar" ? "primary" : "ghost"}
-                onClick={() => setView("calendar")}
-              >
-                <CalendarDays size={14} />
-                日历
-              </Button>
-            </div>
+            <CourseViewSwitch value={view} onChange={setView}/>
             {activeService && can("schedule.create") && onSchedule && (
               <Button size="sm" onClick={onSchedule}>
                 安排课程
@@ -215,38 +197,7 @@ export default function StudentCourses({
           className={`sc-filters ${view === "calendar" ? "sc-calendar-filters" : ""}`}
         >
           {view === "calendar" && (
-            <div className="sc-week-toolbar">
-              <div className="row">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label="上一周"
-                  onClick={() => setWeek(addDays(week, -7))}
-                >
-                  <ChevronLeft size={15} />
-                </Button>
-                <strong>
-                  {week} — {weekEnd}
-                </strong>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label="下一周"
-                  onClick={() => setWeek(addDays(week, 7))}
-                >
-                  <ChevronRight size={15} />
-                </Button>
-              </div>
-              <div className="row">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setWeek(weekStart(DEMO_TODAY))}
-                >
-                  回到本周
-                </Button>
-              </div>
-            </div>
+            <CourseWeekNavigation week={week} onChange={setWeek}/>
           )}
 
           {view === "list" && (

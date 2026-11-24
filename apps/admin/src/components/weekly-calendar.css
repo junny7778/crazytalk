@@ -1,7 +1,6 @@
 /* Shared week headers and booking states. */
 :is(.sc-time-head, .sc-day-head, .sc-time-axis, .schedule-corner,
-    .schedule-col-head, .schedule-time, .fixed-calendar-head, .fixed-time,
-    .course-plan-day-head):is(.sc-calendar *, .schedule-grid *, .fixed-calendar *, .course-plan-calendar *) {
+    .schedule-col-head, .schedule-time, .fixed-calendar-head, .fixed-time):is(.sc-calendar *, .schedule-grid *, .fixed-calendar *) {
   background: var(--ct-gray-50);
 }
 :is(.sc-time-head, .sc-day-head, .schedule-col-head, .fixed-calendar-head) {
@@ -34,7 +33,7 @@
   color: inherit;
 }
 :is(.schedule-cell.open, .legend-open, .fixed-empty-cell.available, .flex-time-cell.available) {
-  background: var(--ct-success-bg);
+  background: var(--ct-white);
 }
 :is(.schedule-grid .schedule-cell.closed, .flex-time-cell.unavailable, .flex-calendar-legend .unavailable) {
   background: var(--ct-gray-100);
@@ -45,6 +44,17 @@
   color: var(--ct-gray-700);
   font-size: 11px;
   box-shadow: none;
+}
+.schedule-custom-layout .flex-time-cell.available:not(.drop-target),
+.schedule-custom-layout .flex-calendar-legend .available {
+  background: var(--ct-success-bg);
+}
+.flex-time-cell.expired.unavailable,
+.flex-calendar-legend .expired {
+  background: repeating-linear-gradient(135deg, var(--ct-gray-100) 0 4px, var(--ct-gray-200) 4px 6px);
+}
+.flex-calendar-legend .selected {
+  outline: 1px solid var(--ct-brand-700);
 }
 :is(.schedule-cell.open, .fixed-empty-cell.available, .flex-time-cell.available):not(:disabled):not([aria-disabled="true"]):hover,
 :is(.fixed-empty-cell, .flex-time-cell).drop-target {
@@ -59,10 +69,6 @@
 }
 .schedule-grid .schedule-cell.selected {
   box-shadow: inset 0 0 0 2px var(--ct-brand-700);
-}
-.course-plan-day-head {
-  text-align: center;
-  padding: 4px;
 }
 :is(.sc-calendar-lesson, .calendar-read .schedule-lesson)[data-status="未开始"] {
   background: var(--ct-info-bg);
@@ -118,3 +124,9 @@
 .calendar-status-legend [data-status="缺席"] { --calendar-status-color: var(--ct-danger); }
 .calendar-status-legend [data-status="已取消"] { --calendar-status-color: var(--ct-gray-500); }
 .schedule-board > .calendar-status-legend { padding: 0 16px 12px; }
+
+.sc-availability.available { background: var(--ct-white); }
+.sc-availability.unavailable { background: var(--ct-gray-100); }
+.calendar-status-legend [data-availability]::before { border: 1px solid var(--ct-gray-300); box-sizing: border-box; }
+.calendar-status-legend [data-availability="available"] { --calendar-status-color: var(--ct-white); }
+.calendar-status-legend [data-availability="unavailable"] { --calendar-status-color: var(--ct-gray-100); }

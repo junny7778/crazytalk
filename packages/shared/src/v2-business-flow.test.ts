@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, it, expect } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
@@ -6,7 +7,7 @@ import { officePay } from "./officePay";
 import { projectMetrics } from "./projectMetrics";
 import type { Command, PayTerms } from "./model";
 function scenario() {
-  let data = createSeed();
+  let data = bindSchedulingStaff(createSeed());
   const [a, b] = data.students.slice(0, 2).map((student, i) => ({
     ...student, id: String(90000001 + i), balance: 0,
   }));

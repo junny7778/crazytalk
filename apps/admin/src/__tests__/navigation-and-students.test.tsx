@@ -136,7 +136,7 @@ describe("后台导航和学员建档", () => {
     );
     expect(screen.queryByRole("heading", { name: "Hi Carol" })).toBeNull();
     await testAct(async () => {
-      fireEvent.click(screen.getByRole("cell", { name: "T. Carol" }));
+      fireEvent.click(screen.getByRole("cell", { name: /^T\. Carol(?: |$)/ }));
     });
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: /^T\. Carol/ })).toBeTruthy(),
@@ -647,7 +647,7 @@ it("看板老师入口使用可见普通筛选，清除后展示全部老师", a
 });
 
 describe("上课记录统计卡", () => {
-  it("AC-37 取消成功、未知结果和历史课不计入已确认课堂，点击汇总筛选同一明细", async () => {
+  it("同步状态独立筛选和清除，保留姓名搜索", async () => {
     const data=demoRepository.read(),sample=data.lessons[0];
     data.lessons=[
       {...sample,id:"sync-active",status:"未开始",sync:"已同步",syncState:"completed"},
@@ -658,11 +658,18 @@ describe("上课记录统计卡", () => {
       {...sample,id:"sync-history",status:"已完成",sync:"已同步",syncState:undefined},
     ];
     mount("/lessons");
-    const stats=await screen.findByLabelText("ClassIn 同步统计");
-    for(const label of ["已确认课堂","取消已同步","同步中","同步失败","结果待核实","历史未核验"]) expect(within(stats).getByRole("button",{name:`${label} 1`})).toBeTruthy();
-    await testAct(async()=>{fireEvent.click(within(stats).getByRole("button",{name:"取消已同步 1"}));});
-    expect(screen.getByRole("article",{name:"课程记录数 1 节"})).toBeTruthy();
-    expect(within(stats).getByRole("button",{name:"已确认课堂 0"})).toBeTruthy();
+    const search = await screen.findByRole("textbox", { name: "搜索学员或老师姓名" });
+    const name = data.students.find(student => student.id === sample.studentId)!.name;
+    await testAct(async () => { fireEvent.change(search, { target: { value: name } }); });
+    async function chooseSyncStatus(label: string) {
+      await testAct(async () => { fireEvent.click(screen.getByLabelText("同步状态")); });
+      await testAct(async () => { fireEvent.click(screen.getByRole("option", { name: label })); });
+    }
+    await chooseSyncStatus("同步失败");
+    expect(screen.getByRole("article", { name: "课程记录数 1 节" })).toBeTruthy();
+    await chooseSyncStatus("全部同步状态");
+    expect(screen.getByRole("article", { name: "课程记录数 6 节" })).toBeTruthy();
+    expect(screen.getByDisplayValue(name)).toBe(search);
   });
   it("统计全部分页的匹配课程，并随姓名搜索更新", async () => {
     mount("/lessons");

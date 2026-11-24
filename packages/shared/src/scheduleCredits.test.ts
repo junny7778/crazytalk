@@ -1,10 +1,11 @@
+import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { getScheduleCredits, withScopedReservations } from "./scheduleCredits";
 
 describe("排课课时余额与占用", () => {
   it("余额8课时不能安排预计消耗10课时的课程", () => {
-    const data = createSeed();
+    const data = bindSchedulingStaff(createSeed());
     data.lessons = [];
     data.students[3].balance = 8;
     const result = getScheduleCredits(data, "s4", 10, 1);
@@ -13,7 +14,7 @@ describe("排课课时余额与占用", () => {
     expect(result.error).toContain("不足");
   });
   it("先扣除已排未扣课占用，取消和完成不扣课程不占用", () => {
-    const data = createSeed();
+    const data = bindSchedulingStaff(createSeed());
     const base = data.lessons[0];
     data.students[3].balance = 8;
     data.lessons = [
@@ -58,7 +59,7 @@ describe("排课课时余额与占用", () => {
     expect(result.error).toContain("不足");
   });
   it("已扣课课程不重复占用余额", () => {
-    const data = createSeed();
+    const data = bindSchedulingStaff(createSeed());
     const base = data.lessons[0];
     data.students[3].balance = 6;
     data.lessons = [
@@ -73,7 +74,7 @@ describe("排课课时余额与占用", () => {
     expect(getScheduleCredits(data, "s4", 6, 1).error).toBe("");
   });
   it("余额未核实、预计课时无效时不可排课", () => {
-    const data = createSeed();
+    const data = bindSchedulingStaff(createSeed());
     data.lessons = [];
     data.students[3].balanceKnown = false;
     expect(getScheduleCredits(data, "s4", 1, 1).error).toContain("核实");
@@ -104,7 +105,7 @@ function booking(
   };
 }
 function creditsFixture() {
-  const data = createSeed();
+  const data = bindSchedulingStaff(createSeed());
   data.classInAccounts = [{id:"login", phone:"13900001234", uid:"101", studentIds:["s4"]}];
   data.lessons = [];
   data.leaves = [];
@@ -207,7 +208,7 @@ describe("排课提交余额拦截", () => {
 });
 
 it("学员范围和老师范围隐藏的课程只贡献套餐占用汇总，排课结果与完整数据一致", () => {
-  const data = createSeed();
+  const data = bindSchedulingStaff(createSeed());
   const [a, b] = data.students;
   const pack = { id: "shared", studentIds: [a.id, b.id], balance: 8, units: 72,
     kind: "新购", date: "2026-10-31", channel: "", project: "" };

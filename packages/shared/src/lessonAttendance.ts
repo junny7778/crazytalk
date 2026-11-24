@@ -1,4 +1,13 @@
 import type { Lesson } from "./model";
+export function cancellationParty(conclusion: string) {
+  if (["学员取消", "学员提前3小时取消", "学员3小时内取消"].includes(conclusion)) return "学员";
+  if (["老师取消", "老师24小时内取消", "老师1–5天取消", "老师超过5天请假"].includes(conclusion)) return "老师";
+}
+export function needsLessonOutcomeReview(lesson: Lesson) {
+  const reason = lesson.incident?.reason ?? "";
+  return lesson.status === "已完成" && (Boolean(cancellationParty(reason)) || reason === "教材错误或重复" ||
+    (reason.includes("网络") && !lesson.incident?.networkOutcome));
+}
 export const attendanceOptions = [
   "正常",
   "老师迟到",

@@ -1,3 +1,4 @@
+import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
 import { transferableAbortController } from "node:util";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
@@ -59,6 +60,7 @@ beforeEach(() => {
   vi.stubGlobal("AbortController", class { constructor(){return transferableAbortController();} });
   localStorage.clear();
   demoRepository.reset();
+ bindSchedulingStaff(demoRepository.read());
   demoRepository.read().classInAccounts = demoRepository.read().students.map((student,index) => ({id:"verified-"+student.id,phone:"",uid:String(990000+index),studentIds:[student.id]}));
   vi.stubGlobal(
     "ResizeObserver",
@@ -232,4 +234,14 @@ it("推荐卡片直接预览，返回仍可比较全部方案", async () => {
   await testAct(async()=>{fireEvent.click(screen.getByRole("button",{name:"返回调整"}));});
   expect(screen.getAllByRole("button",{name:"查看排课方案"})).toHaveLength(2);
   expect(demoRepository.read().lessons).toHaveLength(0);
+});
+
+it("固定方案换老师时，未绑定的备选不可选且可快捷绑定", async()=>{
+ const {d}=setup();delete d.teachers[1].classInUid;
+ await openPlan();
+ await testAct(async()=>{fireEvent.click(screen.getByRole("button",{name:new RegExp(`2026-11-23 19:00 ${d.teachers[0].name}`)}));});
+ const editor=within(screen.getByRole("dialog"));
+ expect(editor.getByRole("button",{name:`${d.teachers[1].name} · 未绑定 ClassIn`}).hasAttribute("disabled")).toBe(true);
+ expect(editor.getByRole("button",{name:"绑定账号"})).toBeTruthy();
+ expect(demoRepository.read().lessons).toHaveLength(0);
 });

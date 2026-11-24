@@ -4,7 +4,7 @@ import { standardTeacherTags, teacherTagName } from "./teacherTags";
 export function studentMatchProfile(s: Student) {
   const primary: string[] = [], secondary: string[] = [], sources: {label:string; tags:string[]}[] = [];
   const level=s.level.match(/^L([123])(?:$|\b)/)?.[1];
-  const tier=s.age == null ? s.ageText.match(/^(幼儿|少儿|大童)/)?.[1] : s.age<3 ? undefined : s.age<=5 ? "幼儿" : s.age<=9 ? "少儿" : "大童";
+  const tier=s.age == null ? (s.ageGroup ?? s.ageText).match(/^(幼儿|少儿|大童)/)?.[1] : s.age<3 ? undefined : s.age<=5 ? "幼儿" : s.age<=9 ? "少儿" : "大童";
   if(tier && level) {
     const tags=[tier==="幼儿"?"tt-38":tier==="少儿"?"tt-39":"tt-40", level==="1"?"tt-41":"tt-l"+level];
     primary.push(...tags);

@@ -1,6 +1,6 @@
-import {purchasedDelivery, organizationView} from "@crazytalk/shared";
+import { purchasedDelivery, organizationView, cancellationParty, cancellationCharge, needsLessonOutcomeReview } from "@crazytalk/shared";
 import CourseSyncLink from "../../components/CourseSyncLink";
-import {lessonSyncCategory,syncCategories} from "../../lib/lessonSync";
+import { lessonSyncCategory, syncCategories } from "../../lib/lessonSync";
 import { lessonStatusLabel } from "../../lib/lessonStatus";
 import { compareLessonRecords, isOverdueLesson } from "../../lib/lessonOrder";
 import ListPagination from "../../components/ListPagination";
@@ -16,7 +16,13 @@ import DataTransferButton from "../../components/DataTransferButton";
 import { occurred } from "../../lib/dashboard";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ArrowRight, Clock3, CalendarDays, CircleCheck, CalendarX2 } from "lucide-react";
+import {
+  ArrowRight,
+  Clock3,
+  CalendarDays,
+  CircleCheck,
+  CalendarX2,
+} from "lucide-react";
 import { useDemo } from "@crazytalk/shared/react";
 import { formatDate, type Lesson } from "@crazytalk/shared";
 import {
@@ -48,10 +54,19 @@ export default function Lessons() {
   const organization = organizationView(allData, params);
   const deliveryMonth = params.get("deliveryMonth");
   const project = params.get("project");
-  const delivery = deliveryMonth ? purchasedDelivery(allData, organization.students.filter(s => !project || s.project === project), deliveryMonth) : null;
-  const data = delivery ? {...allData, lessons: delivery.lessons} : organization;
+  const delivery = deliveryMonth
+    ? purchasedDelivery(
+        allData,
+        organization.students.filter((s) => !project || s.project === project),
+        deliveryMonth,
+      )
+    : null;
+  const data = delivery
+    ? { ...allData, lessons: delivery.lessons }
+    : organization;
   const tab = params.get("tab") || "all";
-  const view = params.get("view") || "all";
+  const view = params.get("view") === "unsynced" ? "all" : params.get("view") || "all";
+  const syncCategory = params.get("syncCategory") || "";
   const query = params.get("q") || "";
   const statusFilter = lessonStatusLabel(params.get("status") || "");
   const filteredStudentId =
@@ -60,15 +75,19 @@ export default function Lessons() {
   const detailId = params.get("lesson") || "";
   const setDetailId = (id: string) => {
     const next = new URLSearchParams(params);
-    if (id) next.set("lesson", id); else next.delete("lesson");
+    if (id) next.set("lesson", id);
+    else next.delete("lesson");
     setParams(next);
   };
   const [decision, setDecision] = useState<{
     id: string;
     kind: "扣课" | "不扣" | "缺席";
   } | null>(null);
-  const [delay,setDelay]=useState("");
-  const [incident,setIncident]=useState("");
+  const [cancelledAt, setCancelledAt] = useState("");
+  const [networkOutcome, setNetworkOutcome] = useState<"正常完课" | "取消" | "">("");
+  const [correctAttendance, setCorrectAttendance] = useState(false);
+  const [delay, setDelay] = useState("");
+  const [incident, setIncident] = useState("");
 
   const [reason, setReason] = useState("");
   const [units, setUnits] = useState("");
@@ -97,16 +116,19 @@ export default function Lessons() {
         (params.get("occurred") !== "1" || occurred(l)) &&
         (!params.get("from") || l.date >= (params.get("from") || "")) &&
         (!params.get("to") || l.date <= (params.get("to") || "")) &&
-        (delivery || !params.get("project") ||
+        (delivery ||
+          !params.get("project") ||
           student(l.studentId)?.project === params.get("project")) &&
-        (!params.get("bookingStatus") || l.status === params.get("bookingStatus")) &&
+        (!params.get("bookingStatus") ||
+          l.status === params.get("bookingStatus")) &&
         (!params.get("attendance") ||
           recordAttendance(l).includes(params.get("attendance") || "")) &&
         (view !== "attendance" ||
           (l.status !== "已取消" &&
-            (Boolean(l.studentIn) || recordAttendance(l).some(tag => tag.endsWith("缺席") ) || Boolean(l.attendanceMessages)))) &&
-        (view !== "unsynced" || l.sync === "未同步") &&
-        (!params.get("syncCategory") || lessonSyncCategory(l) === params.get("syncCategory")) &&
+            (Boolean(l.studentIn) ||
+              recordAttendance(l).some((tag) => tag.endsWith("缺席")) ||
+              Boolean(l.attendanceMessages)))) &&
+        (!syncCategory || lessonSyncCategory(l) === syncCategory) &&
         (view !== "conflict" || l.conflict) &&
         (!query ||
           `${student(l.studentId)?.name ?? ""} ${teacher(l.teacherId)?.name ?? ""}`
@@ -121,10 +143,30 @@ export default function Lessons() {
       : !params.get("status") || lessonStatusLabel(l.status) === statusFilter,
   );
   const recordStats = [
-    { label: "课程记录数", value: filtered.length, icon: CalendarDays, tone: "total" },
-    { label: "待上课数", value: filtered.filter((lesson) => lesson.status === "未开始").length, icon: Clock3, tone: "upcoming" },
-    { label: "已完成数", value: filtered.filter((lesson) => lesson.status === "已完成").length, icon: CircleCheck, tone: "completed" },
-    { label: "已取消数", value: filtered.filter((lesson) => lesson.status === "已取消").length, icon: CalendarX2, tone: "cancelled" },
+    {
+      label: "课程记录数",
+      value: filtered.length,
+      icon: CalendarDays,
+      tone: "total",
+    },
+    {
+      label: "待上课数",
+      value: filtered.filter((lesson) => lesson.status === "未开始").length,
+      icon: Clock3,
+      tone: "upcoming",
+    },
+    {
+      label: "已完成数",
+      value: filtered.filter((lesson) => lesson.status === "已完成").length,
+      icon: CircleCheck,
+      tone: "completed",
+    },
+    {
+      label: "已取消数",
+      value: filtered.filter((lesson) => lesson.status === "已取消").length,
+      icon: CalendarX2,
+      tone: "cancelled",
+    },
   ];
   const pageCount = Math.max(1, Math.ceil(filtered.length / 25));
   const currentPage = Math.min(page, pageCount);
@@ -139,13 +181,23 @@ export default function Lessons() {
       setLinkStudent(l.studentId);
       return;
     }
-    setIncident("");
+    const previous = needsLessonOutcomeReview(l) ? l.incident!.reason : "";
+    const party = cancellationParty(previous);
+    setIncident(party ? party + "取消" : previous);
+    setCancelledAt("");
+    setNetworkOutcome("");
     setReason("");
     setDelay("");
     setUnits(l.confirmedUnits === undefined ? "" : String(l.confirmedUnits));
     setDecision({ id: l.id, kind: "扣课" });
   }
   const timed = incident === "老师迟到" || incident === "老师早退";
+  const party = cancellationParty(incident);
+  const network = incident.includes("网络");
+  const cancelReview = !!party || incident === "教材错误或重复" || (network && networkOutcome === "取消");
+  const actualCancel = cancelledAt ? new Date(cancelledAt + "+08:00").toISOString() : undefined;
+  const cancelCharge = !party ? 0 : deciding && actualCancel
+    ? cancellationCharge(deciding, party, party === "学员" ? "学员请假" : "老师请假", false, actualCancel) : undefined;
   const balance = deciding && student(deciding.studentId)?.balance;
   return (
     <div className="stack">
@@ -178,20 +230,31 @@ export default function Lessons() {
       <section aria-label="上课记录统计" className="lesson-summary">
         <div className="lesson-summary-grid">
           {recordStats.map(({ label, value, icon: Icon, tone }) => (
-            <article key={label} className={`lesson-summary-card is-${tone}`} aria-label={`${label} ${value} 节`}>
+            <article
+              key={label}
+              className={`lesson-summary-card is-${tone}`}
+              aria-label={`${label} ${value} 节`}
+            >
               <div>
                 <span className="lesson-summary-label">{label}</span>
-                <div className="lesson-summary-value"><strong>{value}</strong><span>节</span></div>
+                <div className="lesson-summary-value">
+                  <strong>{value}</strong>
+                  <span>节</span>
+                </div>
               </div>
-              <span className="lesson-summary-icon"><Icon size={22} strokeWidth={1.7} aria-hidden="true" /></span>
+              <span className="lesson-summary-icon">
+                <Icon size={22} strokeWidth={1.7} aria-hidden="true" />
+              </span>
             </article>
           ))}
         </div>
-        <small className="lesson-summary-note">当前筛选范围 · 包含全部分页；待确认及历史缺席记录计入课程记录数，未计入已完成。</small>
-        <div className="row" aria-label="ClassIn 同步统计">{syncCategories.map(category=><Button key={category} size="sm" variant="ghost" onClick={()=>update("syncCategory",category)}>{category} {filtered.filter(l=>lessonSyncCategory(l)===category).length}</Button>)}</div>
-        <small className="lesson-summary-note">本地记录数包含取消及待核实课程；已确认课堂数不包含取消记录。</small>
+        <small className="lesson-summary-note">
+          当前筛选范围 ·
+          包含全部分页；待确认及历史缺席记录计入课程记录数，未计入已完成。
+        </small>
       </section>
-      {(delivery || params.has("from") ||
+      {(delivery ||
+        params.has("from") ||
         params.has("status") ||
         params.has("bookingStatus") ||
         params.has("attendance") ||
@@ -199,9 +262,11 @@ export default function Lessons() {
         <Panel>
           <div className="row between">
             <small>
-              {delivery ? `截至 ${deliveryMonth} 的销课记录 · 已交付 ${filtered.reduce((sum,l)=>sum+l.duration/25,0)} 课时` : params.get("student")
-                ? `学生：${student(filteredStudentId || "")?.name || "未知学生"}`
-                : `看板筛选：${params.get("from") || ""} 至 ${params.get("to") || ""}`}{" "}
+              {delivery
+                ? `截至 ${deliveryMonth} 的销课记录 · 已交付 ${filtered.reduce((sum, l) => sum + l.duration / 25, 0)} 课时`
+                : params.get("student")
+                  ? `学生：${student(filteredStudentId || "")?.name || "未知学生"}`
+                  : `看板筛选：${params.get("from") || ""} 至 ${params.get("to") || ""}`}{" "}
               · {params.get("project") || "全部项目"} ·{" "}
               {statusFilter ||
                 params.get("attendance") ||
@@ -229,28 +294,30 @@ export default function Lessons() {
           ]}
         />
       </div>
-      <Panel>
+      <Panel title="课程记录">
         <div className="toolbar lesson-filters">
           <SearchInput
             value={query}
             onChange={(v) => update("q", v)}
             placeholder="搜索学员或老师姓名"
           />
-          <DatePicker
-            placeholder="上课日期（起始）"
-            aria-label="开始日期"
-            mode="date"
-            value={params.get("from") || ""}
-            onValueChange={(v) => update("from", v)}
-          />
-          <span className="muted">至</span>
-          <DatePicker
-            placeholder="上课日期（结束）"
-            aria-label="结束日期"
-            mode="date"
-            value={params.get("to") || ""}
-            onValueChange={(v) => update("to", v)}
-          />
+          <>
+            <DatePicker
+              placeholder="上课日期（起始）"
+              aria-label="开始日期"
+              mode="date"
+              value={params.get("from") || ""}
+              onValueChange={(v) => update("from", v)}
+            />
+            <span className="muted">至</span>
+            <DatePicker
+              placeholder="上课日期（结束）"
+              aria-label="结束日期"
+              mode="date"
+              value={params.get("to") || ""}
+              onValueChange={(v) => update("to", v)}
+            />
+          </>
           <Select
             aria-label="处理状态"
             value={tab === "confirm" ? "待确认" : statusFilter}
@@ -281,12 +348,26 @@ export default function Lessons() {
             ))}
           </Select>
           <Select
+            aria-label="同步状态"
+            value={syncCategory}
+            onValueChange={(value) => {
+              const next = new URLSearchParams(params);
+              if (value) next.set("syncCategory", value);
+              else next.delete("syncCategory");
+              setParams(next);
+            }}
+          >
+            <option value="">全部同步状态</option>
+            {syncCategories.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </Select>
+          <Select
             aria-label="更多筛选"
             value={view}
             onValueChange={(v) => update("view", v)}
           >
             <option value="all">全部记录</option>
-            <option value="unsynced">未同步</option>
             <option value="conflict">时间冲突</option>
             <option value="attendance">有效出勤</option>
           </Select>
@@ -306,11 +387,13 @@ export default function Lessons() {
             <thead>
               <tr>
                 <th>上课时间</th>
-                <th>时长</th>{delivery && <th>已交付课时</th>}
+                <th>时长</th>
+                {delivery && <th>已交付课时</th>}
                 <th>课程类型</th>
                 <th>学员</th>
                 <th>老师</th>
-                <th>状态</th><th>异常提示</th>
+                <th>状态</th>
+                <th>异常提示</th>
                 <th>考勤</th>
                 <th>课时</th>
                 <th>操作</th>
@@ -320,101 +403,101 @@ export default function Lessons() {
               {visible.map((l) => {
                 const noShowHint = teacherNoShowHint(l);
                 return (
-                <tr key={l.id} aria-label={`课程 ${l.id}`}>
-                  <td>
-                    <button
-                      className="text-link"
-                      onClick={() => setDetailId(l.id)}
-                    >
-                      {formatDate(l.date)} {l.time}
-                    </button>
-                  </td>
-                  <td>{l.duration} 分钟</td>{delivery && <td>{l.duration / 25}</td>}
-                  <td>{l.kind}</td>
-                  <td>
-                    <Link to={`/students/${l.studentId}`}>
-                      {student(l.studentId)?.name}
-                    </Link>
-                  </td>
-                  <td>
-                    <Link to={`/teachers/${l.teacherId}`}>
-                      {teacher(l.teacherId)?.name}
-                    </Link>
-                  </td>
-                  <td>
-                    <Badge tone={tone(l.status)}>
-                      {lessonStatusLabel(l.status)}
-                    </Badge>
-                  </td>
-                  <td>
-                    {noShowHint && <small>{noShowHint}</small>}
-                    {!noShowHint && !isOverdueLesson(l, now) && !l.leaveFlag && !attendanceIssue(l) && !l.conflict && "—"}
-                    {isOverdueLesson(l, now) && (
-                      <small className="lesson-overdue">
-                        已过计划结束时间，待核实
-                      </small>
-                    )}
-                    {l.leaveFlag && <Badge tone="warning">老师请假</Badge>}
-                    {attendanceIssue(l) && (
-                      <small>数据提示：{attendanceIssue(l)}</small>
-                    )}
-                    {l.conflict && <small>时间冲突</small>}
-                  </td>
-                  <td>
-                    {!recordAttendance(l).length && (
-                      <span className="muted">—</span>
-                    )}
-                    {recordAttendance(l).map((label) => (
-                      <Badge
-                        key={label}
-                        tone={label === "正常" ? "success" : "warning"}
+                  <tr key={l.id} aria-label={`课程 ${l.id}`}>
+                    <td>
+                      <button
+                        className="text-link"
+                        onClick={() => setDetailId(l.id)}
                       >
-                        {label}
+                        {formatDate(l.date)} {l.time}
+                      </button>
+                    </td>
+                    <td>{l.duration} 分钟</td>
+                    {delivery && <td>{l.duration / 25}</td>}
+                    <td>{l.kind}</td>
+                    <td>
+                      <Link to={`/students/${l.studentId}`}>
+                        {student(l.studentId)?.name}
+                      </Link>
+                    </td>
+                    <td>
+                      <Link to={`/teachers/${l.teacherId}`}>
+                        {teacher(l.teacherId)?.name}
+                      </Link>
+                    </td>
+                    <td>
+                      <Badge tone={tone(l.status)}>
+                        {lessonStatusLabel(l.status)}
                       </Badge>
-                    ))}
-                  </td>
-                  <td>
-                    {l.deducted
-                      ? `已扣 ${l.confirmedUnits ?? 0} 课时`
-                      : l.status === "待确认"
-                        ? "待核实"
-                        : l.status === "未开始"
-                          ? "尚未结算"
-                          : "不扣课时"}
-                  </td>
-                  <td>
-                    <CourseSyncLink lesson={l} />
-                    {l.status === "待确认" && can("lesson.confirm") && (
+                    </td>
+                    <td>
+                      {noShowHint && <small>{noShowHint}</small>}
+                      {!noShowHint &&
+                        !isOverdueLesson(l, now) &&
+                        !l.leaveFlag &&
+                        !attendanceIssue(l) &&
+                        !l.conflict &&
+                        "—"}
+                      {isOverdueLesson(l, now) && (
+                        <small className="lesson-overdue">
+                          已过计划结束时间，待核实
+                        </small>
+                      )}
+                      {l.leaveFlag && <Badge tone="warning">老师请假</Badge>}
+                      {attendanceIssue(l) && (
+                        <small>数据提示：{attendanceIssue(l)}</small>
+                      )}
+                      {l.conflict && <small>时间冲突</small>}
+                    </td>
+                    <td>
+                      {!recordAttendance(l).length && (
+                        <span className="muted">—</span>
+                      )}
+                      {recordAttendance(l).map((label) => (
+                        <Badge
+                          key={label}
+                          tone={label === "正常" ? "success" : "warning"}
+                        >
+                          {label}
+                        </Badge>
+                      ))}
+                    </td>
+                    <td>
+                      {l.deducted
+                        ? `已扣 ${l.confirmedUnits ?? 0} 课时`
+                        : l.status === "待确认"
+                          ? "待核实"
+                          : l.status === "未开始"
+                            ? "尚未结算"
+                            : "不扣课时"}
+                    </td>
+                    <td>
+                      <CourseSyncLink lesson={l} />
+                      {(l.status === "待确认" || needsLessonOutcomeReview(l)) && can("lesson.confirm") && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => openReview(l)}
+                        >
+                          {l.attendance === "账号待关联" ? "关联学员" : "核实"}
+                        </Button>
+                      )}
                       <Button
                         size="xs"
                         variant="ghost"
-                        onClick={() => openReview(l)}
+                        onClick={() => setDetailId(l.id)}
                       >
-                        {l.attendance === "账号待关联" ? "关联学员" : "核实"}
+                        详情
                       </Button>
-                    )}
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => setDetailId(l.id)}
-                    >
-                      详情
-                    </Button>
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
         {!filtered.length && (
-          <EmptyState
-            title={
-              view === "unsynced"
-                ? "没有符合条件的未同步课程"
-                : "没有符合条件的课程"
-            }
-          />
+          <EmptyState title="没有符合条件的课程" />
         )}
         <ListPagination
           total={filtered.length}
@@ -432,23 +515,29 @@ export default function Lessons() {
         footer={
           detail && (
             <>
-              {detail.status === "待确认" && can("lesson.confirm") && <Button variant="primary" onClick={() => openReview(detail)}>{detail.attendance === "账号待关联" ? "关联学员" : "核实"}</Button>}
-              {["已完成","缺席"].includes(detail.status) && can("lesson.correct") && (
-                <Button
-                  onClick={() => {
-                    setReason("");
-                    setDeduct(detail.deducted);
-                    setUnits(
-                      detail.confirmedUnits === undefined
-                        ? ""
-                        : String(detail.confirmedUnits),
-                    );
-                    setCorrect(true);
-                  }}
-                >
-                  更正结果
+              {(detail.status === "待确认" || needsLessonOutcomeReview(detail)) && can("lesson.confirm") && (
+                <Button variant="primary" onClick={() => openReview(detail)}>
+                  {detail.attendance === "账号待关联" ? "关联学员" : "核实"}
                 </Button>
               )}
+              {["已完成", "缺席"].includes(detail.status) &&
+                can("lesson.correct") && (
+                  <Button
+                    onClick={() => {
+                      setReason("");
+                      setDeduct(detail.deducted);
+                      setCorrectAttendance(false);
+                      setUnits(
+                        detail.confirmedUnits === undefined
+                          ? ""
+                          : String(detail.confirmedUnits),
+                      );
+                      setCorrect(true);
+                    }}
+                  >
+                    更正结果
+                  </Button>
+                )}
               <Link
                 to={`/feedback?new=1&student=${detail.studentId}&lesson=${detail.id}`}
               >
@@ -461,13 +550,42 @@ export default function Lessons() {
         {detail && (
           <div className="stack">
             <CourseSyncLink lesson={detail} detail />
-            {detail.incident && <p>已核实：{detail.incident.reason} · {detail.incident.note} · {detail.incident.operator} · {new Date(detail.incident.at).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</p>}
-            {(["学员", "老师"] as const).map(person => {
+            {detail.incident && (
+              <p>
+                已核实：{detail.incident.reason}{detail.incident.networkOutcome && " · " + detail.incident.networkOutcome} · {detail.incident.note} ·{" "}
+                {detail.incident.operator} ·{" "}
+                {new Date(detail.incident.at).toLocaleString("zh-CN", {
+                  timeZone: "Asia/Shanghai",
+                })}
+              </p>
+            )}
+            {(["学员", "老师"] as const).map((person) => {
               const at = detail.attendanceMessages?.[person];
               if (!at) return null;
-              return <p key={person}>{person}未到堂提醒 · {new Date(at).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai"})}</p>;
+              return (
+                <p key={person}>
+                  {person}未到堂提醒 ·{" "}
+                  {new Date(at).toLocaleString("zh-CN", {
+                    timeZone: "Asia/Shanghai",
+                  })}
+                </p>
+              );
             })}
-            {detail.attendanceMessages && <p>学员课时 · {detail.deducted ? `已扣 ${detail.confirmedUnits ?? "—"} 课时` : allData.credits.some(c => c.lessonId === detail.id && c.type === "扣课退回") ? "已退回原扣课时" : detail.status === "已完成" ? "不扣课，已释放占用" : "待确认"}</p>}
+            {detail.attendanceMessages && (
+              <p>
+                学员课时 ·{" "}
+                {detail.deducted
+                  ? `已扣 ${detail.confirmedUnits ?? "—"} 课时`
+                  : allData.credits.some(
+                        (c) =>
+                          c.lessonId === detail.id && c.type === "扣课退回",
+                      )
+                    ? "已退回原扣课时"
+                    : detail.status === "已完成"
+                      ? "不扣课，已释放占用"
+                      : "待确认"}
+              </p>
+            )}
             <dl className="detail-pairs">
               <dt>学员</dt>
               <dd>{student(detail.studentId)?.name || "—"}</dd>
@@ -569,28 +687,36 @@ export default function Lessons() {
             <Button
               variant="primary"
               disabled={
-                !incident || !reason.trim() || (timed && (!delay || !Number.isInteger(Number(delay)) || Number(delay) < 0)) ||
-                (decision?.kind !== "不扣" &&
+                !incident ||
+                (!!party && !actualCancel) || (network && !networkOutcome) ||
+                !reason.trim() ||
+                (timed &&
+                  (!delay ||
+                    !Number.isInteger(Number(delay)) ||
+                    Number(delay) < 0)) ||
+                (!cancelReview && decision?.kind !== "不扣" &&
                   (!units.trim() ||
                     !Number.isFinite(Number(units)) ||
                     Number(units) <= 0))
               }
               onClick={async () =>
                 decision &&
-                await run(
+                (await run(
                   {
                     type: "lesson.resolve",
                     ids: [decision.id],
-                    decision: decision.kind,
+                    decision: cancelReview ? ((cancelCharge ?? 0) > 0 ? "扣课" : "不扣") : decision.kind,
+                    cancelledAt: party ? actualCancel : undefined,
+                    networkOutcome: network && networkOutcome ? networkOutcome : undefined,
                     conclusion: incident,
                     minutes: timed ? Number(delay) : undefined,
                     reason,
-                    ...(decision.kind !== "不扣"
+                    ...(!cancelReview && decision.kind !== "不扣"
                       ? { units: Number(units) }
                       : {}),
                   },
                   () => setDecision(null),
-                )
+                ))
               }
             >
               确认核实
@@ -600,47 +726,163 @@ export default function Lessons() {
       >
         {deciding && (
           <div className="lesson-review">
-            {teacherNoShowHint(deciding) && <div className="inset"><strong>{new Date(deciding.attendanceMessages!.老师!).toLocaleTimeString("zh-CN",{timeZone:"Asia/Shanghai",hour:"2-digit",minute:"2-digit"})} · {teacherNoShowHint(deciding)}</strong> · 待核实</div>}
+            {teacherNoShowHint(deciding) && (
+              <div className="inset">
+                <strong>
+                  {new Date(
+                    deciding.attendanceMessages!.老师!,
+                  ).toLocaleTimeString("zh-CN", {
+                    timeZone: "Asia/Shanghai",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}{" "}
+                  · {teacherNoShowHint(deciding)}
+                </strong>{" "}
+                · 待核实
+              </div>
+            )}
             <dl className="detail-pairs">
-              <dt>学员</dt><dd>{student(deciding.studentId)?.name}</dd>
-              <dt>老师</dt><dd>{teacher(deciding.teacherId)?.name}</dd>
-              <dt>计划上课</dt><dd>{formatDate(deciding.date)} {deciding.time}</dd>
-              <dt>时长</dt><dd>{deciding.duration} 分钟</dd>
+              <dt>学员</dt>
+              <dd>{student(deciding.studentId)?.name}</dd>
+              <dt>老师</dt>
+              <dd>{teacher(deciding.teacherId)?.name}</dd>
+              <dt>计划上课</dt>
+              <dd>
+                {formatDate(deciding.date)} {deciding.time}
+              </dd>
+              <dt>时长</dt>
+              <dd>{deciding.duration} 分钟</dd>
             </dl>
-            <table><thead><tr><th>人员</th><th>进入时间</th><th>离开时间</th></tr></thead>
-              <tbody><tr><td>老师</td><td>{deciding.teacherIn || "暂无记录"}</td><td>{deciding.teacherOut || "暂无记录"}</td></tr>
-              <tr><td>学员</td><td>{deciding.studentIn || "暂无记录"}</td><td>{deciding.studentOut || "暂无记录"}</td></tr></tbody></table>
-            <Field label="核实结论" required><Select value={incident} placeholder="请选择核实结论" onValueChange={value => {
-              setIncident(value);
-              setDecision({id: deciding.id, kind: value === "老师缺席" ? "不扣" : value === "学员缺席" ? "缺席" : "扣课"});
-            }}>
-              {["正常上课","老师缺席","学员缺席","老师迟到","老师早退","学员提前3小时取消","学员3小时内取消","学员网络设备问题","老师24小时内取消","老师1–5天取消","老师超过5天请假","老师网络设备问题","教材错误或重复","换老师","换时间","停课","误操作","其他"].map(s => <option key={s}>{s}</option>)}
-            </Select></Field>
-            {timed && <Field label="核实分钟数" required><input type="number" min="0" value={delay} onChange={e=>setDelay(e.target.value)}/></Field>}
-            {incident && incident !== "老师缺席" && <Field label="课时处理"><Select value={decision?.kind === "不扣" ? "不扣" : "扣课"} onValueChange={v=>setDecision({id:deciding.id,kind:v === "不扣" ? "不扣" : incident === "学员缺席" ? "缺席" : "扣课"})}><option>扣课</option><option>不扣</option></Select></Field>}
-        {incident && decision?.kind !== "不扣" && (
-          <Field
-            label="本节扣课数量"
-            required
-            hint="请按已核实业务口径填写，不按分钟数自动换算。"
-          >
-            <input
-              type="number"
-              min="0.01"
-              step="any"
-              value={units}
-              onChange={(event) => setUnits(event.target.value)}
-            />
-          </Field>
-        )}
-        {incident && <p>{decision?.kind === "不扣" ? "本节不扣课" : "本节扣课"} · 当前余额 {balance ?? "—"} 课时{balance !== undefined && (decision?.kind === "不扣" || Number(units)>0) && `，处理后 ${balance - (decision?.kind === "不扣" ? 0 : Number(units))} 课时`}</p>}
-        <Field label="核实依据" required>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="例如：老师未到场，已与家长确认"
-          />
-        </Field>
+            <table>
+              <thead>
+                <tr>
+                  <th>人员</th>
+                  <th>进入时间</th>
+                  <th>离开时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>老师</td>
+                  <td>{deciding.teacherIn || "暂无记录"}</td>
+                  <td>{deciding.teacherOut || "暂无记录"}</td>
+                </tr>
+                <tr>
+                  <td>学员</td>
+                  <td>{deciding.studentIn || "暂无记录"}</td>
+                  <td>{deciding.studentOut || "暂无记录"}</td>
+                </tr>
+              </tbody>
+            </table>
+            <Field label="核实结论" required>
+              <Select
+                value={incident}
+                placeholder="请选择核实结论"
+                onValueChange={(value) => {
+                  setIncident(value);
+                  setDecision({
+                    id: deciding.id,
+                    kind:
+                      value === "老师缺席"
+                        ? "不扣"
+                        : value === "学员缺席"
+                          ? "缺席"
+                          : "扣课",
+                  });
+                }}
+              >
+                {[
+                  "正常上课",
+                  "老师缺席",
+                  "学员缺席",
+                  "老师迟到",
+                  "老师早退",
+                  "学员取消",
+                  "学员网络设备问题",
+                  "老师取消",
+                  "老师网络设备问题",
+                  "教材错误或重复",
+                  "换老师",
+                  "换时间",
+                  "停课",
+                  "误操作",
+                  "其他",
+                ].map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </Select>
+            </Field>
+            {party && <Field label="实际取消时间（北京时间）" required>
+              <input type="datetime-local" value={cancelledAt} onChange={e => setCancelledAt(e.target.value)} />
+            </Field>}
+            {network && <Field label="实际上课结果" required>
+              <Select value={networkOutcome} placeholder="请选择实际上课结果" onValueChange={v => setNetworkOutcome(v as "正常完课" | "取消")}>
+                <option>正常完课</option><option>取消</option>
+              </Select>
+            </Field>}
+            {cancelReview && cancelCharge !== undefined && <p>核定为取消，本节{cancelCharge ? `扣 ${cancelCharge} 课时` : "不扣课时，已扣课时将退回"}。</p>}
+            {timed && (
+              <Field label="核实分钟数" required>
+                <input
+                  type="number"
+                  min="0"
+                  value={delay}
+                  onChange={(e) => setDelay(e.target.value)}
+                />
+              </Field>
+            )}
+            {incident && !cancelReview && incident !== "老师缺席" && (
+              <Field label="课时处理">
+                <Select
+                  value={decision?.kind === "不扣" ? "不扣" : "扣课"}
+                  onValueChange={(v) =>
+                    setDecision({
+                      id: deciding.id,
+                      kind:
+                        v === "不扣"
+                          ? "不扣"
+                          : incident === "学员缺席"
+                            ? "缺席"
+                            : "扣课",
+                    })
+                  }
+                >
+                  <option>扣课</option>
+                  <option>不扣</option>
+                </Select>
+              </Field>
+            )}
+            {incident && !cancelReview && decision?.kind !== "不扣" && (
+              <Field
+                label="本节扣课数量"
+                required
+                hint="请按已核实业务口径填写，不按分钟数自动换算。"
+              >
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={units}
+                  onChange={(event) => setUnits(event.target.value)}
+                />
+              </Field>
+            )}
+            {incident && !cancelReview && (
+              <p>
+                {decision?.kind === "不扣" ? "本节不扣课" : "本节扣课"} ·
+                当前余额 {balance ?? "—"} 课时
+                {balance !== undefined &&
+                  (decision?.kind === "不扣" || Number(units) > 0) &&
+                  `，处理后 ${balance - (decision?.kind === "不扣" ? 0 : Number(units))} 课时`}
+              </p>
+            )}
+            <Field label="核实依据" required>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="例如：老师未到场，已与家长确认"
+              />
+            </Field>
           </div>
         )}
       </Drawer>
@@ -693,18 +935,17 @@ export default function Lessons() {
               disabled={!reason.trim() || (deduct && !(Number(units) > 0))}
               onClick={async () =>
                 detail &&
-                await run(
+                (await run(
                   {
                     type: "lesson.correct",
                     id: detail.id,
                     deduct,
+                    ...(correctAttendance ? {attendance: "正常" as const, result: "已完成" as const} : {}),
                     reason,
-                    ...(deduct
-                      ? { units: Number(units) }
-                      : {}),
+                    ...(deduct ? { units: Number(units) } : {}),
                   },
                   () => setCorrect(false),
-                )
+                ))
               }
             >
               保存更正
@@ -713,7 +954,14 @@ export default function Lessons() {
         }
       >
         <div className="stack">
-          <p>原课时结果：{detail?.deducted ? `已扣 ${detail.confirmedUnits} 课时` : "不扣课时"}</p>
+          <p>
+            原课时结果：
+            {detail?.deducted
+              ? `已扣 ${detail.confirmedUnits} 课时`
+              : "不扣课时"}
+          </p>
+          {detail && (detail.attendance !== "正常" || /迟到|早退|缺席/.test(detail.incident?.reason ?? "")) &&
+            <label><input type="checkbox" checked={correctAttendance} onChange={e => setCorrectAttendance(e.target.checked)} />更正为正常出勤并完课</label>}
           <Field label="正确结果">
             <Select
               value={deduct ? "yes" : "no"}

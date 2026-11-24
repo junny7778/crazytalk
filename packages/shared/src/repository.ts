@@ -106,6 +106,12 @@ function read(): DemoState {
           const copyUpdated = updateStoredCopy(memory);
           let upgraded = initializeTeacherNumbers(memory);
           upgraded = catalog !== memory.catalog || payrollUpgrade || copyUpdated || upgraded;
+          for (const student of memory.students) {
+            if (!student.surveySubmittedAt && student.surveyOriginal && student.surveyPreviousSubmittedAt) {
+              student.surveySubmittedAt = student.surveyPreviousSubmittedAt;
+              upgraded = true;
+            }
+          }
           const tagsUpdated = initializeTeacherTags(memory);
           upgraded ||= tagsUpdated;
           const teamsUpdated = assignSampleTeams(memory);

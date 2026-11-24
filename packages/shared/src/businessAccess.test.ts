@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createSeed } from "./seed";
 import { assertCommandAccess, scopeState } from "./access";
 import { parseCommand } from "./commandSchema";
+import { defaultPayRules } from "./halfMonthPayrollSchema";
 import { permissionGroups, stateSchema } from "./model";
 
 describe("业务接口权限边界", () => {
@@ -211,7 +212,13 @@ describe("业务接口权限边界", () => {
     expect(() =>
       scopeState(state, { ...identity, teacherId: undefined }),
     ).toThrow("关联档案");
+    state.payRuleChanges = [{ at: "2026-11-10", values: defaultPayRules }];
+    state.lessonPayBasis = { [state.lessons[0].id]: { teacherRate: 180, officeRate: 60, rules: defaultPayRules } };
+    state.officeRateHistory = { [state.teachers[0].so]: [{ until: "2026-11-10", rate: 60 }] };
     const visible = scopeState(state, identity);
+    expect(visible.payRuleChanges).toBeUndefined();
+    expect(visible.lessonPayBasis).toBeUndefined();
+    expect(visible.officeRateHistory).toBeUndefined();
     expect(visible.teachers.map((item) => item.id)).toEqual([teacher.id]);
     expect(visible.lessons.every((item) => item.teacherId === teacher.id)).toBe(
       true,
@@ -289,7 +296,13 @@ describe("业务接口权限边界", () => {
         学生中文名: student.chineseName,
       },
     };
+    state.payRuleChanges = [{ at: "2026-11-10", values: defaultPayRules }];
+    state.lessonPayBasis = { [state.lessons[0].id]: { teacherRate: 180, officeRate: 60, rules: defaultPayRules } };
+    state.officeRateHistory = { [state.teachers[0].so]: [{ until: "2026-11-10", rate: 60 }] };
     const visible = scopeState(state, identity);
+    expect(visible.payRuleChanges).toBeUndefined();
+    expect(visible.lessonPayBasis).toBeUndefined();
+    expect(visible.officeRateHistory).toBeUndefined();
     expect(stateSchema.safeParse(visible).success).toBe(true);
     expect(visible.students[0].phone).toBe("****5678");
     expect(visible.students[0].roster?.fields["手机号码"]).toBe("****5678");
@@ -398,4 +411,18 @@ it("普通账号授权全部后可跨队读取和操作，角色操作权限仍�
  const other=state.students.find(s=>s.owner==="Roma")!;
  expect(()=>assertCommandAccess(state,identity,{type:"credit.add",studentId:other.id,units:1,kind:"补偿",note:"跨队授权"})).not.toThrow();
  expect(()=>assertCommandAccess(state,identity,{type:"account.save",account})).toThrow("权限");
+});
+
+it("按负责老师的 SO 限定单价编辑范围", () => {
+  const data = createSeed();
+  const tm = data.accounts.find(account => account.roleId === "tm")!;
+  data.roles.find(role => role.id === "tm")!.permissions.push("pay_rate.edit", "payroll.view", "field.pay_amount");
+  data.teachers[0].tmAccountId = tm.id;
+  data.teachers[0].so = "负责的 SO";
+  const identity = { accountId: tm.id, roleId: tm.roleId, name: tm.name };
+  const check = (so: string) => assertCommandAccess(data, identity, { type: "halfPay.officeRate", so, rate: 60 });
+  expect(() => check(data.teachers[0].so)).not.toThrow();
+  data.teachers[1].so = "其他 SO";
+  delete data.teachers[1].tmAccountId;
+  expect(() => check(data.teachers[1].so)).toThrow("本人负责");
 });

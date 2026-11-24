@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getScheduleCredits, scheduleUnits, schedulingAccountIssue } from "@crazytalk/shared";
+import { getScheduleCredits, scheduleUnits, schedulingBookingIssue } from "@crazytalk/shared";
 import { useDemo } from "@crazytalk/shared/react";
 import { Button, Field } from "@crazytalk/ui";
 
@@ -7,6 +7,7 @@ export function useScheduleCredits(
   studentId: string,
   duration: number,
   count: number,
+  teacherIds: string[] = [],
 ) {
   const { data, act, can, preview } = useDemo();
   const [manual, setManual] = useState("");
@@ -21,7 +22,7 @@ export function useScheduleCredits(
     manual.trim() ? Number(manual) : undefined,
   );
   const summary = getScheduleCredits(data, studentId, count, units ?? NaN);
-  if (studentId) summary.error = schedulingAccountIssue(data, studentId) || summary.error;
+  if (studentId) summary.error = schedulingBookingIssue(data, studentId, teacherIds) || summary.error;
   const unknown = data.lessons.filter(
     (l) =>
       l.studentId === studentId &&

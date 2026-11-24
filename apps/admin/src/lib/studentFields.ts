@@ -72,6 +72,29 @@ export const studentFieldGroups: { title: string; fields: StudentField[] }[] = [
   },
 ];
 
+const surveyOverviewFields: Record<string, StudentField[]> = {
+  "学生基本信息": [{ key: "ageGroup", label: "年龄段" }],
+  "学习特点与偏好": [
+    { key: "level", label: "口语基础" },
+    { key: "interests", label: "兴趣爱好" },
+    { key: "membershipDuration", label: "加入体系时长" },
+    { key: "listeningHours", label: "听力输入总时长" },
+  ],
+};
+export const studentOverviewFieldGroups = [
+  ...studentFieldGroups.map((group) => ({
+    ...group,
+    fields: [...group.fields, ...(surveyOverviewFields[group.title] ?? [])],
+  })),
+  {
+    title: "上课偏好与备注",
+    fields: [
+      { key: "preferredLessonTime", label: "预选上课时段" },
+      { key: "learningNotes", label: "其他备注" },
+    ] satisfies StudentField[],
+  },
+];
+
 export function studentFieldValue(
   student: Student,
   key: StudentField["key"],
@@ -86,7 +109,7 @@ export function studentFieldValue(
   }
   if (key === "age")
     return (
-      student.ageText || (student.age === null ? null : `${student.age} 岁`)
+      student.age === null ? (student.ageGroup ?? student.ageText) || null : `${student.age} 岁`
     );
   const value = student[key];
   return typeof value === "string" || typeof value === "number" ? value : null;

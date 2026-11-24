@@ -50,7 +50,7 @@ const Schedule = lazy(() => import("./pages/Schedule"));
 const Lessons = lazy(() => import("./pages/operations/Lessons"));
 const Feedback = lazy(() => import("./pages/operations/Feedback"));
 const Teachers = lazy(() => import("./pages/operations/Teachers"));
-const Payroll = lazy(() => import("./pages/operations/Payroll"));
+const Payroll = lazy(() => import("./pages/operations/HalfMonthPayroll"));
 const SettingsPage = lazy(() => import("./pages/operations/Settings"));
 const TeacherApp = lazy(() => import("../../teacher/src/App"));
 const nav = [

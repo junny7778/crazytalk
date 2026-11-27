@@ -151,10 +151,10 @@ describe("教师可用时间与临时排课", () => {
     expect(teacher?.availabilityNote).toContain("20号开始");
     expect(teacher?.availabilitySource).toBe("reference");
   });
-  it("常规时间仍保留老师额外确认要求", () => {
+  it("常规时间可直接排课，也可记录运营已联系老师", () => {
     const { data, teacher } = fixture();
     teacher.needConfirm = true;
-    expect(() => transition(data, schedule())).toThrow("请先与老师确认");
+    expect(transition(data, schedule()).data.lessons[0].confirmation).toBeUndefined();
     expect(
       transition(data, schedule({ confirmedTeacher: true })).data.lessons[0]
         .confirmation,

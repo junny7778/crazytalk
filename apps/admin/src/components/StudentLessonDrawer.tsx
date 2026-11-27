@@ -1,3 +1,4 @@
+import { operationsNow } from "@crazytalk/shared";
 import ClassInOperationFeedback from "./ClassInOperationFeedback";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { useEffect, useRef, useState } from "react";
@@ -108,7 +109,7 @@ export function StudentLessonDrawer({
     : 0;
   const currentBalance = lesson.orderId
     ? data.orders?.find(pack => pack.id === lesson.orderId)?.balance
-    : student?.balanceKnown ? student.balance : undefined;
+    : student?.balance;
   const previewBalance =
     currentBalance !== undefined &&
     beforeDeducted !== undefined &&
@@ -123,7 +124,7 @@ export function StudentLessonDrawer({
     lesson.status !== "未开始" &&
     can(pending ? "lesson.confirm" : "lesson.correct");
   const canChange = can("student.reschedule") && canChangeStudentLesson(student, lesson);
-  const charge = editing === "cancel" ? cancellationCharge(lesson, responsibility, cancelKind, waived, new Date().toISOString()) : undefined;
+  const charge = editing === "cancel" ? cancellationCharge(lesson, responsibility, cancelKind, waived, new Date(operationsNow()).toISOString()) : undefined;
   const dirty =
     editing === "cancel"
       ? !!reason.trim() || responsibility !== "学员" || waived || cancelKind !== "学员请假"

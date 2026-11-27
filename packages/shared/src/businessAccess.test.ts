@@ -426,3 +426,125 @@ it("按负责老师的 SO 限定单价编辑范围", () => {
   delete data.teachers[1].tmAccountId;
   expect(() => check(data.teachers[1].so)).toThrow("本人负责");
 });
+
+it("老师可见本人已确认与已发放半月薪资，且彻底剥离机构费率与待核字段", () => {
+  const state = createSeed();
+  const teacher = state.teachers[0];
+  const otherTeacher = state.teachers[1];
+  state.accounts.push({
+    id: "teacher-pay-account",
+    name: teacher.name,
+    phone: teacher.phone,
+    roleId: "teacher",
+    scope: "本人负责",
+    enabled: true,
+  });
+  const identity = {
+    accountId: "teacher-pay-account",
+    name: teacher.name,
+    roleId: "teacher",
+    teacherId: teacher.id,
+  };
+  state.halfMonthPayroll = [
+    {
+      teacherId: teacher.id,
+      period: "2026-10-1",
+      status: "已发放",
+      adjustments: [
+        { key: "adj-t", side: "teacher", amount: 50, note: "老师补贴", at: "2026-10-16T08:00:00Z", operator: "Rita" },
+        { key: "adj-o", side: "office", amount: 120, note: "机构内部调整", at: "2026-10-16T08:00:00Z", operator: "Rita" },
+      ],
+      verifiedRates: { "2026-10-02": 180 },
+      networkPay: { "network-pay:l1": { teacher: 90, office: 30 } },
+      decisions: { "network-pay:l1": "正常支付" },
+      seriousComplaints: ["f1"],
+      snapshot: {
+        name: teacher.name,
+        so: teacher.so,
+        mode: "NP",
+        teacherRate: 180,
+        officeRate: 60,
+        rules: defaultPayRules,
+        rows: [
+          {
+            key: "lesson:l1",
+            date: "2026-10-02",
+            category: "底薪",
+            title: "NP 正常完课",
+            detail: "1 课时",
+            source: "l1",
+            teacher: 180,
+            office: 60,
+            quantity: 1,
+            quantityUnit: "课时",
+            teacherUnitPrice: 180,
+            officeUnitPrice: 60,
+            payRatio: 1,
+            pendingRates: ["teacher", "office"],
+          },
+          {
+            key: "adj:office-only",
+            date: "2026-10-03",
+            category: "人工调整",
+            title: "机构补差",
+            detail: "仅机构",
+            source: "manual",
+            teacher: 0,
+            office: 120,
+          },
+          {
+            key: "adj:teacher-only",
+            date: "2026-10-04",
+            category: "人工调整",
+            title: "老师补贴",
+            detail: "补贴",
+            source: "manual",
+            teacher: 50,
+            office: 0,
+          },
+          {
+            key: "wait:1",
+            date: "2026-10-05",
+            category: "等待",
+            title: "等待确认",
+            detail: "",
+            source: "l2",
+            teacher: 0,
+            office: 0,
+          },
+        ],
+      },
+    },
+    {
+      teacherId: teacher.id,
+      period: "2026-10-2",
+      status: "待确认",
+      adjustments: [],
+    },
+    {
+      teacherId: otherTeacher.id,
+      period: "2026-10-1",
+      status: "已确认",
+      adjustments: [],
+    },
+  ];
+  const before = structuredClone(state.halfMonthPayroll);
+  const visible = scopeState(state, identity);
+  expect(stateSchema.safeParse(visible).success).toBe(true);
+  expect(visible.halfMonthPayroll).toHaveLength(1);
+  const rec = visible.halfMonthPayroll![0];
+  expect(rec.teacherId).toBe(teacher.id);
+  expect(rec.period).toBe("2026-10-1");
+  expect(rec.adjustments).toHaveLength(1);
+  expect(rec.adjustments[0].side).toBe("teacher");
+  expect(rec.verifiedRates).toBeUndefined();
+  expect(rec.networkPay).toBeUndefined();
+  expect(rec.decisions).toBeUndefined();
+  expect(rec.seriousComplaints).toBeUndefined();
+  expect(rec.snapshot?.officeRate).toBeUndefined();
+  expect(rec.snapshot?.rows.map((r) => r.key)).toEqual(["lesson:l1", "adj:teacher-only"]);
+  expect(rec.snapshot?.rows[0].office).toBe(0);
+  expect(rec.snapshot?.rows[0].officeUnitPrice).toBeUndefined();
+  expect(rec.snapshot?.rows[0].pendingRates).toEqual(["teacher"]);
+  expect(state.halfMonthPayroll).toEqual(before);
+});

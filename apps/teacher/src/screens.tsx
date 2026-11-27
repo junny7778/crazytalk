@@ -1,5 +1,5 @@
 import { businessMode, businessRequest, businessAccountId } from "@crazytalk/shared/react";
-import { accountPasswordSchema, payrollBreakdown, formatStudentProgress } from "@crazytalk/shared";
+import { accountPasswordSchema, formatStudentProgress, roundPay, type HalfMonthRecord } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -799,20 +799,16 @@ export function Training({
   );
 }
 export function PayContent({
-  pay,
-  payroll,
+  record,
   t,
-  findStudent,
   onFeedback,
 }: {
-  pay: ReturnType<typeof payrollBreakdown> | undefined;
-  payroll: ReturnType<typeof useDemo>["data"]["payroll"][number] | undefined;
+  record: HalfMonthRecord | undefined;
   t: (key: TextKey) => string;
-  findStudent: (id: string) => Student | undefined;
   onFeedback: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  if (!payroll || !pay || payroll.status === "待确认")
+  if (!record || record.status === "待确认" || !record.snapshot)
     return (
       <div className="teacher-unconfirmed">
         <Wallet size={44} />
@@ -820,35 +816,57 @@ export function PayContent({
         <p>{t("notConfirmedHint")}</p>
       </div>
     );
-  const gross = pay.base;
-  const deduct = pay.deductions;
+  const rows = record.snapshot.rows.filter(
+    (r) =>
+      !(r.category === "人工调整" && r.teacher === 0) &&
+      r.category !== "等待" &&
+      r.category !== "待核",
+  );
+  const total = roundPay(rows.reduce((sum, row) => sum + row.teacher, 0));
+  const baseRows = rows.filter((r) => r.category === "底薪");
+  const base = roundPay(baseRows.reduce((s, r) => s + r.teacher, 0));
+  const bonusRows = rows.filter((r) => r.category === "奖金");
+  const bonus = roundPay(bonusRows.reduce((s, r) => s + r.teacher, 0));
+  const deductionRows = rows.filter((r) => r.category === "扣款");
+  const deductions = roundPay(
+    deductionRows.reduce((s, r) => s + Math.abs(r.teacher), 0),
+  );
+  const adjustmentRows = rows.filter((r) => r.category === "人工调整");
+  const adjustments = roundPay(
+    adjustmentRows.reduce((s, r) => s + r.teacher, 0),
+  );
+  const formatAmount = (amount: number) =>
+    amount < 0 ? `−${currency(Math.abs(amount))}` : currency(amount);
   return (
     <>
       <div className="teacher-pay-summary">
         <div className="row between">
           <span className="teacher-eyebrow">{t("total")}</span>
           <Badge tone="success">
-            {payroll.status === "已发放" ? t("paid") : t("confirmed")}
+            {record.status === "已发放" ? t("paid") : t("confirmed")}
           </Badge>
         </div>
-        <strong>{currency(pay.total)}</strong>
+        <strong>{formatAmount(total)}</strong>
         <div className="teacher-pay-breakdown">
           <div>
-            <span>{t("lessonPay")}</span>
-            <span>
-              {pay.units} {t("lessons")}
-            </span>
-            <strong>{currency(gross)}</strong>
+            <span>{t("basePay")}</span>
+            <span>{baseRows.length}</span>
+            <strong>{formatAmount(base)}</strong>
+          </div>
+          <div>
+            <span>{t("bonus")}</span>
+            <span>{bonusRows.length}</span>
+            <strong>{formatAmount(bonus)}</strong>
           </div>
           <div>
             <span>{t("deductions")}</span>
-            <span>{pay.deductionRows.length}</span>
-            <strong>−{currency(deduct)}</strong>
+            <span>{deductionRows.length}</span>
+            <strong>−{currency(deductions)}</strong>
           </div>
           <div>
             <span>{t("adjustments")}</span>
-            <span />
-            <strong>{currency(pay.adjustment)}</strong>
+            <span>{adjustmentRows.length}</span>
+            <strong>{formatAmount(adjustments)}</strong>
           </div>
         </div>
       </div>
@@ -866,41 +884,46 @@ export function PayContent({
         </button>
         {expanded && (
           <>
-            <div className="teacher-pay-lesson">
-              <span>{t("openingPay")}<small>{pay.opening.units} {t("lessons")}</small></span>
-              <strong>{currency(pay.opening.amount)}</strong>
-            </div>
-            <p className="teacher-inline-hint">{t("openingPayHint")}</p>
-            {pay.rows.map((row) => (
-              <div className="teacher-pay-lesson" key={row.lessonId}>
-                <div className="teacher-payslip-facts"><span>{t("startTime")}</span><p>{row.date} {row.time}</p><span>{t("student")}</span><p>{findStudent(row.studentId)?.name || "—"}</p><span>{t("lessons")}</span><p>{row.units}</p><span>{t("payUnitRate")}</span><p>{currency(row.rate)}</p></div>
-                <strong>{currency(row.amount)}</strong>
+            {rows.map((row) => (
+              <div className="teacher-pay-lesson" key={row.key}>
+                <div className="teacher-payslip-facts">
+                  <span>{row.date}</span>
+                  <p>{row.title}</p>
+                  {row.detail && (
+                    <>
+                      <span>{row.category}</span>
+                      <p>{row.detail}</p>
+                    </>
+                  )}
+                </div>
+                <strong>{formatAmount(row.teacher)}</strong>
               </div>
             ))}
-            {!pay.rows.length && <p className="teacher-inline-hint">{t("noPayLessons")}</p>}
+            {!rows.length && (
+              <p className="teacher-inline-hint">{t("noPayItems")}</p>
+            )}
           </>
         )}
-
       </div>
       <section className="teacher-card">
         <h2>{t("deductions")}</h2>
-        {pay.deductionRows.length ? (
-          pay.deductionRows.map((a) => (
+        {deductionRows.length ? (
+          deductionRows.map((a) => (
             <button
-              key={a.id}
+              key={a.key}
               className="teacher-deduction"
               onClick={onFeedback}
             >
               <span>
                 <small>{a.date.slice(5)}</small>
-                <p>{a.reason}</p>
+                <p>{a.title}{a.detail ? ` · ${a.detail}` : ""}</p>
               </span>
-              <strong>−{currency(a.amount)}</strong>
+              <strong>−{currency(Math.abs(a.teacher))}</strong>
               <ChevronRight size={16} />
             </button>
           ))
         ) : (
-          <p className="teacher-inline-hint">{pay.deductions ? t("historicalDeduction") : t("noDeduction")}</p>
+          <p className="teacher-inline-hint">{t("noDeduction")}</p>
         )}
       </section>
     </>

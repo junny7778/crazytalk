@@ -129,7 +129,7 @@ it("意向外可排，取消选择不新增，移除待保存课程不写入", a
   expect(screen.queryByRole("button", { name: /待保存 T\./ })).toBeNull();
   await select("19:00", f.d.teachers[0].name);
   await testAct(async () => { fireEvent.click(
-    screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ }),
+    screen.getByRole("button", { name: /2026-11-23 19:00 待保存 T\./ }),
   ); });
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "移除本节" })); });
   expect(demoRepository.read().lessons).toHaveLength(0);
@@ -138,7 +138,7 @@ it("拖动至原老师不可用时间，取消保留原课，选新老师后移�
   const { d } = mount();
   await select("19:00", d.teachers[0].name);
   const transfer = { setData: vi.fn(), effectAllowed: "" };
-  let source = screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ });
+  let source = screen.getByRole("button", { name: /2026-11-23 19:00 待保存 T\./ });
   await testAct(async () => { fireEvent.dragStart(source, { dataTransfer: transfer }); });
   await testAct(async () => { fireEvent.drop(
     screen.getByRole("button", { name: "2026-11-23 20:00 可排课" }),
@@ -146,9 +146,9 @@ it("拖动至原老师不可用时间，取消保留原课，选新老师后移�
   ); });
   await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "取消" })); });
   expect(
-    screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ }),
+    screen.getByRole("button", { name: /2026-11-23 19:00 待保存 T\./ }),
   ).toBeTruthy();
-  source = screen.getByRole("button", { name: /2026-11-23 19:00 待保存/ });
+  source = screen.getByRole("button", { name: /2026-11-23 19:00 待保存 T\./ });
   await testAct(async () => { fireEvent.dragStart(source, { dataTransfer: transfer }); });
   await testAct(async () => { fireEvent.drop(
     screen.getByRole("button", { name: "2026-11-23 20:00 可排课" }),
@@ -199,7 +199,7 @@ it("灵活提交仍拦冲突、离职、过去和常规范围外；固定仍拦�
 });
 it("窄分钟窗口可见且支持08点前课程；请假仍拒绝", () => {
   const f = fixture();
-  f.d.teachers[0].availability = [{ day: 1, start: "07:15", end: "07:40" }];
+  f.d.teachers[0].availability = [{ day: 1, start: "07:15", end: "07:55" }];
   f.d.teachers[1].availability = [];
   const started = performance.now();
   render(
@@ -212,7 +212,7 @@ it("窄分钟窗口可见且支持08点前课程；请假仍拒绝", () => {
     </QueryClientProvider>,
   );
   expect(
-    screen.getByRole("button", { name: "2026-11-23 07:15 可排课" }),
+    screen.getByRole("button", { name: "2026-11-23 07:30 可排课" }),
   ).toBeTruthy();
   console.info(
     `灵活全天日历挂载 ${Math.round(performance.now() - started)}ms（2老师测试夹具）`,
@@ -232,7 +232,7 @@ it("窄分钟窗口可见且支持08点前课程；请假仍拒绝", () => {
       kind: "临时课",
       studentId: f.s.id,
       teacherId: f.d.teachers[0].id,
-      slots: [{ date: "2026-11-23", time: "07:15" }],
+      slots: [{ date: "2026-11-23", time: "07:30" }],
       duration: 25,
       material: f.s.material,
     }),

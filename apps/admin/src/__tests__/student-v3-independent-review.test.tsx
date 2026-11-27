@@ -18,7 +18,7 @@ import {
   transition,
   type DemoState,
 } from "@crazytalk/shared";
-import { demoRepository } from "../../../../packages/shared/src/repository";
+import { DEMO_STORAGE_KEY, demoRepository } from "../../../../packages/shared/src/repository";
 import { studentActivities } from "../lib/studentActivity";
 import App from "../App";
 
@@ -353,11 +353,11 @@ describe("学员中心 V3 独立验收", () => {
       vi.useRealTimers();
     }
   });
-  it("未知余额和暂停服务不误报；课前提醒关联真实课并防重", () => {
+  it("余额高于阈值和暂停服务不误报；课前提醒关联真实课并防重", () => {
     let data = fixture();
     const s = data.students[0];
     const before = data.tasks.length;
-    s.balanceKnown = false;
+    s.balance = 101;
     data = transition(data, {
       type: "student.reminder.preview",
       studentId: s.id,
@@ -365,7 +365,6 @@ describe("学员中心 V3 独立验收", () => {
       threshold: 100,
     }).data;
     expect(data.tasks).toHaveLength(before);
-    data.students[0].balanceKnown = true;
     data.students[0].status = "停课";
     data = transition(data, {
       type: "student.reminder.preview",
@@ -489,7 +488,7 @@ describe("学员中心 V3 独立验收", () => {
         deducted: false,
       },
     );
-    localStorage.setItem("crazytalk-demo-v1", JSON.stringify(data));
+    localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data));
     demoRepository.refresh();
     mount(`/students/${studentId}?tab=courses`);
     await testAct(async () => {

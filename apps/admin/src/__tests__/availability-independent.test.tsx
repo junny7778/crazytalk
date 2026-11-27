@@ -1,5 +1,5 @@
 import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
-import {clickSchedule, selectSchedule, startTeacherStudent, addCalendarLesson} from "./schedulingTestActions";
+import {clickSchedule, selectSchedule, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
 import { transferableAbortController } from "node:util";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
@@ -105,6 +105,8 @@ describe("独立验收：教师时间与排课", () => {
     await testAct(async () => {
       fireEvent.click(screen.getByRole("combobox", { name: "排课周期" }));
     });
+    expect(screen.getByRole("option", {name:"16 周"})).toBeTruthy();
+    expect(screen.getByRole("option", {name:"32 周"})).toBeTruthy();
     await testAct(async () => {
       fireEvent.click(screen.getByRole("option", { name: "4 周" }));
     });
@@ -123,8 +125,8 @@ describe("独立验收：教师时间与排课", () => {
 
   it("排课成功定位新日期并展示课程，重复安排被阻止", async()=>{
  const d=demoRepository.read();d.lessons=[];d.leaves=[];d.teachers[0].availability=[{day:1,start:"18:00",end:"21:00"}];d.teachers[0].availabilityFrom="";
- mount("/schedule?teacher=t1&date=2026-11-23");await clickSchedule("为该老师排课");await startTeacherStudent("排课测试学员");await addCalendarLesson("2026-11-23","18:30");await clickSchedule("预览排课");await clickSchedule("确认排课");expect(screen.getByText(/课程已保存，可在下方查看同步状态/)).toBeTruthy();expect(screen.getByRole("region",{name:"已安排课程"}).textContent).toContain("18:30");
- await clickSchedule("为该老师排课");await startTeacherStudent("排课测试学员");expect(screen.queryByRole("button",{name:/2026-11-23 18:30 可排课/})).toBeNull();expect(screen.getByRole("button",{name:"预览排课"}).hasAttribute("disabled")).toBe(true);
+ mount("/schedule?teacher=t1&date=2026-11-23");await clickSchedule("为该老师排课");await clickSchedule(/2026-11-23 18:30 可排课/);await clickSchedule("确认时段");await selectStudentCard("排课测试学员");await clickSchedule("确定排课");expect(screen.getByText(/课程已保存，可在下方查看同步状态/)).toBeTruthy();expect(screen.getByRole("region",{name:"已安排课程"}).textContent).toContain("18:30");
+ await clickSchedule("为该老师排课");expect(screen.queryByRole("button",{name:/2026-11-23 18:30 可排课/})).toBeNull();expect(screen.queryByRole("button",{name:"确认时段"})).toBeNull();
 
 });
 
@@ -185,7 +187,7 @@ describe("独立验收：教师时间与排课", () => {
         type: "lesson.schedule",
         studentId: "s4",
         teacherId: teacher.id,
-        slots: [{ date: "2026-11-09", time: "18:40" }],
+        slots: [{ date: "2026-11-09", time: "19:00" }],
         duration: 25,
         kind: "临时课",
         material: data.students.find(s => s.id === "s4")!.material,

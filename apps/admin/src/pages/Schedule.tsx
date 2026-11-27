@@ -7,6 +7,7 @@ type Command,
 DEMO_TODAY,
 type FixedPlan,
 formatDate,
+getScheduleCredits,
 getStudentScheduleProgress,
 isAvailable,
 isRegularTime,
@@ -168,25 +169,39 @@ export default function Schedule() {
   const studentRanks = useMemo(() => {
     const futureStudents = new Set(
       data.lessons
-        .filter((l) => l.date >= DEMO_TODAY && l.status !== "已取消")
+        .filter((l) => l.date >= DEMO_TODAY && (l.status === "未开始" || l.status === "待确认"))
         .map((l) => l.studentId),
     );
-    return new Map(
-      data.students.map((s) => [
-        s.id,
-        ["停课", "结课", "退费"].includes(s.status)
-          ? 3
-          : !futureStudents.has(s.id)
-            ? 0
-            : s.scheduleIntent &&
-                getStudentScheduleProgress(data, s.id, s.scheduleIntent)
-                  .complete
-              ? 2
-              : 1,
-      ]),
-    );
+    const ranks = new Map<string, number>();
+    for (const student of data.students) {
+      if (["停课", "结课", "退费"].includes(student.status)) {
+        ranks.set(student.id, 4);
+      } else if (!futureStudents.has(student.id)) {
+        ranks.set(student.id, getScheduleCredits(data, student.id, 0, 1).available < 1 ? 3 : 0);
+      } else {
+        const plan = student.scheduleIntent;
+        let rank = 2;
+        if (plan && addDays(plan.startDate, plan.weeks * 7) > DEMO_TODAY) {
+          const { scheduledCount, requiredCount } = getStudentScheduleProgress(data, student.id, plan);
+          if (scheduledCount > 0 && scheduledCount < requiredCount) rank = 1;
+        }
+        ranks.set(student.id, rank);
+      }
+    }
+    return ranks;
   }, [data]);
   const studentRank = (s: Student) => studentRanks.get(s.id)!;
+  function rosterStatusBadge(student: Student) {
+    switch (studentRank(student)) {
+      case 0: return <Badge>待排课</Badge>;
+      case 1: return <span className="badge roster-partial-badge">部分排课</span>;
+      case 2: return <Badge tone="info">已排课</Badge>;
+      case 3: return <Badge tone="warning">课时不足</Badge>;
+      default:
+        if (student.status === "结课") return <span className="badge roster-completed-badge">结课</span>;
+        return <Badge tone={student.status === "退费" ? "danger" : "warning"}>{student.status}</Badge>;
+    }
+  }
   const allStudents = useMemo(
     () =>
       [...data.students].sort(
@@ -207,9 +222,7 @@ export default function Schedule() {
       (t) =>
         t.status === "在职" &&
         (!so || t.so === so) &&
-        `${t.name} ${t.teacherNumber}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
+        t.name.toLowerCase().includes(query.toLowerCase()),
     )
     .sort(
       (a, b) =>
@@ -280,8 +293,6 @@ export default function Schedule() {
         lesson.duration,
       ),
   );
-  const moveNeedsConfirmation =
-    moveOutside || Boolean(moveTeacher?.needConfirm);
   const movePrecheck = lesson
     ? schedulingBookingIssue(data, lesson.studentId, [rescheduleTeacher]) || isAvailable(
         data,
@@ -405,7 +416,7 @@ export default function Schedule() {
           <SearchInput
             value={panel === "teachers" ? query : studentQuery}
             onChange={panel === "teachers" ? setQuery : setStudentQuery}
-            placeholder="搜索姓名或 ID"
+            placeholder={panel === "teachers" ? "搜索姓名" : "搜索姓名或 ID"}
           />
           {panel === "pending" ? (
             <>
@@ -415,9 +426,10 @@ export default function Schedule() {
                 onValueChange={setStudentFilter}
               >
                 <option value="all">全部学员</option>
-                <option value="0">未排课</option>
-                <option value="1">部分已排 / 待完善计划</option>
-                <option value="2">计划已排齐</option>
+                <option value="0">待排课</option>
+                <option value="1">部分排课</option>
+                <option value="2">已排课</option>
+                <option value="3">课时不足</option>
               </Select>
               <div className="roster-list" aria-label="学员列表">
                 {pending.map((s) => (
@@ -435,8 +447,11 @@ export default function Schedule() {
                   >
                     <Avatar name={s.name} />
                     <span>
-                      <strong>{s.name}</strong>
-                      <small>{s.id}</small>
+                      <span className="roster-student-heading">
+                        <strong title={s.name}>{s.name}</strong>
+                        {rosterStatusBadge(s)}
+                      </span>
+                      <small>ID：{s.id}</small>
                     </span>
                   </button>
                 ))}
@@ -479,7 +494,7 @@ export default function Schedule() {
                     <Avatar name={t.name} />
                     <span>
                       <strong>{t.name}</strong>
-                      <small>{t.teacherNumber}</small>
+                      <small>SO：{t.so}</small>
                     </span>
                   </button>
                 ))}
@@ -506,6 +521,7 @@ export default function Schedule() {
           )}
         </aside>
         <div
+          data-student-flow={flow !== "overview" && panel !== "teachers" || undefined}
           className={`schedule-main stack ${flow !== "overview" ? "schedule-workspace-card" : ""}`}
         >
           {scheduleResult && (
@@ -635,6 +651,7 @@ export default function Schedule() {
           {fixedPlan && student && (
             <div className="schedule-summary-card" hidden={!fixedPreview}>
               <FixedPlanCalendar
+                active={fixedPreview}
                 key={`${studentId}-${fixedPlan.plan.primaryTeacherId}-${JSON.stringify(fixedPlan.intent)}`}
                 studentId={studentId}
                 plan={fixedPlan.plan}
@@ -925,7 +942,7 @@ export default function Schedule() {
                 !rescheduleTime ||
                 !rescheduleTeacher ||
                 Boolean(movePrecheck) ||
-                (moveNeedsConfirmation && !rescheduleConfirmed)
+                (moveOutside && !rescheduleConfirmed)
               }
               onClick={async () => {
                 if (lesson)
@@ -975,6 +992,7 @@ export default function Schedule() {
             </Field>
             <Field label="上课时间" required>
               <TimePicker
+                halfHourOnly
                 label="上课时间"
                 value={rescheduleTime}
                 onChange={(value) => setRescheduleTime(value)}
@@ -1019,7 +1037,7 @@ export default function Schedule() {
               调整后的时间不在老师的常规安排内，本节将作为临时课安排。
             </div>
           )}
-          {moveNeedsConfirmation && (
+          {moveOutside && (
             <label className="select-row">
               <input
                 type="checkbox"

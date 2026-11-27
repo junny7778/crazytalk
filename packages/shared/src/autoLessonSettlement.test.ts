@@ -19,8 +19,6 @@ beforeEach(() => {
     studentAttendance: ["正常"],
     confirmedUnits: 1.5,
   });
-  data.students.find((s) => s.id === data.lessons[0].studentId)!.balanceKnown =
-    true;
 });
 describe("正常课程自动扣课", () => {
   it("按配置扣课并记录流水，重复执行不重复扣除", () => {
@@ -65,7 +63,7 @@ describe("正常课程自动扣课", () => {
     expect(autoSettleLessons(data, now - 3600000)).toBe(data);
     data.students.find(
       (s) => s.id === data.lessons[0].studentId,
-    )!.balanceKnown = false;
+    )!.balance = 0;
     expect(autoSettleLessons(data, now)).toBe(data);
   });
   it("人工更正不扣后不被再次自动扣回", () => {

@@ -1,3 +1,4 @@
+import { operationsNow } from "./clock";
 import { addDays, type DemoState, type Lesson, type Teacher } from "./model";
 import {
   defaultPayRules,
@@ -5,7 +6,8 @@ import {
   type HalfMonthRecord,
   type PayEntry,
 } from "./halfMonthPayrollSchema";
-import { needsLessonOutcomeReview, personAttendance } from "./lessonAttendance";
+import { halfMonthLastDay, lessonAttendanceBlocker, personAttendance } from "./lessonAttendance";
+export { hasFinalPayrollAttendance } from "./lessonAttendance";
 import { scheduleUnits } from "./scheduleCredits";
 import { packagePurchases } from "./packagePurchases";
 
@@ -22,28 +24,37 @@ function lessonAttendanceForPay(l: Lesson, lateLimit: number) {
     l.status === "已取消" && l.cancellation
       ? l.cancellation.kind
       : [l.incident?.reason, l.attendance].join(" ");
-  const teacher = personAttendance(l, "老师");
-  const student = personAttendance(l, "学员");
+  const summary = l.classInAttendanceReceived && !l.incident && l.status !== "已取消";
+  const teacher = summary ? l.teacherAttendance ?? ["待核实"] : personAttendance(l, "老师");
+  const student = summary ? l.studentAttendance ?? ["待核实"] : personAttendance(l, "学员");
   const late =
     /老师迟到|老师早退/.test(issue) ||
     teacher.some((t) => t === "迟到" || t === "早退");
+  const minutes = l.incident ? l.incident.minutes : l.classInTeacherExceptionMinutes;
   const absent =
     /老师缺席/.test(issue) ||
     teacher.includes("缺席") ||
-    (late && (l.incident?.minutes ?? 0) > lateLimit);
+    (late && (minutes ?? 0) > lateLimit);
   const studentAbsent = /学员缺席/.test(issue) || student.includes("缺席");
   const reviewed = l.status === "已完成" && l.incident !== undefined;
   const pendingAttendance =
-    needsLessonOutcomeReview(l) ||
-    (!reviewed && (teacher.includes("待核实") || student.includes("待核实")));
+    !reviewed && (teacher.includes("待核实") || student.includes("待核实"));
   const completed =
-    l.status === "已完成" &&
+    (l.status === "已完成" || (l.status !== "已取消" && l.classInAttendanceReceived === true)) &&
     !absent &&
     !studentAbsent &&
     !pendingAttendance &&
     !/教材/.test(issue) &&
     (!/网络/.test(issue) || l.incident?.networkOutcome === "正常完课");
-  return { issue, late, absent, studentAbsent, pendingAttendance, completed };
+  return { issue, late, minutes, absent, studentAbsent, pendingAttendance, completed };
+}
+
+export function payrollReadiness(rows: PayEntry[], period: string, now = operationsNow()) {
+  const waiting = rows.filter(row => row.category === "等待").length;
+  const review = rows.filter(row => row.category === "待核").length;
+  const last = payDates(period).at(-1)!;
+  const canConfirm = !waiting && !review && now >= Date.parse(last + "T00:00:00+08:00");
+  return { waiting, review, canConfirm };
 }
 
 export function changeTeacherRate(teacher: Teacher, rate: number, at: string) {
@@ -67,11 +78,7 @@ export function payDates(period: string) {
   const month = period.slice(0, 7);
   const second = period.endsWith("-2");
   const first = second ? 16 : 1;
-  const last = second
-    ? new Date(
-        Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 0),
-      ).getUTCDate()
-    : 15;
+  const last = halfMonthLastDay(month + (second ? "-16" : "-01"));
   return Array.from(
     { length: last - first + 1 },
     (_, index) => month + "-" + String(first + index).padStart(2, "0"),
@@ -115,7 +122,7 @@ export function halfMonthStatement(
   data: DemoState,
   teacher: Teacher,
   period: string,
-  now = Date.now(),
+  now = operationsNow(),
 ): NonNullable<HalfMonthRecord["snapshot"]> {
   return calculateStatement(data, teacher, period, now, false);
 }
@@ -149,6 +156,7 @@ function calculateStatement(
     source: string,
     teacherAmount = 0,
     officeAmount = 0,
+    calculation?: Pick<PayEntry, "quantity" | "quantityUnit" | "teacherUnitPrice" | "officeUnitPrice" | "payRatio">,
   ) {
     const row: PayEntry = {
       category,
@@ -159,6 +167,7 @@ function calculateStatement(
       source,
       teacher: roundPay(teacherAmount),
       office: roundPay(officeAmount),
+      ...calculation,
     };
     rows.push(row);
     return row;
@@ -214,7 +223,7 @@ function calculateStatement(
         ?.rate ??
       officeRate;
     const teacherPrice = rate > 0 ? "₱" + rate : "单价待核";
-    const officePrice = office !== undefined ? "₱" + office : "单价待核";
+    const officePrice = office !== undefined ? "₱" + office : "单价待设置";
     const row = add(
       "底薪",
       key,
@@ -224,6 +233,7 @@ function calculateStatement(
       source,
       units * rate * ratio,
       units * (office ?? 0) * ratio,
+      { quantity: units, quantityUnit: "课时", teacherUnitPrice: rate > 0 ? rate : undefined, officeUnitPrice: office, payRatio: ratio },
     );
     if (rate <= 0) row.pendingRates = ["teacher"];
     if (office === undefined) (row.pendingRates ??= []).push("office");
@@ -284,9 +294,9 @@ function calculateStatement(
         const units = Math.floor((end - start) / 30);
         for (let i = 0; i < units; i++) paidStarts.add(start + i * 30);
         const midnight = Date.parse(date + "T00:00:00+08:00");
-        if (units && date === last && midnight <= now && now < midnight + end * 60000) {
-          add("待核", "op-unfinished:" + slot.start, date, "固定时段尚未结束",
-            "时段结束后可确认工资单", `${slot.start}–${slot.end}`);
+        if (units && now < midnight + end * 60000) {
+          add("等待", `op-unfinished:${date}:${slot.start}`, date, "固定时段尚未结束",
+            "时段结束后可确认工资单", `${slot.start}–${slot.end}`).nextChangeAt = midnight + end * 60000;
         }
         if (units)
           base(
@@ -316,37 +326,33 @@ function calculateStatement(
     (l) => l.teacherId === teacher.id && includes(l.date),
   );
   let finished = 0;
+  const unresolvedAttendance: PayEntry[] = [];
+  let possibleUnits = 0;
   let attendanceIssue = data.lessons.some(
     (lesson) =>
       lesson.teacherId === teacher.id &&
       lesson.teacherRescheduleDates?.some(includes),
   );
   for (const l of lessons) {
-    if (l.status === "已取消" && l.cancellation?.kind === "老师离职") continue;
-    if (l.status === "未开始" || l.status === "待确认") {
-      pending("lesson-review:" + l.id, l.date, "课程结果待核", "请在上课记录核定课程结果", l.id);
-      continue;
-    }
-    if (needsLessonOutcomeReview(l)) {
-      add(
-        "待核",
-        "lesson-review:" + l.id,
-        l.date,
-        "原课程结果待补核",
-        "请从上课记录补齐实际取消时间或最终上课结果",
-        l.id,
-      );
-      continue;
-    }
     const basis = data.lessonPayBasis?.[l.id];
     const rules = basis?.rules ?? rulesAt(data, completedAt(l));
+    const outcome = lessonAttendanceForPay(l, rules.lateLimit);
+    const blocker = lessonAttendanceBlocker(l, now);
+    if (blocker) {
+      const row = add(blocker.category, "lesson-review:" + l.id, l.date, blocker.title, blocker.detail, l.id);
+      row.lessonId = l.id;
+      if (blocker.nextChangeAt !== undefined) row.nextChangeAt = blocker.nextChangeAt;
+      unresolvedAttendance.push(row);
+      possibleUnits += scheduleUnits(l.duration, l.plannedUnits ?? l.confirmedUnits) ?? Infinity;
+      continue;
+    }
+    if (l.status === "已取消" && l.cancellation?.kind === "老师离职") continue;
     const cancellation = l.cancellation;
     const leadMinutes = cancellation
       ? (stamp(l) - Date.parse(cancellation.at)) / 60000
       : null;
-    const outcome = lessonAttendanceForPay(l, rules.lateLimit);
     const { issue, late, absent, pendingAttendance, completed } = outcome;
-    const minutes = l.incident?.minutes;
+    const minutes = outcome.minutes;
     const teacherCancel =
       l.status === "已取消" &&
       (cancellation?.responsibility === "老师" ||
@@ -364,14 +370,23 @@ function calculateStatement(
       (studentCancel &&
         leadMinutes !== null &&
         leadMinutes < rules.studentCancelMinutes);
-    const units = scheduleUnits(l.duration, (l.deducted && l.confirmedUnits) || l.plannedUnits || l.confirmedUnits);
+    let agreedUnits = l.plannedUnits ?? l.confirmedUnits;
+    if (l.deducted && l.confirmedUnits && l.confirmedUnits !== agreedUnits) {
+      const reviewed = l.incident || !l.classInAttendanceReceived || data.events.some(event =>
+        event.relatedType === "lesson" && event.relatedId === l.id &&
+        (event.type === "更正结果" || (event.type === "确认上课" && event.operator !== "系统自动扣课")));
+      if (reviewed) agreedUnits = l.confirmedUnits;
+    }
+    const units = scheduleUnits(l.duration, agreedUnits);
     if (!units) {
       pending("lesson-units:" + l.id, l.date, "课程计薪课时待核", "请核实该时长对应的课时数，并登记薪资调整", l.id);
       continue;
     }
     const mode = basis?.mode ?? dayMode(l.date);
-    const fee = units * courseRate(l.date, basis?.teacherRate);
-    let fine: number | undefined;
+    const rate = courseRate(l.date, basis?.teacherRate);
+    const fee = units * rate;
+    let fine = 0;
+    let multiple = 0;
     let fineTitle = "";
     if (
       attendanceIssue ||
@@ -385,7 +400,7 @@ function calculateStatement(
       attendanceIssue = true;
     if (!material && !net) {
       if (absent) {
-        fine = fee * rules.absenceMultiple;
+        multiple = rules.absenceMultiple;
         fineTitle = "老师缺席";
       } else if (teacherCancel && !cancellation?.waived) {
         if (leadMinutes === null)
@@ -397,13 +412,12 @@ function calculateStatement(
             l.id,
           );
         else {
-          const multiple =
+          multiple =
             leadMinutes <= 1440
               ? rules.shortCancelMultiple
               : leadMinutes <= 7200
                 ? rules.earlyCancelMultiple
                 : 0;
-          fine = fee * multiple;
           fineTitle = "老师取消";
         }
       } else if (late) {
@@ -421,20 +435,29 @@ function calculateStatement(
         }
       }
     }
-    if (fine)
-      add(
+    const ratePending = multiple > 0 && fee <= 0;
+    if (multiple > 0 && !ratePending) fine = fee * multiple;
+    if (fine || ratePending) {
+      const feeLabel = ratePending ? "课时费待核" : "课时费 ₱" + fee;
+      const row = add(
         "扣款",
         "attendance:" + l.id,
         l.date,
         fineTitle,
         fineTitle === "迟到或早退"
           ? `${minutes} 分钟 × ₱${rules.latePerMinute} / 分钟${fine === rules.lateCap ? `，单节上限 ₱${rules.lateCap}` : ""}`
-          : `课时费 ₱${fee} × ${fee ? roundPay(fine / fee) : 0}`,
+          : `${feeLabel} × ${multiple}`,
         l.id,
-        -fine,
+        fine ? -fine : 0,
+        0,
+        multiple > 0
+          ? { quantity: units, quantityUnit: "课时", teacherUnitPrice: ratePending ? undefined : rate, payRatio: multiple }
+          : { quantity: minutes, quantityUnit: "分钟", teacherUnitPrice: rules.latePerMinute },
       );
+      if (ratePending) row.pendingRates = ["teacher"];
+    }
     const paidStarts = paidSlots.get(l.date);
-    if (mode === "OP" && paidStarts && (material || fine || networkCancelled)) {
+    if (mode === "OP" && paidStarts && (material || fine || ratePending || networkCancelled)) {
       const start = minute(l.time);
       const end = start + l.duration;
       const covered = [...paidStarts].filter(
@@ -557,6 +580,8 @@ function calculateStatement(
           "本期该学员首条 TM 确认好评",
           f.id,
           rules.praise,
+          0,
+          { quantity: 1, quantityUnit: "次", teacherUnitPrice: rules.praise },
         ).lessonId = f.lessonId;
       praised.add(f.studentId);
       continue;
@@ -584,25 +609,24 @@ function calculateStatement(
         sourcePeriods.set(lessonPeriod, source);
       }
       const mode = data.lessonPayBasis?.[l.id]?.mode ?? dayMode(l.date) ?? source.mode;
-      if (
-        !mode ||
-        source.rows.some(
-          (row) =>
-            row.category === "待核" &&
-            (row.source === l.id ||
-              row.key === "teacher-rate" ||
-              row.key === "historical-rate:" + l.date ||
-              (mode === "OP" && row.key === "schedule")),
-        )
-      ) {
-        add(
-          "待核",
-          "complaint-fee:" + f.id,
-          date,
-          "差评课酬待核",
-          "请先核定涉事课程结果、课酬或历史单价",
-          l.id,
-        );
+      const blockers = source.rows.filter(row => {
+        if (row.dependsOn || (row.category !== "待核" && row.category !== "等待")) return false;
+        if (row.source === l.id || row.key === "historical-rate:" + l.date) return true;
+        if (row.key === "teacher-rate") return !(data.lessonPayBasis?.[l.id]?.teacherRate || rateOn(teacher, l.date));
+        if (row.key === "mode") return !mode;
+        if (mode !== "OP") return false;
+        if (row.key === "schedule") return true;
+        if (row.date !== l.date || !row.key.startsWith("op-unfinished:")) return false;
+        const [from, to] = row.source.split("–");
+        return minute(from) < minute(l.time) + l.duration && (to === "23:59" ? 1440 : minute(to)) > minute(l.time);
+      });
+      if (blockers.length) {
+        const row = add("等待", "complaint-fee:" + f.id, date, "等待涉事课程课酬",
+          blockers.map(item => item.title).join("、"), l.id);
+        row.lessonId = l.id;
+        row.dependsOn = blockers.map(item => item.key);
+        const times = blockers.flatMap(item => item.nextChangeAt ?? []);
+        if (times.length) row.nextChangeAt = Math.min(...times);
         continue;
       }
       const courseRow = source.rows.find((row) => row.key === "lesson:" + l.id);
@@ -643,13 +667,15 @@ function calculateStatement(
         `涉事课酬 ₱${courseFee} × ${rules.complaintRatio * 100}%`,
         f.id,
         -courseFee * rules.complaintRatio,
+        0,
+        { quantity: 1, quantityUnit: "次", teacherUnitPrice: courseFee, payRatio: rules.complaintRatio },
       ).lessonId = l.id;
     }
   }
   const attendanceRules = rulesAt(data, Math.min(now, endOfPayDay(last)));
   if (
     now >= Date.parse(last + "T00:00:00+08:00") &&
-    finished >= attendanceRules.attendanceUnits &&
+    finished + possibleUnits >= attendanceRules.attendanceUnits &&
     !attendanceIssue &&
     !data.leaves.some(
       (l) =>
@@ -665,8 +691,12 @@ function calculateStatement(
         !bookedFeedback.has(f.id) &&
         includes(f.tmDate || f.date),
     )
-  )
-    add(
+  ) {
+    if (unresolvedAttendance.length) {
+      const row = add("等待", "attendance-award", last, "等待全勤奖核算", "等待本期课程的最终考勤", period);
+      row.dependsOn = unresolvedAttendance.map(item => item.key);
+      row.lessonId = unresolvedAttendance[0].lessonId;
+    } else add(
       "奖金",
       "attendance-award",
       last,
@@ -674,7 +704,10 @@ function calculateStatement(
       `完课 ${finished} 课时`,
       period,
       attendanceRules.attendanceAward,
+      0,
+      { quantity: 1, quantityUnit: "次", teacherUnitPrice: attendanceRules.attendanceAward },
     );
+  }
   const renewals = new Set<string>();
   const bookedRenewals = new Map<
     string,
@@ -737,6 +770,7 @@ function calculateStatement(
       .sort((a, b) => completedAt(b) - completedAt(a));
     const possibleOwners = new Set<string>();
     const unresolved = new Set<string>();
+    let nextCandidateChange = Infinity;
     let lastCompleted: Lesson | undefined;
     for (const studentId of order.studentIds) {
       for (const lesson of candidates.filter(
@@ -746,22 +780,19 @@ function calculateStatement(
           lesson,
           (data.lessonPayBasis?.[lesson.id]?.rules ?? rulesAt(data, completedAt(lesson))).lateLimit,
         );
-        if (result.completed) {
+        const blocker = lessonAttendanceBlocker(lesson, now);
+        if (!blocker && result.completed) {
           lastCompleted = lesson;
           possibleOwners.add(lesson.teacherId);
           break;
         }
         if (
-          lesson.status !== "已取消" &&
-          lesson.status !== "缺席" &&
-          !result.absent &&
-          !result.studentAbsent &&
-          (lesson.status === "待确认" ||
-            lesson.status === "未开始" ||
-            result.pendingAttendance)
+          blocker || (lesson.status !== "已取消" && lesson.status !== "缺席" &&
+            !result.absent && !result.studentAbsent && result.pendingAttendance)
         ) {
           possibleOwners.add(lesson.teacherId);
           unresolved.add(lesson.id);
+          if (blocker?.nextChangeAt !== undefined) nextCandidateChange = Math.min(nextCandidateChange, blocker.nextChangeAt);
         }
       }
     }
@@ -769,14 +800,17 @@ function calculateStatement(
     const key = "renewal:" + order.id;
     if (unresolved.size) {
       if (!includes(order.date)) continue;
-      add(
-        "待核",
+      const dependency = add(
+        "等待",
         "renewal-lesson:" + order.id,
         order.date,
-        "复购奖归属待核",
-        "请先在上课记录核定续费前的课程：" + [...unresolved].join("、"),
+        "等待复购奖归属",
+        "等待续费前的课程结果：" + [...unresolved].join("、"),
         order.id,
       );
+      dependency.dependsOn = [...unresolved].map(id => "lesson-review:" + id);
+      dependency.lessonId = [...unresolved][0];
+      if (Number.isFinite(nextCandidateChange)) dependency.nextChangeAt = nextCandidateChange;
       continue;
     }
     if (booked) {
@@ -806,6 +840,7 @@ function calculateStatement(
         order.id,
       );
     } else if (lastCompleted) {
+      const award = eventRules(data, purchase?.renewalPayRuleVersion, Number.isFinite(purchaseTime) ? purchaseTime : endOfPayDay(order.date)).renewal;
       add(
         "奖金",
         key,
@@ -813,7 +848,9 @@ function calculateStatement(
         "复购奖",
         "复购前最后一节完课 " + lastCompleted.id,
         order.id,
-        eventRules(data, purchase?.renewalPayRuleVersion, Number.isFinite(purchaseTime) ? purchaseTime : endOfPayDay(order.date)).renewal,
+        award,
+        0,
+        { quantity: 1, quantityUnit: "次", teacherUnitPrice: award },
       ).lessonId = lastCompleted.id;
     }
   }
@@ -993,14 +1030,10 @@ export function applyHalfMonthCommand(
       command.note + " · " + (command.operator || "教务") + " · " + recordedAt;
     return;
   }
-  const lastDate = payDates(command.period).at(-1);
-  if (
-    Date.parse(lastDate + "T00:00:00+08:00") >
-    Date.parse(recordedAt)
-  )
-    throw new Error("结算周期最后一天起才能确认");
-  if (statement.rows.some((row) => row.category === "待核"))
-    throw new Error("请先处理所有待核项目");
+  const ready = payrollReadiness(statement.rows, command.period, Date.parse(recordedAt));
+  if (ready.review) throw new Error("请先处理所有待核项目");
+  if (ready.waiting) throw new Error("请等待课程、固定时段或关联项目完成");
+  if (!ready.canConfirm) throw new Error("结算周期最后一天起才能确认");
   record.snapshot = statement;
   record.status = "已确认";
 }

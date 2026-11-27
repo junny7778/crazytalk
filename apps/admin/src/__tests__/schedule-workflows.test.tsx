@@ -1,5 +1,5 @@
 import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
-import {clickSchedule, selectSchedule, selectStudentCard, startTeacherStudent, addCalendarLesson} from "./schedulingTestActions";
+import {clickSchedule, selectSchedule, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
 import { transferableAbortController } from "node:util";
 import { act as testAct } from "@testing-library/react";
 // @vitest-environment jsdom
@@ -16,7 +16,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
-import { demoRepository } from "../../../../packages/shared/src/repository";
+import { DEMO_STORAGE_KEY, demoRepository } from "../../../../packages/shared/src/repository";
 import Schedule from "../pages/Schedule";
 import { transition, DEMO_TODAY, addDays } from "@crazytalk/shared";
 async function mount(path = "/schedule?teacher=t1&date=2026-11-23") {
@@ -82,13 +82,13 @@ afterEach(() => {
 describe("排课双工作流", () => {
   it("其他时长需填写预计扣课，超过余额置灰，填写可用额度后允许确认", async()=>{
  const {student}=fixture();student.balance=1;for(const order of demoRepository.read().orders||[])if(order.studentIds.includes(student.id))order.balance=1;
- await mount();await clickSchedule("为该老师排课");await startTeacherStudent(student.name);await selectSchedule("每节时长","55 分钟");
- await addCalendarLesson("2026-11-23","18:00");
- expect(screen.getByRole("button",{name:"预览排课"}).hasAttribute("disabled")).toBe(true);
- await testAct(async()=>{fireEvent.change(screen.getByLabelText("每节预计扣课数"),{target:{value:"2"}});});
- expect(screen.getByText(/可用课时不足/)).toBeTruthy();expect(screen.getByRole("button",{name:"预览排课"}).hasAttribute("disabled")).toBe(true);
- await testAct(async()=>{fireEvent.change(screen.getByLabelText("每节预计扣课数"),{target:{value:"1"}});});
- await clickSubmit();expect(demoRepository.read().lessons[0].plannedUnits).toBe(1);expect(demoRepository.read().students.find(s=>s.id===student.id)?.balance).toBe(1);
+ await mount();await clickSchedule("为该老师排课");await selectSchedule("每节时长","55 分钟");
+ await clickSchedule(/2026-11-23 18:00 可排课/);
+ expect(screen.getByRole("button",{name:"确认时段"}).hasAttribute("disabled")).toBe(true);
+ fireEvent.change(screen.getByLabelText("每节预计扣课数"),{target:{value:"2"}});
+ await clickSchedule("确认时段");expect(within(screen.getByRole("dialog")).queryByText(student.name)).toBeNull();await clickSchedule("关闭");
+ fireEvent.change(screen.getByLabelText("每节预计扣课数"),{target:{value:"1"}});
+ await clickSchedule("确认时段");await selectStudentCard(student.name);await clickSchedule("确定排课");expect(demoRepository.read().lessons[0].plannedUnits).toBe(1);expect(demoRepository.read().students.find(s=>s.id===student.id)?.balance).toBe(1);
 
 });
   it.each([1,4])("老师跨 %i 周选时段，确认后保存实际所选课节",async(weeks)=>{
@@ -99,9 +99,16 @@ describe("排课双工作流", () => {
       await clickSchedule(new RegExp(addDays("2026-11-23",7*i)+" 18:00 可排课"));
     }
     await clickSchedule("确认时段");await selectStudentCard(student.name);
-    await testAct(async()=>{fireEvent.click(document.querySelector("[role=dialog] .flex-teacher-choice")!);});
-    await clickSchedule("加入课表");await clickSubmit();
+    await clickSchedule("确定排课");
     expect(demoRepository.read().lessons).toHaveLength(weeks);
+  });
+  it("计划周六开始时，方案周历默认展示首节拟排课所在的下一周", async () => {
+    const { student } = fixture();
+    student.scheduleIntent!.startDate = "2026-11-21";
+    await mount(`/schedule?student=${student.id}`);
+    await clickSchedule("查看排课方案");
+    expect(screen.queryByRole("tab", {name: "日视图"})).toBeNull();
+    expect(screen.getByText("2026/11/23 - 2026/11/29")).toBeTruthy();
   });
   it("老师资料关闭保留搜索，方案返回后不重复展开周期", async () => {
     const { student } = fixture();
@@ -129,57 +136,33 @@ describe("排课双工作流", () => {
     const save = screen.getByRole("button", { name: "生成排课方案" });
     expect(screen.queryByRole("heading", { name: "上课意向" })).toBeNull();
     expect(save.hasAttribute("disabled")).toBe(true);
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "周一" })); });
+    await selectSchedule("每节时长","50 分钟");
+    await clickSchedule("周一 19:00");
+    expect(save.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("时间范围需至少容纳 50 分钟课程")).toBeTruthy();
+    await clickSchedule("周一 19:30");
     expect(save.hasAttribute("disabled")).toBe(false);
-    await testAct(async () => { fireEvent.change(screen.getByLabelText("意向1结束时间"), {
-      target: { value: "18:00" },
-    }); });
+    await clickSchedule("按星期填写");
+    await clickSchedule("周一");
     expect(save.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText("结束时间需晚于开始时间")).toBeTruthy();
-    await testAct(async () => { fireEvent.change(screen.getByLabelText("意向1结束时间"), {
-      target: { value: "19:10" },
-    }); });
-    expect(save.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText("时间范围需至少容纳 25 分钟课程")).toBeTruthy();
-    await testAct(async () => { fireEvent.change(screen.getByLabelText("意向1结束时间"), {
-      target: { value: "20:00" },
-    }); });
-    expect(save.hasAttribute("disabled")).toBe(false);
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "周一" })); });
-    expect(save.hasAttribute("disabled")).toBe(true);
-    expect(
-      screen.getByRole("button", { name: "周一", pressed: false }),
-    ).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
   it("多选上课日显示对应时间，取消其中一天保留其他时间并正确保存", async () => {
     const { student } = fixture();
     student.scheduleIntent = null;
     await mount(`/schedule?student=${student.id}`);
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "周三" })); });
-    await testAct(async () => { fireEvent.change(screen.getByLabelText("意向1开始时间"), {
-      target: { value: "18:00" },
-    }); });
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "周一" })); });
-    expect(
-      screen.getByRole("button", { name: "周三" }).getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(
-      screen.getAllByRole("group", { name: /^意向时间[0-9]/ }),
-    ).toHaveLength(2);
-    expect(screen.getByLabelText("意向2开始时间").getAttribute("value")).toBe(
-      "18:00",
-    );
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "周一" })); });
-    expect(screen.queryByLabelText("意向2开始时间")).toBeNull();
-    expect(screen.getByLabelText("意向1开始时间").getAttribute("value")).toBe(
-      "18:00",
-    );
+    await clickSchedule("按星期填写");
+    await clickSchedule("周三");
+    await clickSchedule("周一");
+    expect(screen.getByLabelText("周一 开始时间 1")).toBeTruthy();
+    await clickSchedule("周一");
+    expect(screen.queryByLabelText("周一 开始时间 1")).toBeNull();
+    expect(screen.getByLabelText("周三 开始时间 1")).toBeTruthy();
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "生成排课方案" })); });
     expect(
       demoRepository.read().students.find((s) => s.id === student.id)
         ?.scheduleIntent?.windows,
-    ).toEqual([{ day: 3, start: "18:00", end: "21:00" }]);
+    ).toEqual([{ day: 3, start: "17:00", end: "22:00" }]);
   });
   it("切换待排课学员时默认选中列表第一位并展示详情", async () => {
     const { student } = fixture();
@@ -255,7 +238,7 @@ describe("排课双工作流", () => {
     expect(screen.getByText("已安排 1/2 节")).toBeTruthy();
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "查看排课方案" })); });
     const dialog = within(document.querySelector(".schedule-main")!);
-    expect(dialog.getByText(/本次拟安排 1 节/)).toBeTruthy();
+    expect(dialog.getByText(/目标 2 节 · 拟安排 1 节/)).toBeTruthy();
     await clickSchedule("核对排课");
     await testAct(async () => { fireEvent.click(dialog.getByRole("button", { name: "确认排课" })); });
     expect(demoRepository.read().lessons).toHaveLength(2);
@@ -281,6 +264,7 @@ describe("排课双工作流", () => {
     if(screen.queryByRole("dialog",{name:"放弃本次修改？"})) await testAct(async()=>{fireEvent.click(screen.getByRole("button",{name:"放弃本次修改"}));});
     fireEvent.click(screen.getByRole("button",{name:"一键排课"}));
     const generate = screen.getByRole("button", { name: "生成排课方案" });
+    await clickSchedule("按星期填写");
     const weekdays = within(screen.getByRole("group", { name: "每周上课日" }));
     expect(generate.hasAttribute("disabled")).toBe(true);
     expect(weekdays.queryAllByRole("button", { pressed: true })).toHaveLength(0);
@@ -293,12 +277,8 @@ describe("排课双工作流", () => {
     const { student, data } = fixture();
     await mount(`/schedule?student=${student.id}`);
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "修改排课信息" })); });
-    await testAct(async () => { fireEvent.change(screen.getByLabelText("意向1结束时间"), {
-      target: { value: "20:00" },
-    }); });
-    await testAct(async () => { fireEvent.change(screen.getByLabelText("意向1开始时间"), {
-      target: { value: "18:30" },
-    }); });
+    await clickSchedule("周一 19:00");
+    await clickSchedule("周一 18:00");
     expect(screen.queryByRole("button",{name:"预览排课"})).toBeNull();
     await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "生成排课方案" })); });
     expect(
@@ -311,7 +291,7 @@ describe("排课双工作流", () => {
     ).toBeUndefined();
     expect(
       JSON.parse(
-        localStorage.getItem("crazytalk-demo-v1") || "{}",
+        localStorage.getItem(DEMO_STORAGE_KEY) || "{}",
       ).students.find((s: { id: string }) => s.id === student.id).scheduleIntent
         .windows[0].start,
     ).toBe("18:30");

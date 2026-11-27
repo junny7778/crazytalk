@@ -187,7 +187,7 @@ function useLocalDemo() {
     can,
     ...access,
     reset: () => {
-      demoRepository.reset();
+      demoRepository.restoreStandardDemo();
       queryClient.setQueryData(["demo"], demoRepository.read());
     },
     scope: scopeLabel(data.catalog, scope),
@@ -203,7 +203,6 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "student.details.update": "student.edit",
   "student.history.update": "student.edit",
   "student.import": "student.import",
-  "student.balance.open": "credit.add",
   "lesson.attendance":"classin.manage", "lesson.incident":"lesson.correct", "lesson.notice":"lesson.confirm",
   "slot.lock":"schedule.create", "slot.release":"schedule.create",
   "pay.terms":"pay_rate.edit","pay.freeze":"payroll.confirm",
@@ -295,9 +294,7 @@ export function assertStudentCommandAccess(
       ? "student.edit"
       : command.type === "student.import"
         ? "student.import"
-        : command.type === "student.balance.open"
-          ? "credit.add"
-          : undefined;
+        : undefined;
   if (permission && !can(permission))
     throw new Error("你没有执行这个操作的权限");
 }

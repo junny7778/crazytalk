@@ -30,9 +30,10 @@ export function getScheduleCredits(
   studentId: string,
   count: number,
   unitsPerLesson: number,
+  orderId?: string,
 ) {
   const student = data.students.find((item) => item.id === studentId);
-  const memberOrders = data.orders?.filter(o => o.studentIds.includes(studentId)) || [];
+  const memberOrders = data.orders?.filter(o => o.studentIds.includes(studentId) && (!orderId || o.id === orderId)) || [];
   const pendingLessons=data.lessons.filter(isPending);
   const sources=memberOrders.map(order=>{
     const reserved=pendingLessons.filter(l=>l.orderId===order.id).reduce((n,l)=>n+(scheduleUnits(l.duration,l.plannedUnits)??0),0);
@@ -54,12 +55,11 @@ export function getScheduleCredits(
       .toFixed(8),
   );
   const balance = useOrders ? memberOrders.reduce((n,o)=>n+o.balance,0) : student?.balance ?? 0;
-  const available = Number((balance - reserved).toFixed(8));
+  const available = Math.max(0, Number((balance - reserved).toFixed(8)));
   const required = Number((count * unitsPerLesson).toFixed(8));
   let error = "";
   if (!student) error = "请选择学员";
   else if (accountBalanceAlignmentIssue(data, studentId)) error = accountBalanceAlignmentIssue(data, studentId);
-  else if (!useOrders && !student.balanceKnown) error = "请先核实并录入剩余课时";
   else if (
     !Number.isFinite(unitsPerLesson) ||
     unitsPerLesson <= 0 ||
@@ -79,5 +79,8 @@ export function getScheduleCredits(
     }
     if(allocations.length<count)error="共享订单剩余课时无法覆盖每节完整课程";
   }
-  return { allocations, balance, reserved, available, required, unknownCount, error };
+  const affordableLessons = useOrders
+    ? sources.reduce((n, source) => n + Math.max(0, Math.floor((source.available + 1e-8) / unitsPerLesson)), 0)
+    : Math.floor((available + 1e-8) / unitsPerLesson);
+  return { affordableLessons, allocations, balance, reserved, available, required, unknownCount, error };
 }

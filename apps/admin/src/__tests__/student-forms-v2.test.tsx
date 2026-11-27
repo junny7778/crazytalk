@@ -164,7 +164,7 @@ describe("学生原表表单与客户操作", () => {
       .read()
       .students.find((item) => item.name === "表单数字化验收");
     if (!fresh) throw new Error("新建失败");
-    expect(fresh.balanceKnown).toBe(true);
+    expect(fresh.balance).toBe(0);
     cleanup();
     mount(<StudentHistoryEditor student={fresh} onClose={() => {}} />);
     const history = {
@@ -340,24 +340,17 @@ describe("学生原表表单与客户操作", () => {
       student.renewalStatus,
     );
   });
-  it("未知余额的补偿入口提供核实路径，不让用户停在不可提交的表单", async () => {
+  it("零余额学员可以登记补偿课时", async () => {
     demoRepository.execute({
       type: "student.import",
-      students: [{ ...emptyStudentProfile(), name: "待核实学员" }],
+      students: [{ ...emptyStudentProfile(), openingBalance:0, orderStatus:"正常", name: "零余额学员" }],
       mode: "skip",
     });
     const student = demoRepository
       .read()
-      .students.find((item) => item.name === "待核实学员");
+      .students.find((item) => item.name === "零余额学员");
     mount(<Action action="compensate" studentId={student?.id} />);
-    expect(screen.getByRole("dialog", { name: "先核实剩余课时" })).toBeTruthy();
-    expect(screen.queryByLabelText("课时数")).toBeNull();
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "前往核实余额" }));
-    });
-    expect(screen.getByTestId("location").textContent).toBe(
-      `/students/${student?.id}?tab=credits`,
-    );
+    expect(screen.getByLabelText("课时数")).toBeTruthy();
   });
   it("补偿去除金额和转介绍，历史关系仍保留", async () => {
     const students = demoRepository.read().students;
@@ -444,7 +437,7 @@ describe("学生原表表单与客户操作", () => {
       students: [
         {
           ...emptyStudentProfile(),
-          name: "未关联老师学生",
+          openingBalance:0, orderStatus:"正常", name: "未关联老师学生",
           teacherName: "原表老师A",
         },
       ],

@@ -9,7 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@crazytalk/ui";
 import { createSeed, permissionGroups, permissionLabels, superAdminRole, type Command } from "@crazytalk/shared";
 import { halfMonthStatement, transition } from "@crazytalk/shared";
@@ -25,6 +25,28 @@ vi.mock("@crazytalk/shared/react", async (original) => ({
   useDemo: context.useDemo,
 }));
 afterEach(cleanup);
+
+function PayrollRoutes() {
+  return (
+    <Routes>
+      <Route path="/payroll" element={<HalfMonthPayroll />} />
+      <Route path="/payroll/:period/:teacherId" element={<HalfMonthPayroll />} />
+    </Routes>
+  );
+}
+
+function statementDetail() {
+  return within(screen.getByRole("region", { name: "工资单详情" }));
+}
+
+function showColumns(detail: ReturnType<typeof statementDetail>, ...columns: string[]) {
+  const toggle = detail.getByRole("button", { name: "显示列" });
+  fireEvent.click(toggle);
+  for (const name of columns) {
+    fireEvent.click(detail.getByRole("checkbox", { name }));
+  }
+  fireEvent.click(toggle);
+}
 
 it("shows one itemized half-month statement from payroll and SO reconciliation", async () => {
   let data = createSeed();
@@ -69,34 +91,46 @@ it("shows one itemized half-month statement from payroll and SO reconciliation",
   const tree = () => (
     <QueryClientProvider client={client}>
       <ToastProvider>
-        <MemoryRouter>
-          <HalfMonthPayroll />
+        <MemoryRouter initialEntries={["/payroll"]}>
+          <PayrollRoutes />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>
   );
   const view = render(tree());
-  fireEvent.click(screen.getByRole("button", { name: "查看工资单" }));
-  let dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText("应结汇总")).toBeTruthy();
-  expect(within(dialog).getByText(/2026-10-28.*上课记录/)).toBeTruthy();
-  expect(within(dialog).getAllByText("₱180").length).toBeGreaterThan(0);
-  fireEvent.change(within(dialog).getByLabelText(/金额（加款/), {
+  fireEvent.click(screen.getByRole("link", { name: "查看工资单" }));
+  let detail = statementDetail();
+  expect(
+    detail.getByRole("heading", { name: teacher.name + " · 工资单", level: 1 }),
+  ).toBeTruthy();
+  expect(detail.getByText("应结汇总")).toBeTruthy();
+  expect(detail.getByRole("cell", { name: "2026-10-28" })).toBeTruthy();
+  expect(
+    detail.getByRole("link", { name: "查看上课记录" }).getAttribute("href"),
+  ).toBe("/lessons?lesson=classin-lesson");
+  expect(detail.getByLabelText("老师应结").textContent).toBe("₱180");
+  expect(detail.getAllByRole("table")).toHaveLength(1);
+  expect(detail.getAllByText("完课底薪")).toHaveLength(1);
+  showColumns(detail, "计算说明");
+  fireEvent.click(detail.getByRole("button", { name: "人工调整" }));
+  const editor = within(screen.getByRole("dialog", { name: "人工调整" }));
+  fireEvent.change(editor.getByLabelText(/金额（加款/), {
     target: { value: "300" },
   });
-  fireEvent.change(within(dialog).getByLabelText("调整原因"), {
+  fireEvent.change(editor.getByLabelText("调整原因"), {
     target: { value: "人工补发专项" },
   });
-  fireEvent.click(within(dialog).getByRole("button", { name: "添加调整" }));
-  expect(await within(dialog).findByText(/人工补发专项/)).toBeTruthy();
-  expect(within(dialog).getByText("₱480")).toBeTruthy();
-  fireEvent.click(within(dialog).getByRole("button", { name: "关闭" }));
+  fireEvent.click(editor.getByRole("button", { name: "添加调整" }));
+  expect(await detail.findByText(/人工补发专项/)).toBeTruthy();
+  expect(detail.getByLabelText("老师应结").textContent).toBe("₱480");
+  fireEvent.click(detail.getByRole("link", { name: "返回薪资列表" }));
   fireEvent.click(screen.getByRole("tab", { name: "SO 汇总" }));
   fireEvent.click(screen.getByRole("button", { name: "查看老师明细" }));
-  fireEvent.click(screen.getByRole("button", { name: "查看工资单" }));
-  dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText("₱480")).toBeTruthy();
-  expect(within(dialog).getByText(/人工补发专项/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: "查看工资单" }));
+  detail = statementDetail();
+  showColumns(detail, "计算说明");
+  expect(detail.getByLabelText("老师应结").textContent).toBe("₱480");
+  expect(detail.getByText(/人工补发专项/)).toBeTruthy();
 });
 
 it("exports every matching teacher across pages and includes paid statements in confirmed totals", () => {
@@ -137,8 +171,8 @@ it("exports every matching teacher across pages and includes paid statements in 
   render(
     <QueryClientProvider client={new QueryClient()}>
       <ToastProvider>
-        <MemoryRouter>
-          <HalfMonthPayroll />
+        <MemoryRouter initialEntries={["/payroll"]}>
+          <PayrollRoutes />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
@@ -150,19 +184,31 @@ it("exports every matching teacher across pages and includes paid statements in 
   fireEvent.click(screen.getByRole("option", { name: "A" }));
   fireEvent.click(screen.getByLabelText("确认状态"));
   fireEvent.click(screen.getByRole("option", { name: "已确认" }));
-  expect(screen.getAllByRole("button", { name: "查看工资单" })).toHaveLength(
+  expect(screen.getAllByRole("link", { name: "查看工资单" })).toHaveLength(
     25,
   );
   fireEvent.click(screen.getByRole("button", { name: "导出数据" }));
   const csv = context.exportCsv.mock.lastCall![1] as (string | number)[][];
   expect(csv.slice(1)).toHaveLength(26);
   expect(csv.at(-1)?.slice(1, 4)).toEqual(["外教 25", "A", "已确认"]);
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("link", { name: "查看工资单" }));
+  expect(
+    statementDetail().getByRole("heading", { name: "外教 25 · 工资单", level: 1 }),
+  ).toBeTruthy();
+  fireEvent.click(statementDetail().getByRole("link", { name: "返回薪资列表" }));
+  expect(
+    screen.getByRole("button", { name: "第 2 页" }).getAttribute("aria-current"),
+  ).toBe("page");
+  expect(screen.getByLabelText("搜索老师")).toHaveProperty("value", "外教");
+  expect(screen.getByRole("combobox", { name: "所属 SO" }).textContent).toBe("A");
+  expect(screen.getByRole("combobox", { name: "确认状态" }).textContent).toBe("已确认");
   fireEvent.click(screen.getByRole("tab", { name: "SO 汇总" }));
   const row = within(screen.getByText("26").closest("tr")!);
   expect(row.getByText("₱260")).toBeTruthy();
 });
 
-it("薪资权限组登记导出权限，只有查看权限的账号看不到导出按钮", () => {
+it("薪资权限组登记导出权限，只有查看权限的账号可以查看工资单", () => {
   expect(permissionGroups.find(group => group.name === "薪资")?.keys).toContain("payroll.export");
   expect(permissionLabels["payroll.export"]).toBe("导出薪资明细");
   expect(superAdminRole().permissions).toContain("payroll.export");
@@ -171,11 +217,17 @@ it("薪资权限组登记导出权限，只有查看权限的账号看不到导�
   });
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ToastProvider><MemoryRouter><HalfMonthPayroll /></MemoryRouter></ToastProvider>
+      <ToastProvider><MemoryRouter initialEntries={["/payroll"]}><PayrollRoutes /></MemoryRouter></ToastProvider>
     </QueryClientProvider>,
   );
   expect(screen.getByLabelText("结算周期")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "导出数据" })).toBeNull();
+  fireEvent.click(screen.getAllByRole("link", { name: "查看工资单" })[0]);
+  const detail = statementDetail();
+  expect(detail.getByRole("table", { name: "薪资明细" })).toBeTruthy();
+  for (const name of ["人工调整", "确认薪资", "标记已发放", "记录处理结果"]) {
+    expect(detail.queryByRole("button", { name })).toBeNull();
+  }
 });
 
 it("keeps an offboarded OP teacher's fixed pay visible up to the cutoff with no lessons", () => {
@@ -201,19 +253,19 @@ it("keeps an offboarded OP teacher's fixed pay visible up to the cutoff with no 
   render(
     <QueryClientProvider client={new QueryClient()}>
       <ToastProvider>
-        <MemoryRouter>
-          <HalfMonthPayroll />
+        <MemoryRouter initialEntries={["/payroll"]}>
+          <PayrollRoutes />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
   );
   const row = screen.getByText("OP 老师").closest("tr")!;
-  fireEvent.click(within(row).getByRole("button", { name: "查看工资单" }));
+  fireEvent.click(within(row).getByRole("link", { name: "查看工资单" }));
   expect(
-    within(screen.getByRole("dialog")).getByLabelText("老师应结").textContent,
+    statementDetail().getByLabelText("老师应结").textContent,
   ).toBe("₱180");
   expect(
-    within(screen.getByRole("dialog")).getByText("2026-10-19"),
+    statementDetail().getByText("2026-10-19"),
   ).toBeTruthy();
 });
 
@@ -224,8 +276,8 @@ it("edits all payroll rules together and opens teacher and SO rates only on dema
   render(
     <QueryClientProvider client={new QueryClient()}>
       <ToastProvider>
-        <MemoryRouter>
-          <HalfMonthPayroll />
+        <MemoryRouter initialEntries={["/payroll"]}>
+          <PayrollRoutes />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
@@ -283,14 +335,13 @@ function openLessonStatement(data: ReturnType<typeof createSeed>) {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <ToastProvider>
-        <MemoryRouter>
-          <HalfMonthPayroll />
+        <MemoryRouter initialEntries={["/payroll/2026-10-2/" + data.teachers[0].id]}>
+          <PayrollRoutes />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "查看工资单" }));
-  return within(screen.getByRole("dialog"));
+  return statementDetail();
 }
 
 function statementFixture() {
@@ -317,7 +368,7 @@ function statementFixture() {
     attendance: "老师迟到" as const,
     incident: {
       reason: "老师迟到",
-      minutes: 2,
+      minutes: 3,
       note: "",
       at: "",
       operator: "",
@@ -334,37 +385,112 @@ it("逐课核对课酬、待核单价和扣款，只列该老师当期的课程"
     ...lesson,
     id: "outside",
     date: "2026-10-15",
-    material: "上期课",
   });
-  const dialog = openLessonStatement(data);
-  const table = within(dialog.getByRole("table", { name: "逐课明细" }));
+  const detail = openLessonStatement(data);
+  expect(detail.getByText(/ · NP · PHP$/)).toBeTruthy();
+  const table = within(detail.getByRole("table", { name: "薪资明细" }));
+  expect(detail.getAllByRole("table")).toHaveLength(1);
   expect(
-    table
-      .getByRole("link", { name: lesson.date + " " + lesson.time })
-      .getAttribute("href"),
+    table.getAllByRole("columnheader").map((header) => header.textContent),
+  ).toEqual([
+    "计薪日期",
+    "上课时间",
+    "学员",
+    "老师金额",
+    "SO 金额",
+    "计薪项目",
+    "计薪数量",
+    "明细状态",
+    "操作",
+  ]);
+  expect(table.queryByText("2026-10-15")).toBeNull();
+  expect(table.getAllByText("完课底薪")).toHaveLength(1);
+  expect(table.getAllByText("迟到或早退扣款")).toHaveLength(1);
+  const pay = within(table.getByText("完课底薪").closest("tr")!);
+  fireEvent.click(pay.getByRole("button", { name: "核实" }));
+  const review = within(screen.getByRole("dialog", { name: "核实薪资明细" }));
+  expect(review.getByText("未设置 SO 单价")).toBeTruthy();
+  expect(review.getByRole("link", { name: "设置 SO 单价" })).toBeTruthy();
+  expect(review.queryByRole("button", { name: "记录处理结果" })).toBeNull();
+  fireEvent.click(review.getByRole("button", { name: "关闭" }));
+  const payCells = pay.getAllByRole("cell").map((cell) => cell.textContent);
+  expect(payCells).toEqual([
+    lesson.date, lesson.time, data.students[0].name, "+₱180", "—",
+    "完课底薪", "1 课时", "待核实", "核实",
+  ]);
+  expect(detail.getByLabelText("SO 已计算小计").textContent).toBe("待核");
+  const fine = within(table.getByText("迟到或早退扣款").closest("tr")!);
+  expect(fine.getByText(/3 分钟/)).toBeTruthy();
+  expect(fine.getByText("-₱6")).toBeTruthy();
+  expect(fine.getByText("₱0")).toBeTruthy();
+  expect(fine.getByText("已计算")).toBeTruthy();
+  expect(
+    fine.getByRole("link", { name: "查看上课记录" }).getAttribute("href"),
   ).toBe("/lessons?lesson=" + lesson.id);
-  expect(table.getByText(data.students[0].name)).toBeTruthy();
-  expect(table.getByText("专项课本")).toBeTruthy();
-  expect(table.queryByText("上期课")).toBeNull();
-  const pay = within(table.getByText("NP 正常完课").closest("tr")!);
-  expect(pay.getByText("₱180")).toBeTruthy();
-  expect(pay.getByText("待核")).toBeTruthy();
-  expect(dialog.getByLabelText("SO 应结").textContent).toBe("待核");
-  const fine = within(table.getByText("迟到或早退").closest("tr")!);
-  expect(fine.getByText(/2 分钟/)).toBeTruthy();
-  expect(fine.getByText(/-4/)).toBeTruthy();
+  fireEvent.click(detail.getByRole("combobox", { name: "明细状态" }));
+  fireEvent.click(screen.getByRole("option", { name: "已计算" }));
+  expect(table.queryByText("完课底薪")).toBeNull();
+  expect(table.getByText("-₱6")).toBeTruthy();
+  fireEvent.click(detail.getByRole("combobox", { name: "明细状态" }));
+  fireEvent.click(screen.getByRole("option", { name: "待核实" }));
+  expect(table.getByText("+₱180")).toBeTruthy();
+  expect(table.queryByText("迟到或早退扣款")).toBeNull();
 });
 
-it("没有上课记录且只有配置待核时，单列空状态和待核合计", () => {
+it("没有上课记录且只有配置待核时，同表显示待核依据和待核合计", () => {
   const { data, teacher } = statementFixture();
   teacher.payMode = undefined;
   data.officePayRates = {};
   data.lessons = [];
-  const dialog = openLessonStatement(data);
-  expect(dialog.getByText("本期没有可查看的上课记录。")).toBeTruthy();
-  expect(dialog.getByLabelText("老师应结").textContent).toBe("待核");
-  expect(dialog.getByText("未设置计薪方式")).toBeTruthy();
-  expect(dialog.getByText("未设置 SO 单价")).toBeTruthy();
+  const detail = openLessonStatement(data);
+  const table = within(detail.getByRole("table", { name: "薪资明细" }));
+  expect(detail.getByText("本期没有可查看的上课记录。")).toBeTruthy();
+  expect(detail.getByLabelText("老师已计算小计").textContent).toBe("待核");
+  for (const title of ["未设置计薪方式", "未设置 SO 单价"]) {
+    const config = within(table.getByText(title).closest("tr")!);
+    const cells = config.getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells).toEqual(["—", "—", "—", "—", "—", title, "—", "待核实", "核实"]);
+  }
+  const mode = within(table.getByText("未设置计薪方式").closest("tr")!);
+  fireEvent.click(mode.getByRole("button", { name: "核实" }));
+  const review = within(screen.getByRole("dialog", { name: "核实薪资明细" }));
+  expect(review.getByText("未设置计薪方式")).toBeTruthy();
+  expect(
+    review.getByRole("link", { name: "设置计薪方式" }).getAttribute("href"),
+  ).toBe("/teachers/" + teacher.id + "?edit=payMode");
+});
+
+it("薪资明细超过一页时按状态筛选并回到第一页", () => {
+  const { data, teacher } = statementFixture();
+  data.lessons = [];
+  data.officePayRates = {};
+  data.halfMonthPayroll = [{
+    teacherId: teacher.id,
+    period: "2026-10-2",
+    status: "待确认",
+    adjustments: Array.from({ length: 26 }, (_, index) => ({
+      key: "adj-" + index,
+      at: "2026-10-20",
+      side: "teacher",
+      amount: 10,
+      note: "专项调整 " + index,
+      operator: "教务",
+    })),
+  }];
+  const detail = openLessonStatement(data);
+  const table = within(detail.getByRole("table", { name: "薪资明细" }));
+  const pagination = within(detail.getByRole("navigation", { name: "列表分页" }));
+  expect(table.getAllByRole("row")).toHaveLength(26);
+  fireEvent.click(pagination.getByRole("button", { name: "下一页" }));
+  expect(pagination.getByRole("button", { name: "第 2 页" }).getAttribute("aria-current")).toBe("page");
+  expect(table.getAllByRole("row")).toHaveLength(3);
+  const filters = within(detail.getByRole("group", { name: "薪资明细筛选" }));
+  fireEvent.click(filters.getByRole("button", { name: "待核实 1 项" }));
+  expect(detail.getByRole("combobox", { name: "明细状态" }).textContent).toBe("待核实");
+  expect(pagination.getByRole("button", { name: "第 1 页" }).getAttribute("aria-current")).toBe("page");
+  expect(table.getAllByRole("row")).toHaveLength(2);
+  expect(table.getByText("未设置 SO 单价")).toBeTruthy();
+  expect(table.queryByText(/专项调整/)).toBeNull();
 });
 
 it("同一固定时段的两节正常课各自可见，时段底薪只计一次", () => {
@@ -382,11 +508,14 @@ it("同一固定时段的两节正常课各自可见，时段底薪只计一次"
     teacherAttendance: ["正常"],
     studentAttendance: ["正常"],
   }));
-  const dialog = openLessonStatement(data);
-  const table = within(dialog.getByRole("table", { name: "逐课明细" }));
+  const detail = openLessonStatement(data);
+  expect(detail.getByText(/ · OP · PHP$/)).toBeTruthy();
+  const table = within(detail.getByRole("table", { name: "薪资明细" }));
+  showColumns(detail, "计算说明");
+  expect(table.getByText("固定时段底薪")).toBeTruthy();
   expect(table.getAllByText("底薪按固定时段单列")).toHaveLength(2);
-  expect(table.queryByText("₱360")).toBeNull();
-  expect(dialog.getByLabelText("老师应结").textContent).toBe("₱360");
+  expect(table.getAllByText("+₱360")).toHaveLength(1);
+  expect(detail.getByLabelText("老师应结").textContent).toBe("₱360");
 });
 
 it("已确认工资单按冻结课酬显示，后改单价和新排课都不改动原金额", () => {
@@ -402,27 +531,117 @@ it("已确认工资单按冻结课酬显示，后改单价和新排课都不改�
     },
   ];
   teacher.rate = 320;
+  data.officePayRates = { ...data.officePayRates, [teacher.so]: 100 };
   data.lessons.push({ ...lesson, id: "added-later", time: "15:00" });
-  const dialog = openLessonStatement(data);
-  const table = within(dialog.getByRole("table", { name: "逐课明细" }));
-  expect(table.getByText("₱180")).toBeTruthy();
-  expect(table.queryByText("₱320")).toBeNull();
+  const detail = openLessonStatement(data);
+  const table = within(detail.getByRole("table", { name: "薪资明细" }));
+  expect(table.getByText("+₱180")).toBeTruthy();
+  expect(table.queryByText("+₱320")).toBeNull();
+  showColumns(detail, "老师单价", "SO 单价", "计薪比例", "计算说明");
+  const pay = within(table.getByText("完课底薪").closest("tr")!);
+  for (const value of ["₱180", "₱60", "100%"]) {
+    expect(pay.getByRole("cell", { name: value })).toBeTruthy();
+  }
   expect(table.getByText("工资单无单节计薪记录")).toBeTruthy();
-  expect(dialog.getByLabelText("老师应结").textContent).toBe("₱176");
+  expect(detail.getByLabelText("老师应结").textContent).toBe("₱174");
 });
 
 it("未设置计薪方式的已完课同时显示已核定的扣款与待核课酬", () => {
-  const { data, teacher } = statementFixture();
+  const { data, teacher, lesson } = statementFixture();
   teacher.payMode = undefined;
+  data.lessons.push({
+    ...lesson,
+    id: "pending-class",
+    time: "10:00",
+    status: "待确认",
+  });
   const table = within(
-    openLessonStatement(data).getByRole("table", { name: "逐课明细" }),
+    openLessonStatement(data).getByRole("table", { name: "薪资明细" }),
   );
   expect(
-    within(table.getByText("迟到或早退").closest("tr")!).getByText(/-4/),
+    within(table.getByText("迟到或早退扣款").closest("tr")!).getByText("-₱6"),
   ).toBeTruthy();
+  expect(table.getByText("课程结果待核")).toBeTruthy();
+  const coursePay = within(table.getByText("计薪方式待设置").closest("tr")!);
   expect(
-    within(table.getByText("计薪方式待设置").closest("tr")!).getAllByText(
-      "待核",
-    ),
-  ).toHaveLength(2);
+    coursePay
+      .getAllByRole("cell")
+      .slice(3, 5)
+      .map((cell) => cell.textContent),
+  ).toEqual(["—", "—"]);
+  expect(coursePay.getByText("待核实")).toBeTruthy();
+  expect(table.getAllByText("未设置计薪方式")).toHaveLength(1);
+});
+
+it("缺单价的老师缺席课程显示待核扣款", () => {
+  const { data, teacher, lesson } = statementFixture();
+  teacher.rate = 0;
+  data.lessons = [
+    {
+      ...lesson,
+      status: "缺席",
+      attendance: "老师缺席",
+      teacherAttendance: ["缺席"],
+      incident: undefined,
+    },
+  ];
+  const detail = openLessonStatement(data);
+  const table = within(detail.getByRole("table", { name: "薪资明细" }));
+  const fine = within(table.getByText("老师缺席扣款").closest("tr")!);
+  showColumns(detail, "计算说明");
+  expect(fine.getByText("课时费待核 × 3")).toBeTruthy();
+  expect(fine.getAllByRole("cell")[3].textContent).toBe("—");
+  expect(fine.getByText("待核实")).toBeTruthy();
+  expect(table.queryByText("本节无计薪项目")).toBeNull();
+  expect(detail.queryByRole("button", { name: "记录处理结果" })).toBeNull();
+});
+
+it("从待核的网络取消课酬打开处理表单", () => {
+  const { data, lesson } = statementFixture();
+  data.lessons = [
+    {
+      ...lesson,
+      status: "已取消",
+      incident: { ...lesson.incident, reason: "网络问题" },
+    },
+  ];
+  const detail = openLessonStatement(data);
+  const row = within(detail.getByText("网络取消课酬待核").closest("tr")!);
+  fireEvent.click(row.getByRole("button", { name: "核实" }));
+  const dialog = screen.getByRole("dialog", { name: "核实薪资明细" });
+  const review = within(dialog);
+  expect(review.getByText(/请逐项核定老师及 SO 本节应得课酬/)).toBeTruthy();
+  fireEvent.click(review.getByRole("button", { name: "记录处理结果" }));
+  const editor = within(screen.getByRole("dialog", { name: "记录处理结果" }));
+  expect(screen.queryByRole("dialog", { name: "核实薪资明细" })).toBeNull();
+  expect(editor.getByLabelText("本节老师应得课酬（₱）")).toBeTruthy();
+  expect(editor.getByLabelText("本节 SO 应得课酬（₱）")).toBeTruthy();
+});
+
+it.each([
+  ["2026-10-30T23:59:59+08:00", "等待结果"],
+  ["2026-10-31T00:00:00+08:00", "待核实"],
+])("未收到最终回传时，工资明细在 %s 标记%s", (at, expected) => {
+  const { data, lesson } = statementFixture();
+  Object.assign(lesson, {
+    status: "待确认", incident: undefined, deducted: false, attendance: "无数据",
+    classInAttendanceIssue: undefined, classInAttendanceReceived: false,
+  });
+  const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse(at));
+  try {
+    const detail = openLessonStatement(data);
+    const table = within(detail.getByRole("table", { name: "薪资明细" }));
+    const row = within(table.getByRole("cell", { name: lesson.time }).closest("tr")!);
+    expect(row.getByRole("cell", { name: expected })).toBeTruthy();
+    if (expected === "等待结果") {
+      expect(row.queryByRole("button", { name: "核实" })).toBeNull();
+      expect(row.queryByText(/数据缺失/)).toBeNull();
+    } else {
+      fireEvent.click(row.getByRole("button", { name: "核实" }));
+      const review = within(screen.getByRole("dialog", { name: "核实薪资明细" }));
+      expect(review.getAllByText(/数据缺失/).length).toBeGreaterThan(0);
+    }
+  } finally {
+    now.mockRestore();
+  }
 });

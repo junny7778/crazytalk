@@ -18,7 +18,8 @@ it("old saved expiry fields are discarded without losing balances or records", a
   expect(parsed.students).toEqual(seed.students);
   expect(parsed.rules).toEqual(seed.rules);
   localStorage.clear();
-  localStorage.setItem("crazytalk-demo-v1", JSON.stringify(legacy));
+  const { DEMO_STORAGE_KEY } = await import("./repository");
+  localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(legacy));
   vi.resetModules();
   const { demoRepository } = await import("./repository");
   const restored = demoRepository.read();

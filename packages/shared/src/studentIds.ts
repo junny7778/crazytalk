@@ -91,7 +91,6 @@ export function resolveStudentCommand(
     next.type === "student.details.update" ||
     next.type === "student.history.update" ||
     next.type === "student.profile" ||
-    next.type === "student.balance.open" ||
     next.type === "student.edit"
   )
     next.id = resolveStudentId(data, next.id);

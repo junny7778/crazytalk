@@ -8,6 +8,7 @@ export function useScheduleCredits(
   duration: number,
   count: number,
   teacherIds: string[] = [],
+  presetUnits?: number,
 ) {
   const { data, act, can, preview } = useDemo();
   const [manual, setManual] = useState("");
@@ -19,7 +20,7 @@ export function useScheduleCredits(
   }, [duration, studentId]);
   const units = scheduleUnits(
     duration,
-    manual.trim() ? Number(manual) : undefined,
+    presetUnits ?? (manual.trim() ? Number(manual) : undefined),
   );
   const summary = getScheduleCredits(data, studentId, count, units ?? NaN);
   if (studentId) summary.error = schedulingBookingIssue(data, studentId, teacherIds) || summary.error;
@@ -42,7 +43,8 @@ export function useScheduleCredits(
             type="number"
             min="0.01"
             step="any"
-            value={manual}
+            disabled={presetUnits !== undefined}
+            value={presetUnits ?? manual}
             onChange={(e) => setManual(e.target.value)}
             placeholder="请填写每节预计占用的课时"
           />

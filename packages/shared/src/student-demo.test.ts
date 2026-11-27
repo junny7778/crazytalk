@@ -30,7 +30,7 @@ describe("学生表单数字化业务", () => {
     });
     expect(student).not.toHaveProperty("code");
     expect(student.id).toBeTruthy();
-    expect(student.balanceKnown).toBe(true);
+
     expect(
       studentProfileSchema.safeParse({
         ...emptyStudentProfile(),
@@ -44,6 +44,7 @@ describe("学生表单数字化业务", () => {
     const before = createSeed();
     const profile = {
       ...emptyStudentProfile(),
+      openingBalance:0, orderStatus:"正常",
       chineseName: "同名学生",
       name: "同名学生",
       groupName: "某学习群",
@@ -216,14 +217,8 @@ describe("学生表单数字化业务", () => {
   it("允许核实后的小数课时，续费保持服务状态，只有显式复课才恢复正常订单", () => {
     const before = createSeed();
     const student = before.students[0];
-    student.balanceKnown = false;
-    student.balance = 0;
-    const opened = transition(before, {
-      type: "student.balance.open",
-      id: student.id,
-      balance: 1.5,
-      reason: "核实台账",
-    }).data;
+    student.balance = 1.5;
+    const opened = before;
     const ended = transition(opened, {
       type: "student.lifecycle",
       studentId: student.id,
@@ -302,7 +297,7 @@ describe("学生表单数字化业务", () => {
     ).toThrow(/同一人/);
   });
 
-  it("退款停用保留已知或未知余额，逐项记录本地结果与待办", () => {
+  it("退款停用保留现有余额，逐项记录本地结果与待办", () => {
     const before = createSeed();
     const student = before.students[0];
     const after = transition(before, {
@@ -314,7 +309,6 @@ describe("学生表单数字化业务", () => {
     expect(after.students[0]).toMatchObject({
       orderStatus: "退款",
       balance: student.balance,
-      balanceKnown: true,
     });
     expect(after.credits).toHaveLength(before.credits.length);
     expect(after.students[0].serviceStopResults).toHaveLength(4);

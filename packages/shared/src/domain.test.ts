@@ -61,7 +61,7 @@ describe("运营业务闭环", () => {
     const created = data.students.find((s) => s.chineseName === "测试学员");
     expect(created).toBeDefined();
     if (!created) throw new Error("Creation did not return a student");
-    expect(created).toMatchObject({ balanceKnown: true, balance: 0 });
+    expect(created).toMatchObject({balance: 0 });
     data = transition(data, {
       type: "credit.add",
       studentId: created.id,
@@ -125,10 +125,10 @@ describe("运营业务闭环", () => {
     ).toHaveLength(1);
   });
 
-  it("欠课学员续费先冲抵欠额，补偿必须有原因", () => {
+  it("零余额学员续费增加可用课时，补偿必须有原因", () => {
     const before = createSeed();
-    const student = before.students.find((s) => s.balance < 0);
-    if (!student) throw new Error("Seed lacks indebted student");
+    const student = before.students.find((s) => s.balance === 0 && s.status === "在读");
+    if (!student) throw new Error("缺少零余额在读学员");
     const after = transition(before, {
       type: "credit.add",
       studentId: student.id,

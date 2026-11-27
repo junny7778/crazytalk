@@ -15,5 +15,5 @@ const accounts = (data.classInAccounts ?? []).map(account => {
     issue: accountBalanceReviewIssue(data, account.studentIds) || (aligned ? "" : "账号与余额成员未统一，请核对后重新关联账号"),
   };
 });
-writeFileSync(output, JSON.stringify({accounts, unbound: data.students.filter(student => !data.classInAccounts?.some(account => account.studentIds.includes(student.id))).map(student => ({id: student.id, balance: student.balance, balanceKnown: student.balanceKnown}))}, null, 2));
+writeFileSync(output, JSON.stringify({accounts, unbound: data.students.filter(student => !data.classInAccounts?.some(account => account.studentIds.includes(student.id))).map(student => ({id: student.id, balance: student.balance}))}, null, 2));
 console.log(`已生成核对清单：${accounts.filter(account => account.issue).length} 个账号需要处理；未修改原始数据。`);

@@ -230,7 +230,7 @@ it("两名候选老师都等待最近课程核定，仅最后授课者领到复�
   const f = renewalFixture();
   for (const t of [f.a, f.b]) {
     expect(
-      f.rows(t.id).some((r) => r.category === "待核" && r.source === "renew"),
+      f.rows(t.id).some((r) => r.category === "等待" && r.source === "renew"),
     ).toBe(true);
     expect(() => f.confirm(t.id)).toThrow();
   }
@@ -320,10 +320,12 @@ it("未核定原课程时差评没有可扣金额，不能用备注确认", () =
   expect(f.rows()).toContainEqual(
     expect.objectContaining({
       key: "complaint-fee:pending",
-      category: "待核",
+      category: "等待",
+      dependsOn: ["lesson-review:" + f.course.id],
       teacher: 0,
     }),
   );
+  expect(f.rows().filter((r) => r.category === "待核").map(r => r.key)).toEqual(["lesson-review:" + f.course.id]);
   expect(f.rows().filter((r) => r.category === "扣款")).toEqual([]);
   expect(() =>
     f.send({
@@ -407,7 +409,7 @@ it("历史半薪单价缺失，先补当日单价再核次期差评", () => {
     expect.objectContaining({ key, category: "待核" }),
   );
   expect(f.rows(f.a.id, "2025-01-2")).toContainEqual(
-    expect.objectContaining({ key: "complaint-fee:rate", category: "待核" }),
+    expect.objectContaining({ key: "complaint-fee:rate", category: "等待", dependsOn: [key] }),
   );
   expect(() => f.send(review)).toThrow();
   expect(() => f.send({ ...review, historicalRate: 0 })).toThrow();
@@ -490,4 +492,25 @@ it("好评与续费保留事件当时的规则，全勤采用周期末的规则"
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("存在明确的考勤冲突时，上传截图或不填结论都不能绕过核实", () => {
+  const f = fixture();
+  Object.assign(f.course, {
+    attendance: "正常", classInAttendanceReceived: true,
+    classInAttendanceIssue: "老师的出勤时长与进出记录不完整或矛盾",
+    teacherAttendance: ["待核实"], studentAttendance: ["正常"],
+  });
+  f.send({ type: "report.save", report: {
+    lessonId: f.course.id, teacherId: f.a.id, studentId: f.course.studentId, date: f.course.date,
+    material: "Book", from: "", to: "2", comment: "", rating: 0, suggestedLevel: "",
+    screenshot: "data:image/png;base64,YQ==",
+  } });
+  expect(f.rows().map(r => r.category)).toEqual(["待核"]);
+  expect(f.state().orders![0].balance).toBe(10);
+  expect(() => f.send({ type: "lesson.resolve", ids: [f.course.id], reason: "批量确认", decision: "扣课", units: 1 })).toThrow();
+  expect(() => f.confirm()).toThrow();
+  f.resolve("正常上课", { decision: "扣课", units: 1 });
+  expect(f.rows().map(r => [r.teacher, r.office])).toEqual([[180, 60]]);
+  f.confirm();
 });

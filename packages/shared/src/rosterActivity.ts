@@ -1,14 +1,6 @@
-import {
-  addDays,
-  DEMO_TODAY,
-  feedbackSchema,
-  type DemoState,
-  type Lesson,
-  type Student,
-} from "./model";
-import { isRegularTime } from "./availability";
-import { studentOrganization } from "./organization";
-import { minutes } from "./domain";
+import type { DemoState, Lesson } from "./model";
+import { minutes, transition } from "./domain";
+import { rememberLessonPay } from "./halfMonthPayroll";
 
 function clock(minute: number) {
   return [Math.floor(minute / 60), minute % 60]
@@ -16,183 +8,93 @@ function clock(minute: number) {
     .join(":");
 }
 
-export function withRosterActivity(state: DemoState): DemoState {
-  const batch = "roster-activity-202610-v1";
-  if (state.importedBatches?.includes(batch)) return state;
-  const groups = new Map<string, Student[]>();
-  for (const student of state.students) {
-    if (!student.roster || student.status !== "在读") continue;
-    const { team, group } = studentOrganization(
-      state.accounts,
-      student.owner,
-      student.roster,
-      student.ownerAccountId,
-    );
-    const key = JSON.stringify([team, group]);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(student);
+// The initial balances in the seed already include its completed classes.
+export function finalizeDemoLessonHistory(data: DemoState): DemoState {
+  const absent = data.lessons.find(l => l.id === "l93")!;
+  absent.classInAttendanceReceived = true;
+  absent.studentAttendance = ["正常"];
+  absent.studentIn = absent.time;
+  absent.studentOut = clock(minutes(absent.time) + absent.duration);
+  const absenceAt = absent.date + "T" + absent.studentOut + ":00+08:00";
+  rememberLessonPay(data, absent, absenceAt);
+  data = transition(data, {type: "lesson.attendance", id: absent.id, person: "老师",
+    result: "缺席", at: absenceAt, operator: "ClassIn"}).data;
+
+  const waiting = data.lessons.find(l => l.id === "l25")!;
+  waiting.time = "17:30";
+  waiting.status = "待确认";
+  waiting.note = "本节刚结束，等待 ClassIn 最终考勤。";
+
+  for (const lesson of data.lessons.filter(l => l.status === "已完成" && l.attendance === "正常")) {
+    lesson.classInAttendanceReceived = true;
+    lesson.teacherAttendance = lesson.studentAttendance = ["正常"];
+  }
+  const occupied: Lesson[] = [];
+  // Keep specific attendance/payroll scenarios in their authored slots.
+  const courses = data.lessons.filter(l => l.status !== "已取消").sort((a, b) =>
+    Number(/^l\d+$/.test(a.id) && a.attendance === "正常") -
+    Number(/^l\d+$/.test(b.id) && b.attendance === "正常"));
+  for (const lesson of courses) {
+    const original = minutes(lesson.time);
+    let start = original;
+    const neighbors = occupied.filter(l => l.date === lesson.date &&
+      (l.teacherId === lesson.teacherId || l.studentId === lesson.studentId));
+    while (neighbors.some(l => minutes(l.time) < start + lesson.duration && start < minutes(l.time) + l.duration)) {
+      start -= 30;
+    }
+    if (start !== original) {
+      for (const key of ["time", "teacherIn", "teacherOut", "studentIn", "studentOut"] as const) {
+        if (lesson[key]) lesson[key] = clock(minutes(lesson[key]) + start - original);
+      }
+    }
+    occupied.push(lesson);
   }
 
-  const lessons = [...state.lessons],
-    feedback = [...state.feedback];
-  const teachers = state.teachers.filter(
-    (t) => t.status === "在职" && t.availability.length,
-  );
-  for (const members of groups.values()) {
-    for (let i = 0; i < 14; i++) {
-      const student = members[i % members.length];
-      const date = addDays(DEMO_TODAY, (i % 7) - 5);
-      const duration = i % 4 === 0 ? 50 : 25;
-      const options = [...teachers].sort(
-        (a, b) =>
-          Number(b.id === student.teacherId) -
-          Number(a.id === student.teacherId),
-      );
-      let lesson: Lesson | undefined;
-      for (const teacher of options) {
-        const occupied = lessons.filter(
-          (l) =>
-            l.date === date &&
-            l.status !== "已取消" &&
-            (l.teacherId === teacher.id || l.studentId === student.id),
-        );
-        for (let start = 9 * 60; start + duration <= 22 * 60; start += 30) {
-          const time = clock(start);
-          if (
-            !isRegularTime(teacher, date, time, duration) ||
-            occupied.some(
-              (l) =>
-                start < minutes(l.time) + l.duration &&
-                start + duration > minutes(l.time),
-            )
-          )
-            continue;
-          const status =
-            date > DEMO_TODAY
-              ? "未开始"
-              : i === 2
-                ? "已取消"
-                : i === 3
-                  ? "待确认"
-                  : "已完成";
-          const attendance =
-            i === 3 ? "学员缺席" : i === 4 ? "老师迟到" : "正常";
-          const held = status === "已完成" || status === "待确认";
-          lesson = {
-            id: `roster-lesson-${student.id}-${i}`,
-            studentId: student.id,
-            teacherId: teacher.id,
-            date,
-            time,
-            duration,
-            kind: "固定课",
-            status,
-            attendance,
-            teacherIn: held
-              ? clock(start + (attendance === "老师迟到" ? 8 : 0))
-              : "",
-            teacherOut: held ? clock(start + duration) : "",
-            studentIn: held && attendance !== "学员缺席" ? time : "",
-            studentOut:
-              held && attendance !== "学员缺席" ? clock(start + duration) : "",
-            deducted: status === "已完成",
-            confirmedUnits: duration / 25,
-            sync: "已同步",
-            syncReason: "",
-            material: student.material,
-            note: "",
-            leaveFlag: false,
-            conflict: false,
-          };
-          break;
-        }
-        if (lesson) break;
-      }
-      if (!lesson) continue;
-      const packages = state.orders?.filter(order => order.studentIds.includes(student.id));
-      if (packages?.length === 1) lesson.orderId = packages[0].id;
-      lessons.push(lesson);
-      if (i !== 4 && i !== 5) continue;
-      const teacher = teachers.find((t) => t.id === lesson.teacherId)!;
-      const praise = i === 5;
-      feedback.push(
-        feedbackSchema.parse({
-          id: `roster-feedback-${lesson.id}`,
-          studentId: student.id,
-          teacherId: teacher.id,
-          lessonId: lesson.id,
-          date,
-          owner: student.owner,
-          teacherName: teacher.name,
-          so: teacher.so,
-          source: student.project,
-          stage: "课中问题",
-          rating: praise ? "好评" : "差评",
-          category: praise ? "教学表扬" : "老师相关 / 职业素养 / 迟到",
-          content: praise
-            ? "老师会留时间让孩子自己回答，这节课孩子主动开口了。"
-            : "老师晚进教室八分钟，请帮忙核实原因。",
-          status: praise ? "已完成" : "待处理",
-          processNote: praise ? "已向老师转达家长反馈。" : "",
-          verdict: "",
-          measures: [],
-          repeat: false,
-        }),
-      );
+  const charged = new Set(data.credits.filter(c => c.type === "上课扣课").map(c => c.lessonId));
+  const historical = data.lessons.filter(l => l.deducted && !charged.has(l.id))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  for (const lesson of historical) {
+    const pack = data.orders!.find(p => p.id === lesson.orderId)!;
+    const opening = data.credits.find(c => c.orderId === pack.id && c.type === "期初课时")!;
+    const units = lesson.confirmedUnits!;
+    pack.units += units;
+    pack.balance += units;
+    opening.units += units;
+    lesson.status = "待确认";
+    lesson.deducted = false;
+    const at = lesson.date + "T" + lesson.teacherOut + ":00+08:00";
+    rememberLessonPay(data, lesson, at);
+  }
+  if (historical.length) {
+    data = transition(data, {type: "lesson.resolve", ids: historical.map(l => l.id),
+      decision: "扣课", operator: "系统自动扣课", reason: "双方考勤正常，按核定课时扣课。"}).data;
+    for (const lesson of historical) {
+      const at = lesson.date + "T" + lesson.teacherOut + ":00+08:00";
+      const credit = data.credits.find(c => c.lessonId === lesson.id)!;
+      const event = data.events.find(e => e.relatedType === "lesson" && e.relatedId === lesson.id)!;
+      credit.id = "demo-history-" + lesson.id;
+      event.id = "demo-resolve-" + lesson.id;
+      credit.date = event.date = lesson.date;
+      credit.recordedAt = event.recordedAt = at;
     }
   }
-  if (lessons.length === state.lessons.length) return state;
-  return {
-    ...state,
-    revision: state.revision + 1,
-    lessons,
-    feedback,
-    importedBatches: [...(state.importedBatches ?? []), batch],
-  };
-}
-
-export function withTeacherNoShowSamples(state: DemoState): DemoState {
-  const batch = "teacher-no-show-samples-20261116-v2";
-  if (state.importedBatches?.includes(batch)) return state;
-
-  const note = "开课满 10 分钟，老师仍未到堂，待核实。";
-  if (state.importedBatches?.includes("teacher-no-show-samples-20261116")) {
-    const lessons = state.lessons.map(lesson => {
-      if (!/^demo-teacher-no-show-[123]$/.test(lesson.id)) return lesson;
-      const previous = lesson.attendanceMessages?.老师;
-      const at = new Date(Date.parse(`${lesson.date}T${lesson.time}:00+08:00`) + 10 * 60_000).toISOString();
-      return {
-        ...lesson,
-        attendanceMessages: { ...lesson.attendanceMessages, 老师: at },
-        attendanceUpdates: lesson.attendanceUpdates?.老师 === previous
-          ? { ...lesson.attendanceUpdates, 老师: at } : lesson.attendanceUpdates,
-        note: /^模拟考勤：开课 (11|15|20) 分钟时老师仍未到堂，待核实。$/.test(lesson.note) ? note : lesson.note,
-      };
-    });
-    return { ...state, lessons, revision: state.revision + 1, importedBatches: [...state.importedBatches, batch] };
+  for (const pack of data.orders ?? []) {
+    const opening = data.credits.find(c => c.orderId === pack.id && c.type === "期初课时");
+    if (!opening) continue;
+    pack.date = opening.date;
+    let balance = 0;
+    for (const entry of data.credits.filter(c => c.orderId === pack.id)
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.recordedAt ?? "").localeCompare(b.recordedAt ?? ""))) {
+      balance += entry.units;
+      entry.balance = balance;
+    }
   }
-
-  const students = state.students.filter(s => s.status === "在读").slice(0, 3);
-  const teachers = state.teachers.filter(t => t.status === "在职");
-  const date = "2026-11-16";
-  const samples = students.map((student, i): Lesson => {
-    const start = (14 + i) * 60;
-    const time = clock(start);
-    const at = new Date(`${date}T${clock(start + 10)}:00+08:00`).toISOString();
-    return {
-      id: `demo-teacher-no-show-${i + 1}`,
-      studentId: student.id, teacherId: teachers[i].id, date, time,
-      kind: "临时课", duration: 25, confirmedUnits: 1, status: "待确认",
-      attendance: "正常", studentIn: time, studentOut: clock(start + 25),
-      teacherIn: "", teacherOut: "", attendanceMessages: { 老师: at },
-      attendanceUpdates: { 老师: at }, deducted: false,
-      material: student.material, sync: "已同步", syncReason: "",
-      note,
-      conflict: false, leaveFlag: false,
-    };
-  });
-  return {
-    ...state, revision: state.revision + 1, lessons: [...state.lessons, ...samples],
-    importedBatches: [...(state.importedBatches ?? []), batch],
-  };
+  for (const lesson of data.lessons.filter(l => l.deducted && l.studentIn)) {
+    const student = data.students.find(s => s.id === lesson.studentId)!;
+    if (lesson.date > student.lastLesson) student.lastLesson = lesson.date;
+  }
+  const result = transition(data, {type: "teacher.offboard", teacherId: "demo-tutor-nora",
+    payrollEndDate: "2026-10-31", reason: "固定时段授课合同到期"}).data;
+  result.events[0].id = "demo-offboard-nora";
+  return result;
 }

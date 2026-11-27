@@ -126,7 +126,6 @@ export function createSeed(): DemoState {
   const chineseNames = ["王子轩", "李沐晴", "陈米娅", "林可欣", "张乐乐", "周安娜"];
   const students: Student[] = names.map((name, i) => ({
     ...emptyStudentProfile(),
-    balanceKnown: true,
     teacherChanges: [],
     serviceStopResults: [],
     id: `s${i + 1}`,
@@ -153,7 +152,7 @@ export function createSeed(): DemoState {
     ],
     unit: `Unit ${(i % 8) + 1} / P${(i % 8) * 6 + 4}`,
     teacherId: i === 3 || i === 13 || i === 20 ? "" : `t${(i % 7) + 1}`,
-    balance: [18, 3, 24, 12, 1, 0, 8, -1, 32, 16, 4, 48][i % 12],
+    balance: [18, 3, 24, 12, 1, 0, 8, 0, 32, 16, 4, 48][i % 12],
     preferences: i % 2 ? "喜欢活泼、互动多的老师" : "希望老师耐心，语速适中",
     goal: "培养开口表达的信心，提升自然拼读与阅读能力。",
     createdAt: "2026-09-01",
@@ -250,6 +249,7 @@ export function createSeed(): DemoState {
         "待确认",
         n++,
       );
+      s.balance = Math.max(s.balance, l.duration / 25);
       l.attendance =
         i < 4
           ? "正常"
@@ -279,6 +279,18 @@ export function createSeed(): DemoState {
       }
       lessons.push(l);
     });
+  const available = new Map(students.map(s => [s.id, s.balance]));
+  for (const lesson of lessons.filter(l => l.status === "待确认")) {
+    available.set(lesson.studentId, available.get(lesson.studentId)! - lesson.duration / 25);
+  }
+  const fundedLessons = lessons.filter(lesson => {
+    if (lesson.status !== "未开始") return true;
+    const units = lesson.duration / 25;
+    const remaining = available.get(lesson.studentId)!;
+    if (remaining < units) return false;
+    available.set(lesson.studentId, remaining - units);
+    return true;
+  });
   if (lessons[6]) {
     lessons[6].sync = "未同步";
     lessons[6].syncReason = "课程时间还未更新到 ClassIn，请重新更新。";
@@ -288,7 +300,7 @@ export function createSeed(): DemoState {
     revision: 0,
     students,
     teachers,
-    lessons,
+    lessons: fundedLessons,
     referrals: [],
     tasks: [
       {
@@ -687,7 +699,7 @@ export function createSeed(): DemoState {
   return seed;
 }
 
-function endTime(time: string, duration: number) {
+export function endTime(time: string, duration: number) {
   const [h, m] = time.split(":").map(Number);
   const value = h * 60 + m + duration;
   return (

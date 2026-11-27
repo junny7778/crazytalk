@@ -1,3 +1,5 @@
+import { operationsNow } from "@crazytalk/shared";
+import { lessonRecordStatus } from "../lib/lessonStatus";
 import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { OrganizationFilters } from "../components/OrganizationFilters";
 import {organizationView} from "@crazytalk/shared";
@@ -121,13 +123,14 @@ export default function Dashboard() {
     `/lessons?${new URLSearchParams({ tab: "all", occurred: "1", from: since, to: DEMO_TODAY, ...(project === "全部项目" ? {} : { project }), ...extra })}`;
   const feedbackPath = (extra: Record<string, string> = {}) =>
     `/feedback?${new URLSearchParams({ view: "全部", from: since, to: DEMO_TODAY, ...(project === "全部项目" ? {} : { project }), ...extra })}`;
-  const pending = lessons.filter((l) => l.status === "待确认").length;
+  const now = operationsNow();
+  const pending = lessons.filter((l) => lessonRecordStatus(l, now) === "待确认").length;
   const feedbackPending = data.feedback.filter(
     (f) => studentIds.has(f.studentId) && f.status !== "已完成",
   ).length;
   const low = students.filter(
     (s) =>
-      s.balanceKnown && s.balance > 0 && s.balance <= data.rules.lowBalance,
+      s.balance > 0 && s.balance <= data.rules.lowBalance,
   ).length;
   const unsynced = data.lessons.filter(hasSyncIssue).length;
   const closed = inPeriod.filter((l) => l.status === "已完成").length;
@@ -525,7 +528,7 @@ export default function Dashboard() {
                 <small>按上课日期统计，包含所选周期的未来课程 · 点击数量查看明细</small>
                 <DataExplanation title="约课统计">
                   <p>总约课数为所选项目、完整周期内的课程记录数，包含已取消课程，不按预约创建时间统计。</p>
-                  <p>取消率 = 已取消数 ÷ 总约课数；无约课时显示“—”。待上课对应未开始状态，逾期未更新的记录仍计入；待确认单列，确认完成后计入已完成。历史缺席状态单列为已结束（缺席）。</p>
+                  <p>取消率 = 已取消数 ÷ 总约课数；无约课时显示“—”。已过计划结束时间、尚无课程结果的记录计入待确认。确认完成后计入已完成。历史缺席状态单列为已结束（缺席）。</p>
                 </DataExplanation>
               </div>
             </Panel>

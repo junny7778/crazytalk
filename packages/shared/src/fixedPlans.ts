@@ -60,27 +60,34 @@ export function getFixedSchedulePlans(
       ),
   );
   const end = addDays(intent.startDate, intent.weeks * 7);
+  const confirmedByDate = new Map<string, number>();
+  if (intent.planId) {
+    for (const l of data.lessons) {
+      if (l.studentId === studentId && l.schedulePlanId === intent.planId && l.status !== "已取消")
+        confirmedByDate.set(l.date, (confirmedByDate.get(l.date) ?? 0) + 1);
+    }
+  }
   const booked = data.lessons
     .filter(
       (l) =>
-        !l.scheduleExtra &&
+        (intent.unlimited ? !!intent.planId && l.schedulePlanId === intent.planId : !l.scheduleExtra) &&
         l.studentId === studentId &&
         l.status !== "已取消" &&
         l.duration === intent.duration,
     )
-    .map((l) => ({ ...l, ...(l.fixedOrigin || {}) }))
+    .map((l) => intent.unlimited || !l.fixedOrigin ? l : { ...l, ...l.fixedOrigin })
     .filter(
       (l) =>
         l.date >= intent.startDate &&
         l.date < end &&
-        intent.windows.some(
+        (intent.unlimited || intent.windows.some(
           (w) =>
             w.day === dayOf(l.date) &&
             l.time >= w.start &&
             minutes(l.time) + l.duration <= minutes(w.end),
-        ),
+        )),
     );
-  const required = new Set(booked.map((l) => `${dayOf(l.date)}-${l.time}`));
+  const required = new Set((intent.dailyLimit ? [] : booked).map((l) => `${dayOf(l.date)}-${l.time}`));
   if (required.size > intent.frequency) return [];
   const keys = new Set<string>();
   const candidates: {
@@ -101,11 +108,12 @@ export function getFixedSchedulePlans(
       ) {
         const time = timeText(m),
           key = `${day}-${time}`;
+        if (m % 30 !== 0 && !required.has(key)) continue;
         if (keys.has(key)) continue;
         keys.add(key);
         const series = Array.from({ length: intent.weeks }, (_, week) => {
           const occurrence = addDays(date, week * 7);
-          const lesson = booked.find(
+          const lesson = !intent.dailyLimit && booked.find(
             (l) => l.date === occurrence && l.time === time,
           );
           return {
@@ -113,7 +121,7 @@ export function getFixedSchedulePlans(
             time,
             ids: lesson
               ? [lesson.teacherId]
-              : occurrence < DEMO_TODAY
+              : occurrence < DEMO_TODAY || (!!intent.dailyLimit && (confirmedByDate.get(occurrence) ?? 0) >= intent.dailyLimit)
                 ? []
                 : teachers
                     .filter(
@@ -159,7 +167,7 @@ export function getFixedSchedulePlans(
     }
     return lo;
   });
-  const requiredCount = intent.frequency * intent.weeks;
+  const requiredCount = intent.targetLessons ?? intent.frequency * intent.weeks;
   const plans = teachers.map((primary) => {
     // Prefer primary-teacher coverage or total coverage according to the selected priority.
     const score = (c: (typeof candidates)[number]) => {
@@ -170,27 +178,59 @@ export function getFixedSchedulePlans(
         : [coveredCount, primaryCount];
       return (first * (requiredCount + 1) + second) * (intent.frequency + 1) + 1;
     };
-    const dp = Array.from({ length: free.length + 1 }, () =>
-      Array.from({ length: count + 1 }, () => ({
-        score: 0,
-        indices: Array<number>(),
-      })),
-    );
-    for (let i = 1; i <= free.length; i++)
-      for (let k = 1; k <= count; k++) {
-        const skip = dp[i - 1][k],
-          base = dp[previous[i - 1]][k - 1];
-        const value = base.score + score(free[i - 1]);
-        dp[i][k] =
-          value > skip.score
-            ? { score: value, indices: [...base.indices, i - 1] }
-            : skip;
+    type Choice = { score: number; indices: number[] };
+    const empty = (): Choice => ({score: 0, indices: []});
+    let weekly = Array.from({length: count + 1}, empty);
+    for (let start = 0; start < free.length;) {
+      let end = start + 1;
+      while (end < free.length && free[end].day === free[start].day) end++;
+      const lockedToday = locked.filter(c => c.day === free[start].day).length;
+      const limit = Math.min(count, Math.max(0, (intent.dailyLimit ?? intent.frequency) - lockedToday));
+      const day = Array.from({length: end - start + 1}, () => Array.from({length: limit + 1}, empty));
+      for (let i = start; i < end; i++) {
+        const slotScore = score(free[i]) * (intent.frequency + 1);
+        for (let k = 1; k <= limit; k++) {
+          const skip = day[i - start][k];
+          const base = day[Math.max(0, previous[i] - start)][k - 1];
+          const value = base.score + slotScore;
+          day[i - start + 1][k] = value > skip.score ? {score: value, indices: [...base.indices, i]} : skip;
+        }
       }
-    const positions = [
-      ...locked,
-      ...dp[free.length][count].indices.map((i) => free[i]),
-    ].sort((a, b) => a.start - b.start);
-    const all = positions.flatMap((p) => p.series);
+      const next = weekly.slice();
+      for (let k = 1; k <= count; k++) {
+        for (let n = 1; n <= Math.min(k, limit); n++) {
+          const today = day[end - start][n];
+          const before = weekly[k - n];
+          const spread = intent.dailyLimit && !lockedToday && today.indices.length ? 1 : 0;
+          const value = before.score + today.score + spread;
+          if (value > next[k].score) next[k] = {score: value, indices: [...before.indices, ...today.indices]};
+        }
+      }
+      weekly = next;
+      start = end;
+    }
+    const positions = [...locked, ...weekly[count].indices.map(i => free[i])].sort((a,b) => a.start - b.start);
+    const all = Array.from({length: intent.weeks}, (_, week) => {
+      const from = addDays(intent.startDate, week * 7);
+      const to = addDays(from, 7);
+      const already = intent.dailyLimit ? booked.filter(l => l.date >= from && l.date < to).map(l => ({
+        date: l.date, time: l.time, ids: [l.teacherId], lessonId: l.id,
+      })) : [];
+      const used = new Map(confirmedByDate);
+      const occurrences = positions.map(p => p.series[week]).filter(s => {
+        if (already.some(l => l.date === s.date && l.time === s.time)) return false;
+        const count = used.get(s.date) ?? 0;
+        if (intent.dailyLimit && count >= intent.dailyLimit) return false;
+        used.set(s.date, count + 1);
+        return true;
+      });
+      const quota = Math.min(intent.frequency, requiredCount - week * intent.frequency);
+      if (already.length + occurrences.length <= quota) return [...already, ...occurrences];
+      const ranked = occurrences.sort((a,b) => Number(!!b.lessonId) - Number(!!a.lessonId)
+        || Number(b.ids.includes(primary.id)) - Number(a.ids.includes(primary.id))
+        || Number(!!b.ids.length) - Number(!!a.ids.length));
+      return [...already, ...ranked].slice(0, quota);
+    }).flat();
     const assignments = all.map((s) => ({
       ...s,
       teacherId: s.lessonId

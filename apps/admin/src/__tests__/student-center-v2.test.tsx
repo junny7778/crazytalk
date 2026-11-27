@@ -146,7 +146,7 @@ describe("学员中心确认方案", () => {
       students: [
         {
           ...emptyStudentProfile(),
-          name: "无编号原表学生",
+          openingBalance:0, orderStatus:"正常", name: "无编号原表学生",
           groupName: "学习服务群",
           totalUnits: 0,
           legacyComplaints: "0",
@@ -170,7 +170,7 @@ describe("学员中心确认方案", () => {
     expect(screen.getByText("0")).toBeTruthy();
     expect(screen.getAllByText("未填写").length).toBeGreaterThan(0);
     await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "课时与续费" })); });
-    expect(await screen.findByText("录入初始剩余课时")).toBeTruthy();
+    expect(screen.queryByText("录入初始剩余课时")).toBeNull();
     expect(screen.queryByText("暂无转介绍关系")).toBeNull();
   });
 });

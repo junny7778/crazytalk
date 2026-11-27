@@ -1,11 +1,13 @@
+import { operationsNow } from "./clock";
 import { initializeTeacherNumbers } from "./teacherNumbers";
 import { finishStudentAccountChange } from "./classInChanges";
 import { initializeTeacherTags } from "./teacherTags";
-import { migratePackageBalances, refreshPackageBalances } from "./packageBalances";
+import { createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
 import { splitRosterName } from "./studentNames";
 import { assignSampleTeams, migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "./organization";
-import { unifyRoster } from "./unifyRoster";
-import { withRosterActivity, withTeacherNoShowSamples } from "./rosterActivity";
+import { finalizeDemoLessonHistory } from "./rosterActivity";
+import { withDemoSchedulingSamples } from "./demoSchedulingSamples";
+import { withDemoPayrollSamples, withErikaSamples } from "./demoPayrollSamples";
 import LZString from "lz-string";
 import { initializePayroll } from "./payroll";
 import { autoSettleLessons } from "./autoLessonSettlement";
@@ -22,7 +24,7 @@ import {
 import { createSeed } from "./seed";
 import { transition, payrollTotal } from "./domain";
 import { migrateStudentIds, resolveStudentCommand } from "./studentIds";
-const storageKey = "crazytalk-demo-v1";
+const storageKey = "crazytalk-demo-standard-v1";
 export const STUDENT_ID_BACKUP_KEY = `${storageKey}:before-student-id-v2`;
 const storedFeedbackPresenceSchema = z.object({
   students: z.array(z.object({ id: z.string(), code: z.unknown().optional() })),
@@ -96,6 +98,23 @@ function read(): DemoState {
     if (raw) {
       try {
         const input: unknown = JSON.parse(raw.startsWith("lz:") ? LZString.decompressFromUTF16(raw.slice(3)) : raw);
+        const legacy = z.object({students: z.array(z.record(z.unknown())), orders: z.array(z.record(z.unknown())).optional()}).safeParse(input);
+        let balancesMigrated = false;
+        if (legacy.success && legacy.data.students.some(s => "balanceKnown" in s || typeof s.balance === "number" && s.balance < 0)) {
+          for (const [i, s] of legacy.data.students.entries()) {
+            if (typeof s.balance === "number" && s.balance < 0) s.balance = 0;
+            if (s.balanceKnown === false && !legacy.data.orders?.some(o => Array.isArray(o.studentIds) && o.studentIds.includes(s.id))) {
+              s.balance = s.status === "退费" || s.status === "结课" ? 0 : [24, 36, 0, 12][i % 4];
+            }
+            delete s.balanceKnown;
+          }
+          for (const order of legacy.data.orders ?? []) {
+            if (typeof order.balance === "number" && order.balance < 0) order.balance = 0;
+            if (order.kind === "期初余额" && typeof order.units === "number" && order.units < 0) order.units = 0;
+          }
+          Object.assign(input as object, legacy.data);
+          balancesMigrated = true;
+        }
         const result = stateSchema.safeParse(input);
         if (result.success) {
           memory = result.data;
@@ -104,7 +123,7 @@ function read(): DemoState {
           const original = storedFeedbackPresenceSchema.parse(input);
           const catalog = migrateFeedbackCatalog(memory.catalog);
           const copyUpdated = updateStoredCopy(memory);
-          let upgraded = initializeTeacherNumbers(memory);
+          let upgraded = initializeTeacherNumbers(memory) || balancesMigrated;
           upgraded = catalog !== memory.catalog || payrollUpgrade || copyUpdated || upgraded;
           for (const student of memory.students) {
             if (!student.surveySubmittedAt && student.surveyOriginal && student.surveyPreviousSubmittedAt) {
@@ -198,6 +217,12 @@ function read(): DemoState {
               localStorage.setItem(STUDENT_ID_BACKUP_KEY, raw);
           }
           const packagesMigrated = migratePackageBalances(migrated.data);
+          if (balancesMigrated) {
+            const funded = new Set(migrated.data.orders?.flatMap(o => o.studentIds));
+            for (const student of migrated.data.students)
+              if (student.balance > 0 && !funded.has(student.id)) createOpeningPackage(migrated.data, student, student.balance);
+            refreshPackageBalances(migrated.data);
+          }
           if (migrated.changed || upgraded || packagesMigrated) {
             writeSnapshot(migrated.data);
             if (noticeRestored) localStorage.setItem(noticeRecoveryKey, "done");
@@ -212,11 +237,17 @@ function read(): DemoState {
       }
     }
   }
-  memory = migrateStudentIds(createSeed()).data;
-  migratePackageBalances(memory);
-  initializePayroll(memory);
+  memory = createDemoBase();
   return memory;
 }
+
+function createDemoBase() {
+  const base = migrateStudentIds(createSeed()).data;
+  migratePackageBalances(base);
+  initializePayroll(base);
+  return base;
+}
+
 function save(data: DemoState) {
   migratePackageBalances(data);
   refreshPackageBalances(data);
@@ -226,17 +257,34 @@ function save(data: DemoState) {
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event("crazytalk-change"));
 }
+const standardDemoBatch = "standard-demo-october-2026";
+
+function buildStandardDemo(base: DemoState) {
+  const data = withDemoSchedulingSamples(withErikaSamples(base));
+  const names = ["金泽宇", "唐书瑶", "梁子涵", "黄梓萌", "徐思齐", "姜一凡",
+    "刘雨桐", "何嘉言", "陆明轩", "钱若宁", "宋欣悦", "顾远航",
+    "郑书妍", "蔡一诺", "蒋辰星", "曹安琪", "田思源", "吴诗涵"];
+  for (const [index, name] of names.entries()) {
+    const student = data.students.find(s => s.id === data.studentIdAliases?.[`s${index + 7}`]);
+    if (!student) continue;
+    student.name = student.chineseName = name;
+    student.groupName = name + "专属学习群";
+  }
+  const result = finalizeDemoLessonHistory(withDemoPayrollSamples(data));
+  (result.importedBatches ??= []).push(standardDemoBatch);
+  return result;
+}
+
 export const demoRepository = {
   read,
-  initializeRoster(importCommand?: Extract<Command, { type: "student.import" }>) {
+  initializeDemoSamples() {
     const before = read();
-    const roster = importCommand
-      ? autoSettleLessons(transition(before, importCommand).data)
-      : before;
-    const after = withTeacherNoShowSamples(withRosterActivity(unifyRoster(roster)));
-    if (after !== before) save(after);
+    if (!before.importedBatches?.includes(standardDemoBatch)) save(buildStandardDemo(before));
   },
-  settleCompletedLessons(now = Date.now()) {
+  restoreStandardDemo() {
+    save(buildStandardDemo(createDemoBase()));
+  },
+  settleCompletedLessons(now = operationsNow()) {
     const before = read();
     let updated = before;
     for (const l of before.lessons) {
@@ -266,7 +314,7 @@ export const demoRepository = {
       finishStudentAccountChange(result.data,command.id);
       delete result.data.students.find(s => s.id === command.id)!.classInChange;
     }
-    result.data = autoSettleLessons(result.data);
+    result.data = autoSettleLessons(result.data, operationsNow());
     save(result.data);
     let undo: (() => void) | undefined;
     if (command.type === "lesson.resolve") {

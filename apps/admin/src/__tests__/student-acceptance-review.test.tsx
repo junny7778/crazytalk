@@ -59,7 +59,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
 
   it("新建档案初始余额和总课时为零", () => {
     const after = transition(createSeed(), { type: "student.create", student: { ...emptyStudentProfile(), chineseName: "余额未知的新学生" } }).data;
-    expect(after.students[0].balanceKnown).toBe(true);
+    expect(after.students[0].balance).toBe(0);
     expect(after.students[0].totalUnits).toBe(0);
     expect(after.students[0]).not.toHaveProperty("code");
     expect(after.students[0].id).toMatch(/^\d{8}$/);
@@ -78,7 +78,7 @@ describe("独立需求验收：学生档案与老师结课", () => {
     }
     localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(legacy));
     const loaded = demoRepository.refresh();
-    expect(loaded.students[0]).toMatchObject({ id: loaded.studentIdAliases![fixture.students[0].id], name: "原存储保护标记", balance: -3 });
+    expect(loaded.students[0]).toMatchObject({ id: loaded.studentIdAliases![fixture.students[0].id], name: "原存储保护标记", balance: 0 });
     expect(loaded.students[0]).not.toHaveProperty("code");
     expect(loaded.students).toHaveLength(fixture.students.length);
     expect(loaded.lessons.map(l=>[l.id,l.studentId])).toEqual(fixture.lessons.map(l=>[l.id,loaded.studentIdAliases![l.studentId]]));
@@ -159,9 +159,8 @@ describe("独立需求验收：学生档案与老师结课", () => {
     delete fixture.lessons[0].confirmedUnits;
     localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(fixture));
     demoRepository.refresh();
-    const { container } = mount(<Schedule />, `/schedule?teacher=${fixture.lessons[0].teacherId}&date=${DEMO_TODAY}`);
-    await testAct(async () => { fireEvent.click(screen.getByRole("button",{name:"查看完整课表"})); });
-    await testAct(async () => { fireEvent.click(container.querySelector(".schedule-lesson")!); });
+    mount(<Schedule />, `/schedule?teacher=${fixture.lessons[0].teacherId}&date=${DEMO_TODAY}`);
+    await testAct(async () => { fireEvent.click(screen.getByRole("button",{name:"查看详情"})); });
     const detail = screen.getByRole("dialog");
     expect(detail.textContent).toContain("55 分钟");
     expect(detail.textContent).not.toMatch(/55 分钟.*2 课时/);

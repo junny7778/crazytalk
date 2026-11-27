@@ -1,3 +1,4 @@
+import { operationsNow } from "@crazytalk/shared";
 import type { Lesson } from "@crazytalk/shared";
 import { lessonStart } from "./lessonOrder";
 export const syncManagementPath = "/settings?tab=classin";
@@ -14,7 +15,7 @@ export function lessonSyncPath(id: string) {
 }
 export function missingAttendanceData(
   lesson: Lesson,
-  now = Date.now(),
+  now = operationsNow(),
 ): boolean {
   return (
     lesson.status !== "已取消" &&

@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   studentProfileSchema,
   studentImportMatches,
+  openingImportIssue,
   type StudentProfileInput,
 } from "@crazytalk/shared";
 import { useDemo } from "@crazytalk/shared/react";
@@ -32,7 +33,17 @@ export default function StudentImport({
   const headers=rosterHeaders;
   const identities = new Set<string>();
   const errors: string[] = [];
+  const openingBalances = new Map(data.orders?.flatMap(order => order.openingGroup ? [[order.openingGroup, order.balance] as const] : []));
   rows.forEach((row, index) => {
+    if (!studentImportMatches(data.students, row).length) {
+      const issue = openingImportIssue(row);
+      if (issue) errors.push(issue);
+      else if (row.openingGroup && row.openingBalance !== undefined) {
+        const balance = openingBalances.get(row.openingGroup);
+        if (balance !== undefined && balance !== row.openingBalance) errors.push(`第 ${row.roster?.row ?? index + 1} 行：共享课包「${row.openingGroup}」的剩余课时不一致`);
+        openingBalances.set(row.openingGroup, row.openingBalance);
+      }
+    }
     const parsed = studentProfileSchema.safeParse(row);
     if (!parsed.success)
       errors.push(
@@ -164,7 +175,7 @@ export default function StudentImport({
           </Button>
         </div>
         <p className="muted">
-          请使用学生信息表模板。手机号、年龄和课时可留空，不会自动补值；总课时不等于剩余课时。
+          请使用学生信息表模板。新增历史学员须填写订单状态和剩余课时，余额为零请填 0。剩余课时包含已排未扣的课时。共用同一课包的学员填写相同的共享课包编号及余额。更新已有学员会保留系统余额。
         </p>
         {loading && <p role="status">正在读取文件…</p>}
         {error && (
@@ -243,6 +254,7 @@ export default function StudentImport({
                     <th>学员 ID（新增留空）</th>
                     <th>学员姓名</th>
                     <th>手机号</th>
+                    <th>剩余课时</th>
                     <th>匹配结果</th>
                     <th>原表信息</th>
                   </tr>
@@ -282,6 +294,7 @@ export default function StudentImport({
                           style={{ width: 140 }}
                         />
                       </td>
+                      <td>{studentImportMatches(data.students, row).length === 1 ? "保留系统余额" : Number.isFinite(row.openingBalance) ? row.openingBalance : "未填写"}</td>
                       <td>
                         {studentImportMatches(data.students, row).length === 1
                           ? "匹配已有档案"

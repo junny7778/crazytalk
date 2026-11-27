@@ -1,3 +1,5 @@
+import { operationsNow } from "@crazytalk/shared";
+import { lessonRecordStatus } from "./lessonStatus";
 import { recordAttendance } from "./lessonAttendance";
 import { addDays, DEMO_TODAY, type Lesson } from "@crazytalk/shared";
 
@@ -35,7 +37,7 @@ export function occurred(l: Lesson) {
 export function attendanceSummary(lessons: Lesson[]) {
   const eligible = lessons.filter((l) => occurred(l) && l.status !== "已取消");
   const known = eligible.filter(
-    (l) => Boolean(l.studentIn) || l.attendance === "学员缺席",
+    (l) => Boolean(l.studentIn) || recordAttendance(l).includes("学员缺席"),
   );
   const present = known.filter((l) => Boolean(l.studentIn)).length;
   const absent = known.filter((l) => !l.studentIn);
@@ -54,7 +56,7 @@ export function attendanceSummary(lessons: Lesson[]) {
         latest.length >= 2 &&
         latest
           .slice(0, 2)
-          .every((l) => l.attendance === "学员缺席" && !l.studentIn)
+          .every((l) => !l.studentIn && recordAttendance(l).includes("学员缺席"))
       );
     })
     .map(([id]) => id);
@@ -69,7 +71,7 @@ export function attendanceSummary(lessons: Lesson[]) {
   };
 }
 
-export function courseAnomalies(lessons: Lesson[], now = Date.now()) {
+export function courseAnomalies(lessons: Lesson[], now = operationsNow()) {
   const eligible = lessons.filter(occurred);
   const labels = eligible
     .filter((lesson) => lesson.status !== "已取消")
@@ -88,13 +90,13 @@ export function courseAnomalies(lessons: Lesson[], now = Date.now()) {
   ];
   return {
     anomalies,
-    pending: labels.filter((tags) => tags.includes("待核实")).length,
+    pending: labels.filter((tags) => tags.includes("待核实") || tags.includes("数据缺失")).length,
   };
 }
 
-export function bookingSummary(lessons: Lesson[], start: string, end: string) {
+export function bookingSummary(lessons: Lesson[], start: string, end: string, now = operationsNow()) {
   const items = lessons.filter((lesson) => lesson.date >= start && lesson.date <= end);
-  const count = (status: Lesson["status"]) => items.filter((lesson) => lesson.status === status).length;
+  const count = (status: Lesson["status"]) => items.filter((lesson) => lessonRecordStatus(lesson, now) === status).length;
   const cancelled = count("已取消");
   return {
     total: items.length,

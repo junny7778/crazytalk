@@ -4,7 +4,7 @@ import { emptyStudentProfile, stateSchema } from "./model";
 import { createSeed } from "./seed";
 
 const profile = (name: string) => ({
-  ...emptyStudentProfile(),
+  ...emptyStudentProfile(), openingBalance:10, orderStatus:"正常",
   name,
   chineseName: name,
   groupName: `${name}学习群`,
@@ -48,12 +48,7 @@ describe("八位数字学员ID", () => {
       imported.students.find((student) => student.name === "导入乙")?.id,
     ).toBe("10000003");
     if (!learner) throw new Error("未导入学员");
-    const credited = transition(imported, {
-      type: "student.balance.open",
-      id: learner.id,
-      balance: 10,
-      reason: "核对余额",
-    }).data;
+    const credited = imported;
     const updated = transition(credited, {
       type: "student.import",
       students: [

@@ -4,7 +4,7 @@ import { transition } from "./domain";
 import { emptyStudentProfile, studentHistorySchema } from "./model";
 import { getStudentSummary } from "./studentSummary";
 describe("事件驱动学员资料", () => {
-  it("普通新建为正常待排课且已知零余额；导入未知余额不冒充零", () => {
+  it("新建档案余额为零，历史学员按导入值登记余额", () => {
     const profile = {
       ...emptyStudentProfile(),
       chineseName: "新同学",
@@ -16,17 +16,16 @@ describe("事件驱动学员资料", () => {
     }).data.students[0];
     expect(made).toMatchObject({
       balance: 0,
-      balanceKnown: true,
       status: "待排课",
       orderStatus: "正常",
       historyStartDate: "2026-10-31",
     });
     const imported = transition(createSeed(), {
       type: "student.import",
-      students: [profile],
+      students: [{...profile, openingBalance:4, orderStatus:"待排课"}],
       mode: "skip",
     }).data.students.at(-1);
-    expect(imported?.balanceKnown).toBe(false);
+    expect(imported?.balance).toBe(4);
   });
   it("月统计随跨月调课和取消变化，实际出席不等于扣课", () => {
     const data = createSeed();

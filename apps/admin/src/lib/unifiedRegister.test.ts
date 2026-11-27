@@ -9,21 +9,28 @@ import {
   type Command,
 } from "@crazytalk/shared";
 import { migrateStudentIds } from "../../../../packages/shared/src/studentIds";
-import { unifyRoster } from "../../../../packages/shared/src/unifyRoster";
 import { rosterValues, rosterHeaders } from "./customerRoster";
 import { readStudentWorkbook } from "./studentWorkbook";
 import { bookingSummary } from "./dashboard";
 
 it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导使用同一ID", async () => {
   let data = migrateStudentIds(createSeed()).data;
+  const owner = data.accounts.find(a => a.name === "Roma")!;
+  owner.classInUid = "98009001";
+  data.teachers[0].classInUid = "98009002";
   const run = (cmd: Command) => {
     data = transition(data, cmd).data;
   };
+  const bookEntry = data.catalog.find(c => c.type === "教材" && c.enabled)!;
+  data.teachers[0].materialIds = [bookEntry.id];
   const profile = {
     ...emptyStudentProfile(),
+    material: bookEntry.name,
+    materialIds: [bookEntry.id],
     name: "同名",
     chineseName: "同名",
     owner: "Roma",
+    ownerAccountId: owner.id,
   };
   await run({ type: "student.create", student: profile });
   const id = data.students[0].id;
@@ -43,7 +50,7 @@ it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导�
     uid: "99911",
   });
   const t = data.teachers[0],
-    material = "Book";
+    material = bookEntry.name;
   await run({
     type: "order.buy",
     id: "family",
@@ -137,11 +144,4 @@ it("B队新增学员、共享订单、50分钟课、反馈与改名导出回导�
   await run({ type: "student.import", mode: "update", students: rows });
   expect(data.students.length).toBe(count);
   expect(data.students.find((s) => s.id === sibling)?.name).toBe("同名");
-  const edited = data.students.at(-1)!;
-  edited.name = "已编辑旧档案";
-  const unified = unifyRoster(data);
-  expect(unified.students.map((s) => s.id)).toEqual(
-    expect.arrayContaining([id, sibling, edited.id]),
-  );
-  expect(unifyRoster(unified)).toBe(unified);
 });

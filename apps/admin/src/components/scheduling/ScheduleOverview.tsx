@@ -1,7 +1,6 @@
 import {
   availabilitySummary,
   getScheduleCredits,
-  getStudentScheduleProgress,
   schedulingBookingIssue,
   teacherSchedulingAccountIssue,
   type Student,
@@ -35,9 +34,6 @@ export function ScheduleOverview({
   const student = person.kind === "student" ? person.value : undefined;
   const teacher = person.kind === "teacher" ? person.value : undefined;
   const credits = student ? getScheduleCredits(data, student.id, 0, 1) : null;
-  const progress = student?.scheduleIntent
-    ? getStudentScheduleProgress(data, student.id, student.scheduleIntent)
-    : null;
   const blocked =
     student && ["停课", "结课", "退费"].includes(student.status)
       ? `学员当前为${student.status}，不可新增排课`
@@ -45,7 +41,8 @@ export function ScheduleOverview({
         ? "老师已离职，不可新增排课"
         : "";
   const accountIssue = student ? schedulingBookingIssue(data,student.id) : teacher ? teacherSchedulingAccountIssue(teacher) : "";
-  const issue = accountIssue ? "" : credits?.error;
+  const noCredits = !!credits && credits.available < 1;
+  const hint = blocked || (noCredits ? "可用课时不足，无法新增排课。" : credits?.error);
   const lessons = data.lessons
     .filter((l) =>
       student ? l.studentId === student.id : l.teacherId === person.value.id,
@@ -55,10 +52,6 @@ export function ScheduleOverview({
   const unfinishedCount = scheduledLessons.filter(
     lesson => lesson.status === "未开始" || lesson.status === "待确认",
   ).length;
-  const balanceKnown =
-    !!student &&
-    (!!data.orders?.some((o) => o.studentIds.includes(student.id)) ||
-      student.balanceKnown);
   const shared =
     !!student &&
     !!data.orders?.some(
@@ -95,14 +88,7 @@ export function ScheduleOverview({
               <div>
                 <dt>剩余课时</dt>
                 <dd>
-                  {balanceKnown ? (
-                    <>
-                      {credits.balance}
-                      <small> 课时</small>
-                    </>
-                  ) : (
-                    "待核实"
-                  )}
+                  {credits.balance}<small> 课时</small>
                 </dd>
               </div>
               <div>
@@ -121,40 +107,17 @@ export function ScheduleOverview({
               <div>
                 <dt>可继续排</dt>
                 <dd>
-                  {!balanceKnown || credits.error ? (
+                  {credits.unknownCount ? (
                     "待核实"
                   ) : (
                     <>
-                      {credits.available}
+                      {Math.max(0, credits.available)}
                       <small> 课时</small>
                     </>
                   )}
                 </dd>
               </div>
             </dl>
-            {progress && student?.scheduleIntent ? (
-              <div className="schedule-plan-progress">
-                <strong>当前计划</strong>
-                <span>
-                  {student.scheduleIntent.startDate} 起 · 每周{" "}
-                  {student.scheduleIntent.frequency} 节 · 共{" "}
-                  {student.scheduleIntent.weeks} 周
-                </span>
-                <p>
-                  计划 {progress.requiredCount} 节 · 已安排{" "}
-                  {progress.scheduledCount} 节 · 还需安排{" "}
-                  {Math.max(
-                    0,
-                    progress.requiredCount - progress.scheduledCount,
-                  )}{" "}
-                  节
-                </p>
-                {!progress.complete &&
-                  progress.scheduledCount >= progress.requiredCount && (
-                    <small>固定上课时间尚未对齐，请检查已有安排。</small>
-                  )}
-              </div>
-            ) : null}
           </>
         ) : (
           teacher && (
@@ -186,22 +149,12 @@ export function ScheduleOverview({
             </>
           )
         )}
-        {blocked && (
-          <p role="status" className="notice">
-            {blocked}
-          </p>
-        )}
-        {issue && (
-          <p role="status" className="notice">
-            {issue}
-          </p>
-        )}
         {can("schedule.create") && (
           <div className="row wrap">
             {student && (
               <Button
                 variant="primary"
-                disabled={preview || !!blocked || !!accountIssue}
+                disabled={preview || !!blocked || !!accountIssue || noCredits}
                 onClick={() => onStart("auto")}
               >
                 一键排课
@@ -209,14 +162,19 @@ export function ScheduleOverview({
             )}
             <Button
               variant={student ? "secondary" : "primary"}
-              disabled={preview || !!blocked || !!accountIssue}
+              disabled={preview || !!blocked || !!accountIssue || noCredits}
               onClick={() => onStart("custom")}
             >
               {student ? "自定义排课" : "为该老师排课"}
             </Button>
           </div>
         )}
-        {student && <SchedulingAccountNotice student={student} />}
+        {hint && (
+          <p role="status" className="schedule-booking-hint" data-status={student?.status}>
+            {hint}
+          </p>
+        )}
+        {student && !blocked && !noCredits && <SchedulingAccountNotice student={student} />}
         {teacher && <TeacherSchedulingAccountNotice key={teacher.id} teacher={teacher}/>}
         {student &&
           data.tasks

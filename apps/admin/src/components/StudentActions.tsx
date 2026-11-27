@@ -330,34 +330,6 @@ export function StudentActionModal({
   }
   if (action === "edit")
     return <StudentProfileEditor student={student} onClose={onClose} />;
-  if (isCredit && ["补偿","赠送"].includes(kind) && !student.balanceKnown && !data.orders?.some(o=>o.studentIds.includes(student.id)))
-    return (
-      <Modal
-        open
-        onClose={onClose}
-        title="先核实剩余课时"
-        description="总课时不等于剩余课时，请核对旧台账后登记。"
-        footer={
-          <>
-            <Button onClick={onClose}>取消</Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                onClose();
-                navigate(`/students/${student.id}?tab=credits`);
-              }}
-            >
-              前往核实余额
-            </Button>
-          </>
-        }
-      >
-        <p>
-          尚未核实 {student.name}{" "}
-          的剩余课时，暂不执行加课或补偿。核实后可继续操作。
-        </p>
-      </Modal>
-    );
   return (
     <Modal
       open={!!action}
@@ -437,11 +409,6 @@ export function StudentActionModal({
                     ))}
                 </Select>
               </Field>
-            )}
-            {student.balance < 0 && ["补偿","赠送"].includes(kind) && (
-              <div className="notice">
-                会先抵扣欠的 {Math.abs(student.balance)} 课时。
-              </div>
             )}
           </>
         )}
@@ -860,7 +827,7 @@ export function StudentQuickView({
           <div className="inset">
             <small>剩余课时</small>
             <div className="stat-value">
-              {s.balanceKnown ? s.balance : "未录入"}
+              {s.balance}
               <span style={{ fontSize: 14, fontWeight: 400 }}> 课时</span>
             </div>
           </div>

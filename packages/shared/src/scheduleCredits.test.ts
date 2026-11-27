@@ -76,9 +76,8 @@ describe("排课课时余额与占用", () => {
   it("余额未核实、预计课时无效时不可排课", () => {
     const data = bindSchedulingStaff(createSeed());
     data.lessons = [];
-    data.students[3].balanceKnown = false;
-    expect(getScheduleCredits(data, "s4", 1, 1).error).toContain("核实");
-    data.students[3].balanceKnown = true;
+    data.students[3].balance = 0;
+    expect(getScheduleCredits(data, "s4", 1, 1).error).toContain("不足");
     expect(getScheduleCredits(data, "s4", 1, 0).error).toContain("预计");
   });
 });
@@ -110,7 +109,6 @@ function creditsFixture() {
   data.lessons = [];
   data.leaves = [];
   data.students[3].balance = 8;
-  data.students[3].balanceKnown = true;
   data.teachers[0].availability = [{ day: 1, start: "17:00", end: "22:00" }];
   return data;
 }

@@ -382,16 +382,12 @@ export default function StudentDetail() {
           label={shared.length ? "账号共享剩余课时" : "剩余课时"}
           title="查看课时明细"
           value={
-            packages.length ? `${packages.reduce((total, item) => total + item.balance, 0)} 课时${shared.length ? packages.length === 1 ? ` · ${shared[0].memberCount ?? shared[0].studentIds.length} 人共用` : " · 含共享套餐" : ""}` : student.balanceKnown ? `${student.balance} 课时` : "余额待核实"
+            packages.length ? `${packages.reduce((total, item) => total + item.balance, 0)} 课时${shared.length ? packages.length === 1 ? ` · ${shared[0].memberCount ?? shared[0].studentIds.length} 人共用` : " · 含共享套餐" : ""}` : `${student.balance} 课时`
           }
           note={
             student.orderStatus === "退款" ? (
               "账面余额保留，服务已停用"
-            ) : student.balanceKnown ? (
-              <CardNote label="余额状态">已核实</CardNote>
-            ) : (
-              <CardNote label="余额状态">待核实，核实后可查看变动依据</CardNote>
-            )
+            ) : undefined
           }
           onClick={() => setTab("credits")}
         />
@@ -568,9 +564,7 @@ export default function StudentDetail() {
             onVisit={() => openAction("visit")}
             onFeedback={() => openFeedback()}
             onCompensate={() =>
-              student.balanceKnown
-                ? openAction("compensate")
-                : setTab("credits")
+              openAction("compensate")
             }
           />
         </>

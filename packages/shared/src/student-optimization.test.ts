@@ -120,7 +120,7 @@ describe("学员跟进自动关联", () => {
     ).toHaveLength(changed.tasks.length);
   });
 
-  it("提醒必须提供明确演示条件，不把未知余额和停课学生列为低课时", () => {
+  it("提醒必须提供明确演示条件，不把余额高于阈值和停课的学生列为低课时", () => {
     const before = createSeed();
     const learner = before.students[0];
     learner.balance = 2;
@@ -144,7 +144,7 @@ describe("学员跟进自动关联", () => {
         threshold: 3,
       }).data.tasks,
     ).toHaveLength(generated.tasks.length);
-    learner.balanceKnown = false;
+    learner.balance = 10;
     expect(
       transition(before, {
         type: "student.reminder.preview",
@@ -153,7 +153,6 @@ describe("学员跟进自动关联", () => {
         threshold: 3,
       }).data.tasks,
     ).toEqual(before.tasks);
-    learner.balanceKnown = true;
     learner.status = "停课";
     expect(
       transition(before, {

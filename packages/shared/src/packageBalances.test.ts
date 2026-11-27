@@ -8,9 +8,9 @@ import { getScheduleCredits } from "./scheduleCredits";
 it("旧余额转入期初套餐一次，历史流水和课程仍属于原使用者，保留原共享订单", () => {
   const data = createSeed();
   const [a, b, c] = data.students;
-  Object.assign(a, { balance: 17, balanceKnown: true });
-  Object.assign(b, { balance: -2, balanceKnown: true });
-  Object.assign(c, { balance: 0, balanceKnown: true });
+  Object.assign(a, { balance: 17 });
+  Object.assign(b, { balance: 2 });
+  Object.assign(c, { balance: 0 });
   data.students = [a, b, c];
   data.orders = [
     {
@@ -58,7 +58,7 @@ it("旧余额转入期初套餐一次，历史流水和课程仍属于原使用�
   ]);
   expect(data.credits[0].orderId).toBe(opening.id);
   expect(data.orders).toHaveLength(3);
-  expect([a.balance, b.balance, c.balance]).toEqual([82, 63, 0]);
+  expect([a.balance, b.balance, c.balance]).toEqual([82, 67, 0]);
   expect(getScheduleCredits(data, a.id, 1, 1).available).toBe(80);
   const restored = stateSchema.parse(JSON.parse(JSON.stringify(data)));
   expect(migratePackageBalances(restored)).toBe(false);
@@ -69,8 +69,8 @@ it("载入旧存档后可共享、扣课和撤销，刷新后仍使用原套餐"
   const { demoRepository, DEMO_STORAGE_KEY } = await import("./repository");
   const data = createSeed();
   const [a, b] = data.students;
-  Object.assign(a, { balanceKnown: true, balance: 17 });
-  Object.assign(b, { balanceKnown: true, balance: 0 });
+  Object.assign(a, {balance: 17 });
+  Object.assign(b, {balance: 0 });
   data.lessons = [
     {
       ...data.lessons[0],

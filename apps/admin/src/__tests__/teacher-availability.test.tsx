@@ -16,7 +16,7 @@ import * as teacherActions from "../pages/operations/common";
 import { DemoProvider } from "@crazytalk/shared/react";
 import { defaultAvatarSource, ToastProvider } from "@crazytalk/ui";
 import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
-import { demoRepository } from "../../../../packages/shared/src/repository";
+import { DEMO_STORAGE_KEY, demoRepository } from "../../../../packages/shared/src/repository";
 import {
   stateSchema,
   teacherSchema,
@@ -351,7 +351,7 @@ describe("老师详情资料与培训", () => {
       availabilityFrom: "",
     });
     const persisted = stateSchema.parse(
-      JSON.parse(localStorage.getItem("crazytalk-demo-v1") || "null"),
+      JSON.parse(localStorage.getItem(DEMO_STORAGE_KEY) || "null"),
     );
     expect(persisted.teachers[0]).toMatchObject({
       photo: saved.photo,

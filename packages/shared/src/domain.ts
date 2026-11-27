@@ -1,4 +1,5 @@
-import { cancellationParty, needsLessonOutcomeReview } from "./lessonAttendance";
+import { operationsNow } from "./clock";
+import { bothAttendedInClassIn, cancellationAttendanceConflict, cancellationParty, needsLessonOutcomeReview } from "./lessonAttendance";
 import { schedulingBookingIssue } from "./schedulingAccounts";
 import { matchingSurveyOptions, studentSurveyPrefill } from "./studentSurvey";
 import { applyHalfMonthCommand, changeTeacherRate, rememberLessonPay } from "./halfMonthPayroll";
@@ -37,6 +38,7 @@ import {
   type FeedbackDetailsInput,
   type Command,
   type DemoState,
+  type StudentProfileInput,
   type Student,
   type Teacher,
   type Lesson,
@@ -96,6 +98,7 @@ export function isAvailable(
     start + duration > 24 * 60
   )
     reasons.push("请选择有效的上课时间和时长");
+  else if (start % 30 !== 0) reasons.push("上课开始时间须为整点或半点");
   if (teacher.status === "已离职") reasons.push("老师已离职");
   if (!timeOnly && data.rules.trainingRequired && !teacher.trained)
     reasons.push("老师尚未完成必修培训");
@@ -110,7 +113,7 @@ export function isAvailable(
     )
   )
     reasons.push("老师这段时间请假");
-  if(data.slotLocks?.some(lock=>lock.date===date && Date.parse(lock.expiresAt)>Date.now() &&
+  if(data.slotLocks?.some(lock=>lock.date===date && Date.parse(lock.expiresAt)>operationsNow() &&
     (lock.teacherId===teacherId || lock.studentId===studentId) &&
     !(lock.studentId===studentId && lock.teacherId===teacherId && lock.time===time && lock.duration===duration) &&
     start<minutes(lock.time)+lock.duration && minutes(lock.time)<start+duration)) reasons.push("时段已锁定");
@@ -137,6 +140,17 @@ export function teacherName(data: DemoState, teacherId: string) {
 export function studentName(data: DemoState, studentId: string) {
   const s = data.students.find((s) => s.id === studentId);
   return s ? s.name : "待关联学员";
+}
+export function openingImportIssue(profile: StudentProfileInput) {
+  const row = profile.roster?.row;
+  const prefix = `${row ? "第 " + row + " 行 · " : ""}${profile.name}：`;
+  if (profile.openingBalance === undefined) return prefix + "请填写剩余课时，余额为零请填 0";
+  if (!Number.isFinite(profile.openingBalance) || profile.openingBalance < 0) return prefix + "剩余课时须为非负数";
+  if (!/^(正常|已开课|未开课|待排课|在读|退款|退费|停课|已结课|结课)\s*(?:[（(].*[）)])?$/.test(profile.orderStatus.trim()))
+    return prefix + "请填写有效订单状态（正常、已开课、未开课、在读、待排课、停课、结课或退费）";
+  if (Number.parseInt(profile.roster?.fields["套餐共用"] ?? "", 10) > 1 && !profile.openingGroup)
+    return prefix + "请填写共享课包编号，以免重复入账";
+  return "";
 }
 export function studentImportMatches(
   students: Student[],
@@ -189,22 +203,13 @@ export function transition(
     );
   const confirmation = (note = "") => ({
     operator: command.operator || "教务",
-    at: new Date().toISOString(),
+    at: new Date(operationsNow()).toISOString(),
     note: note.trim() || "已与老师确认授课时间",
   });
-  function requireTeacherConfirmation(
-    t: Teacher,
-    outside: boolean,
-    confirmed?: boolean,
-  ) {
-    if ((outside || t.needConfirm) && !confirmed)
-      throw new Error(
-        outside
-          ? "非常规时间需先与老师确认，再安排课程"
-          : "请先与老师确认时间，并勾选确认",
-      );
+  function requireOutsideTimeConfirmation(outside: boolean, confirmed?: boolean) {
+    if (outside && !confirmed) throw new Error("非常规时间需先与老师确认，再安排课程");
   }
-  const recordedAt = new Date().toISOString();
+  const recordedAt = new Date(operationsNow()).toISOString();
   function event(
     type: string,
     content: string,
@@ -217,7 +222,7 @@ export function transition(
   ) {
     const inferred =
       relation ??
-      (command.type === "credit.add" || command.type === "student.balance.open"
+      (command.type === "credit.add"
         ? {
             relatedType: "credit" as const,
             relatedId: data.credits[0]?.id || "",
@@ -328,7 +333,7 @@ export function transition(
   ) {
     record.followUps.push({
       id: id(),
-      date: new Date().toISOString(),
+      date: new Date(operationsNow()).toISOString(),
       operator: command.operator || "操作人未记录",
       section,
       content,
@@ -443,15 +448,14 @@ export function transition(
     const linkedLesson = metadata.lessonId ? lesson(metadata.lessonId) : undefined;
     let order = linkedLesson?.orderId ? required(data.orders?.find(o => o.id === linkedLesson.orderId), "原课程课时来源不存在") : packageFor(s, metadata.orderId);
     if (!order) {
-      if (!s.balanceKnown) throw new Error("请先补录期初余额，再进行课时操作");
       order = createOpeningPackage(data, s, s.balance);
       const account = data.classInAccounts?.find(account => account.studentIds.includes(s.id));
       order.studentIds = account?.studentIds.slice() ?? [s.id];
       order.classInAccountId = account?.id;
     }
-    if (units < 0 && order.balance + units < -1e-8 && type !== "期初余额")
-      throw new Error("套餐余额不足");
-    order.balance = Math.round((order.balance + units) * 1e8) / 1e8;
+    const nextBalance = Math.round((order.balance + units) * 1e8) / 1e8;
+    if (nextBalance < 0) throw new Error("套餐余额不足");
+    order.balance = nextBalance;
     if (linkedLesson) linkedLesson.orderId = order.id;
     const creditId = id();
     data.credits.unshift({
@@ -559,7 +563,6 @@ export function transition(
         id: nextStudentId(data.students),
         createdAt: DEMO_TODAY,
         balance: 0,
-        balanceKnown: true,
         historyStartDate: DEMO_TODAY,
         totalUnits: 0,
         legacyComplaints: "0",
@@ -764,6 +767,10 @@ export function transition(
             `学生「${profile.name}」匹配到多份档案，请先人工核对，未导入或覆盖任何资料`,
           );
         const existing = matches[0];
+        if (!existing) {
+          const issue = openingImportIssue(profile);
+          if (issue) throw new Error(issue);
+        }
         if (!existing && profile.roster && !profile.chineseName.trim())
           throw new Error(`学生「${profile.name}」缺少中文名，请核对后再导入`);
         if (existing && command.mode === "update") {
@@ -824,6 +831,8 @@ export function transition(
         "secondChangedTeacher",
         "totalUnits",
       ] as const;
+      const openingGroups = new Map((data.orders ?? []).flatMap(order =>
+        order.openingGroup ? [[order.openingGroup, order] as const] : []));
       let added = 0,
         updated = 0,
         skipped = 0;
@@ -834,6 +843,7 @@ export function transition(
             skipped++;
             continue;
           }
+          if (!profile.orderStatus) profile.orderStatus = existing.orderStatus;
           if(profile.roster){
             existing.roster={...profile.roster, key: existing.roster?.key ?? profile.roster.key};
             existing.chineseName = profile.chineseName || existing.chineseName;
@@ -861,19 +871,34 @@ export function transition(
           ];
           updated++;
         } else {
+          migratePackageBalances(data);
           data.students.push(
             studentSchema.parse({
               ...profile,
-              status: profile.roster ? profile.status : profile.orderStatus
-                ? serviceStatusForOrder(profile.orderStatus)
-                : profile.status,
+              status: serviceStatusForOrder(profile.orderStatus),
               id: nextStudentId(data.students),
               balance: 0,
-              balanceKnown: false,
               createdAt: DEMO_TODAY,
               lastLesson: "",
             }),
           );
+          const learner = data.students[data.students.length - 1];
+          const balance = profile.openingBalance!;
+          const shared = profile.openingGroup && openingGroups.get(profile.openingGroup);
+          if (shared) {
+            if (shared.balance !== balance) throw new Error(`共享课包「${profile.openingGroup}」的剩余课时不一致`);
+            if (shared.classInAccountId) throw new Error(`共享课包「${profile.openingGroup}」已绑定账号，请通过学员账号绑定办理成员变更`);
+            shared.studentIds.push(learner.id);
+          } else {
+            const order = createOpeningPackage(data, learner, balance);
+            if (profile.openingGroup) {
+              order.openingGroup = profile.openingGroup;
+              openingGroups.set(profile.openingGroup, order);
+            }
+            data.credits.push({id: id(), studentId: learner.id, orderId: order.id, date: DEMO_TODAY,
+              type: "期初余额", units: balance, balance, note: "学员导入登记期初课时", operator: command.operator || "教务"});
+          }
+          learner.balance = balance;
           added++;
         }
       }
@@ -883,35 +908,6 @@ export function transition(
       );
       if (command.batchId) (data.importedBatches ??= []).push(command.batchId);
       message = `已导入：新增 ${added} 位，更新 ${updated} 位，跳过 ${skipped} 位`;
-      break;
-    }
-    case "student.balance.open": {
-      migratePackageBalances(data);
-      const learner = student(command.id);
-      if (learner.balanceKnown || data.orders?.some(o => o.studentIds.includes(learner.id)))
-        throw new Error("已录入期初余额，请通过课时操作调整");
-      if (!Number.isFinite(command.balance))
-        throw new Error("请填写有效的期初剩余课时，可填写负数表示欠课");
-      if (!command.reason.trim()) throw new Error("请填写期初余额的核对依据");
-      learner.balanceKnown = true;
-      const opening = createOpeningPackage(data, learner, 0);
-      opening.studentIds = data.classInAccounts?.find(account => account.studentIds.includes(learner.id))?.studentIds.slice() ?? [learner.id];
-      opening.units = command.balance;
-      const creditId = credit(
-        learner,
-        command.balance,
-        "期初余额",
-        command.reason,
-        { orderId: opening.id },
-      );
-      event(
-        "补录期初余额",
-        `核对剩余 ${command.balance} 课时，${command.reason}`,
-        learner.id,
-        "",
-        { relatedType: "credit", relatedId: creditId },
-      );
-      message = "期初余额已记录";
       break;
     }
     case "student.scheduleIntent.update": {
@@ -924,7 +920,18 @@ export function transition(
         )
       )
         throw new Error("意向时间范围需能容纳一节完整课程");
+      if (intent.materialIds && intent.materialIds.length > 1) throw new Error("本次排课只能选择一本教材");
       if (intent.materialIds && (!intent.materialIds.length || intent.materialIds.some(id => !studentMaterials(data, student(command.studentId)).some(c => c.id === id)))) throw new Error("请选择学员登记的学习教材");
+      if (intent.unlimited || intent.dailyLimit) intent.planId = id();
+      if (intent.unlimited) {
+        const units = scheduleUnits(intent.duration, intent.unitsPerLesson);
+        if (!units) throw new Error("请填写每节预计扣课数");
+        const credits = getScheduleCredits(data, command.studentId, 0, units);
+        if (credits.error) throw new Error(credits.error);
+        if (credits.affordableLessons < 1) throw new Error("剩余课时不足一节");
+        intent.targetLessons = credits.affordableLessons;
+        intent.weeks = Math.ceil(intent.targetLessons / intent.frequency);
+      } else delete intent.targetLessons;
       student(command.studentId).scheduleIntent = intent;
       event(
         "更新排课意向",
@@ -949,15 +956,16 @@ export function transition(
     case "credit.deduct": {
       const s = student(command.studentId);
       const order = packageFor(s, command.orderId);
-      if (!order && !s.balanceKnown) throw new Error("请先核实并录入剩余课时");
       const before = order?.balance ?? s.balance;
       if (s.status === "退费")
         throw new Error("退费学员的课包已冻结，请先办理复课");
       if (!Number.isFinite(command.units) || command.units <= 0)
         throw new Error("扣减课时必须为大于 0 的有效数值");
       if (!command.reason.trim()) throw new Error("请填写扣减原因");
-      if (command.units > before)
-        throw new Error("扣减课时不能超过当前剩余课时");
+      const credits = getScheduleCredits(data, s.id, 0, 1, order?.id);
+      if (credits.error) throw new Error(credits.error);
+      if (command.units > credits.available)
+        throw new Error(`扣减课时不能超过可排课余额：剩余 ${before} 课时，已预约占用 ${credits.reserved} 课时，可扣减 ${credits.available} 课时`);
       const after = Math.round((before - command.units) * 1e8) / 1e8;
       const creditId = credit(
         s,
@@ -1025,10 +1033,10 @@ export function transition(
     }
     case "slot.lock": {
       student(command.studentId);
-      if(!command.slots.length || !Number.isFinite(Date.parse(command.expiresAt)) || Date.parse(command.expiresAt)<=Date.now())throw new Error("请设置有效的保留时间");
-      data.slotLocks=(data.slotLocks||[]).filter(lock=>Date.parse(lock.expiresAt)>Date.now() && lock.studentId!==command.studentId);
+      if(!command.slots.length || !Number.isFinite(Date.parse(command.expiresAt)) || Date.parse(command.expiresAt)<=operationsNow())throw new Error("请设置有效的保留时间");
+      data.slotLocks=(data.slotLocks||[]).filter(lock=>Date.parse(lock.expiresAt)>operationsNow() && lock.studentId!==command.studentId);
       for(const slot of command.slots){
-        const reasons=isAvailable(data,slot.teacherId,slot.date,slot.time,command.duration,command.studentId);
+        const reasons=isAvailable(data,slot.teacherId,slot.date,slot.time,command.duration,command.studentId,undefined,false,command.manual);
         if(reasons.length)throw new Error(reasons[0]);
         data.slotLocks.push({...slot,studentId:command.studentId,duration:command.duration,expiresAt:command.expiresAt,operator:command.operator||"教务"});
       }
@@ -1090,7 +1098,6 @@ export function transition(
         break;
       }
       const source = packageFor(s, command.orderId);
-      if (!source && !s.balanceKnown) throw new Error("请先补录期初余额，再进行课时操作");
       if (!Number.isFinite(command.units) || command.units <= 0)
         throw new Error("课时数需为大于 0 的有效数值");
       if (["补偿", "赠送"].includes(command.kind) && !command.note.trim())
@@ -1359,10 +1366,6 @@ export function transition(
       let basis = "",
         courseIds: string[] = [];
       if (command.kind === "balance") {
-        if (!learner.balanceKnown) {
-          message = "余额尚未核实，暂不生成课时提醒";
-          break;
-        }
         if (learner.balance > command.threshold) {
           message = "当前课时未达到本次提醒条件";
           break;
@@ -1449,7 +1452,22 @@ export function transition(
       migratePackageBalances(data);
       const s = student(command.studentId);
       if ((command.scheduleRevision ?? 0) !== (s.scheduleRevision ?? 0)) throw new Error("排课关系已变更，请重新生成课程计划");
-      const flexible = command.schedulingMode === "flex";
+      if (command.schedulePlanId || (command.selectionMode && s.scheduleIntent?.planId)) {
+        const plan = s.scheduleIntent;
+        if (!plan?.planId || command.schedulePlanId !== plan.planId) throw new Error("排课方案已更新，请重新打开方案");
+        if (command.selectionMode !== "manual") {
+          const counts = new Map<string, number>();
+          const booked = data.lessons.filter(l => l.schedulePlanId === plan.planId && l.studentId === s.id && l.status !== "已取消");
+          for (const l of booked) counts.set(l.date, (counts.get(l.date) ?? 0) + 1);
+          for (const slot of command.slots) {
+            const count = (counts.get(slot.date) ?? 0) + 1;
+            if (plan.dailyLimit && count > plan.dailyLimit) throw new Error(`${slot.date} 已达到本方案每天最多 ${plan.dailyLimit} 节的限制`);
+            counts.set(slot.date, count);
+          }
+          if (plan.unlimited && booked.length + command.slots.length > plan.targetLessons!) throw new Error("已超过本方案的新增目标");
+        }
+      }
+      const timeOnly = command.schedulingMode === "flex" || command.selectionMode === "manual";
       if (["停课", "结课", "退费"].includes(s.status))
         throw new Error("请先为学员办理复课，再安排课程");
       if (!command.slots.length) throw new Error("请至少选择一个上课时间");
@@ -1469,6 +1487,8 @@ export function transition(
       const unique = new Set(command.slots.map((s) => s.date + s.time));
       if (unique.size !== command.slots.length)
         throw new Error("选择的时间有重复");
+      if (new Set(command.slots.map(slot => slot.material ?? command.material)).size > 1)
+        throw new Error("本次排课只能选择一本教材");
       for (const [slotIndex,slot] of command.slots.entries()) {
         const t = teacher(slot.teacherId ?? command.teacherId);
         const material = slot.material ?? command.material;
@@ -1479,7 +1499,7 @@ export function transition(
           if (blocked.length) throw new Error(blocked[0]);
         }
         if (
-          !flexible &&
+          !timeOnly &&
           s.age != null &&
           s.age < 16 &&
           !t.categories.includes("少儿")
@@ -1492,7 +1512,7 @@ export function transition(
           command.duration,
         );
         const confirmed = slot.confirmedTeacher ?? command.confirmedTeacher;
-        if (!flexible) requireTeacherConfirmation(t, outside, confirmed);
+        if (!timeOnly) requireOutsideTimeConfirmation(outside, confirmed);
         if (slot.date < DEMO_TODAY) throw new Error("不能安排已经过去的课程");
         const reasons = isAvailable(
           data,
@@ -1502,8 +1522,8 @@ export function transition(
           command.duration,
           s.id,
           undefined,
-          !flexible && confirmed === true,
-          flexible,
+          !timeOnly && confirmed === true,
+          timeOnly,
         );
         if (reasons.length)
           throw new Error(`${slot.date} ${slot.time}：${reasons[0]}`);
@@ -1512,6 +1532,7 @@ export function transition(
           studentId: s.id,
           orderId: credits.allocations[slotIndex],
           requiresScreenshot:true,
+          schedulePlanId: command.schedulePlanId,
           teacherId: t.id,
           ...(command.kind === "固定课" && !slot.extra
             ? {
@@ -1579,7 +1600,7 @@ export function transition(
       if (["停课", "结课", "退费"].includes(s.status))
         throw new Error("请先为学员办理复课，再安排课程");
       const outside = !isRegularTime(t, command.date, command.time, l.duration);
-      requireTeacherConfirmation(t, outside, command.confirmedTeacher);
+      requireOutsideTimeConfirmation(outside, command.confirmedTeacher);
       const reasons = isAvailable(
         data,
         command.teacherId,
@@ -1636,6 +1657,7 @@ export function transition(
       const l = lesson(command.id);
       if (l.status === "已取消") throw new Error("这节课已经取消");
       if (!command.reason.trim()) throw new Error("请选择取消原因");
+      if (bothAttendedInClassIn(l)) l.classInAttendanceIssue = cancellationAttendanceConflict;
       const charge = command.kind ? settleCancellation(l, {
         kind: command.kind, at: command.cancelledAt || recordedAt,
         responsibility: command.responsibility, waived: !!command.waived,
@@ -1681,6 +1703,7 @@ export function transition(
         if (l.status !== "待确认" && !(command.conclusion && needsLessonOutcomeReview(l)))
           throw new Error("这节课已经处理，请刷新后查看");
         if (l.attendance === "账号待关联") throw new Error("请先关联学员账号");
+        if (l.classInAttendanceIssue && !command.conclusion) throw new Error("请先核定课程的实际上课结果");
         if (command.decision === "不扣" && !command.reason.trim())
           throw new Error("请填写不扣课时的原因");
         if (command.conclusion) {
@@ -1690,15 +1713,17 @@ export function transition(
           const network = command.conclusion.includes("网络");
           if (network && !command.networkOutcome) throw new Error("请选择网络故障后的实际上课结果");
           if (party && !command.cancelledAt) throw new Error("请填写实际取消时间");
+          delete l.classInAttendanceIssue;
           l.incident = {...(network ? { networkOutcome: command.networkOutcome } : {}), reason:command.conclusion, minutes:command.minutes, note:command.reason.trim(), operator:command.operator || "教务", at:recordedAt};
           if (party || command.conclusion === "教材错误或重复" || (network && command.networkOutcome === "取消")) {
             const responsibility = party ?? (network ? (command.conclusion.startsWith("老师") ? "老师" : "学员") : "平台");
             const kind = party ? (party === "学员" ? "学员请假" : "老师请假") : network ? "已核实网络故障" : "教材错误或重复";
-            settleCancellation(l, { kind, responsibility, at: command.cancelledAt ?? recordedAt, waived: false });
+            settleCancellation(l, { kind, responsibility, at: command.cancelledAt ?? recordedAt, waived: l.cancellation?.responsibility === responsibility && l.cancellation?.waived === true });
             l.note = command.reason;
             event("核实取消课程", command.conclusion + " · " + command.reason, l.studentId, l.teacherId, {relatedType:"lesson",relatedId:l.id});
             continue;
           }
+          delete l.cancellation;
           if (command.conclusion === "老师缺席" || command.conclusion === "学员缺席") {
             const person = command.conclusion === "老师缺席" ? "老师" : "学员";
             confirmAbsence(l, person);
@@ -1745,6 +1770,8 @@ export function transition(
         !["已完成", "缺席"].includes(l.status)
       )
         throw new Error("仅能更正已结束课程的结果和出勤，请先完成课后确认");
+      if (l.classInAttendanceIssue && (command.attendance !== undefined || command.result !== undefined))
+        throw new Error("请在核实上课记录中核定实际结果");
       const previous = {
         status: l.status,
         attendance: l.attendance,
@@ -2552,7 +2579,7 @@ export function transition(
       const r = data.reports.find((r) => r.lessonId === l.id);
       if (r) Object.assign(r, command.report, { recordedAt });
       else data.reports.push({ ...command.report, id: id(), recordedAt });
-      if(command.report.screenshot && !l.incident &&
+      if(command.report.screenshot && !l.classInAttendanceIssue && !l.incident &&
         !(l.attendanceMessages?.学员 && !l.studentIn) && !(l.attendanceMessages?.老师 && !l.teacherIn) && ["待确认","未开始"].includes(l.status) && l.attendance==="正常") {
         deduct(l,true,l.confirmedUnits ?? l.plannedUnits ?? scheduleUnits(l.duration));
         rememberLessonPay(data, l, recordedAt);

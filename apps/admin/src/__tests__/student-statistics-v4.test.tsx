@@ -13,23 +13,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider, useDemo } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
 import { demoRepository } from "../../../../packages/shared/src/repository";
-import StudentStatistics from "../components/StudentStatistics";
 import StudentCourses from "../components/StudentCourses";
 import StudentCredits from "../components/StudentCredits";
 const openLesson = vi.fn(),
   openFeedback = vi.fn(),
   openCredit = vi.fn();
-function Page({ mode }: { mode: "statistics" | "courses" | "credits" }) {
+function Page({ mode }: { mode: "courses" | "credits" }) {
   const { data } = useDemo();
   const student = data.students[0];
-  return mode === "statistics" ? (
-    <StudentStatistics
-      student={student}
-      onOpenLesson={openLesson}
-      onOpenFeedback={openFeedback}
-      onOpenCredit={openCredit}
-    />
-  ) : mode === "courses" ? (
+  return mode === "courses" ? (
     <StudentCourses
       student={student}
       onReschedule={() => {}}
@@ -43,7 +35,7 @@ function Page({ mode }: { mode: "statistics" | "courses" | "credits" }) {
     />
   );
 }
-function mount(mode: "statistics" | "courses" | "credits") {
+function mount(mode: "courses" | "credits") {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <DemoProvider>
@@ -175,37 +167,6 @@ describe("学员事件统计界面", () => {
     expect(within(panel).queryByText("旧教材")).toBeNull();
   });
 
-  it("投诉统计可下钻真实差评，不重复计跟进", async () => {
-    const data = demoRepository.read(),
-      student = data.students[0];
-    const feedback = data.feedback.find(
-      (record) => record.studentId === student.id && record.rating === "差评",
-    );
-    if (!feedback) throw new Error("没有差评样例");
-    mount("statistics");
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /^投诉次数/ })); });
-    const drawer = screen.getByRole("dialog", { name: "投诉次数" });
-    const buttons = within(drawer).getAllByRole("button", { name: "查看反馈" });
-    await testAct(async () => { fireEvent.click(buttons[0]); });
-    expect(openFeedback).toHaveBeenCalledWith(feedback.id);
-  });
-  it("一笔3课时补偿只算一次且进入对应流水", async () => {
-    const student = demoRepository.read().students[0];
-    demoRepository.execute({
-      type: "credit.add",
-      studentId: student.id,
-      units: 3,
-      kind: "补偿",
-      note: "一次三课时",
-    });
-    const credit = demoRepository.read().credits[0];
-    mount("statistics");
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: /^补偿次数/ })); });
-    const drawer = screen.getByRole("dialog", { name: "补偿次数" });
-    expect(within(drawer).getByText(/补偿 3 课时/)).toBeTruthy();
-    await testAct(async () => { fireEvent.click(within(drawer).getByRole("button", { name: "查看补偿" })); });
-    expect(openCredit).toHaveBeenCalledWith(credit.id);
-  });
   it("月统计按实际月份下钻，展示来源课程", async () => {
     const student = demoRepository.read().students[0];
     const data = demoRepository.read();

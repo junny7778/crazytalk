@@ -3,6 +3,7 @@ import ClassInOperationFeedback from "../../components/ClassInOperationFeedback"
 import ClassInHandoverPreview from "../../components/ClassInHandoverPreview";
 import ClassInLinkForm from "../../components/ClassInLinkForm";
 import TeamGroupTree from "./TeamGroupTree";
+import TeacherTagTable from "./TeacherTagTable";
 import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import AccountPasswordModal from "../../components/AccountPasswordModal";
 import { passwordError, setDemoPassword } from "../../lib/demoPasswords";
@@ -153,6 +154,7 @@ export default function Settings() {
   const [handover, setHandover] = useState("");
   const [organizationType, setOrganizationType] = useState<"渠道" | "项目">("渠道");
   const [catalogType, setCatalogType] = useState<CatalogEntry["type"]>("教材");
+  const isTeacherTagLibrary = tab === "basics" && catalogType === "老师标签";
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
   const [categoryToDelete, setCategoryToDelete] = useState<CatalogEntry | null>(
     null,
@@ -836,7 +838,7 @@ export default function Settings() {
                   ? "已使用的资料保留历史记录，不直接删除。停用后不再提供给新业务选择。"
                   : undefined
               }
-              action={
+              action={!isTeacherTagLibrary && (
                 <Button
                   variant="primary"
                   size="sm"
@@ -860,7 +862,7 @@ export default function Settings() {
                       ? "新增一级分类"
                       : "新增"}
                 </Button>
-              }
+              )}
             >
               {tab === "org" && <Tabs value={organizationType} onChange={value => {
                 if (value === "渠道" || value === "项目") { setOrganizationType(value); setQuery(""); }
@@ -878,18 +880,22 @@ export default function Settings() {
                   }))}
                 />
               )}
-              <div className="toolbar">
-                <SearchInput
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="搜索名称"
+              {!isTeacherTagLibrary && (
+                <div className="toolbar">
+                  <SearchInput
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="搜索名称"
+                  />
+                </div>
+              )}
+              {isTeacherTagLibrary ? (
+                <TeacherTagTable
+                  catalog={data.catalog}
+                  query={query}
+                  onQueryChange={setQuery}
+                  onToggle={(tag) => run({ type: "catalog.save", entry: { ...tag, enabled: !tag.enabled } })}
                 />
-              </div>
-              {tab === "basics" && catalogType === "老师标签" ? (
-                <div className="stack" aria-label="老师标签库">{data.catalog.filter(t=>t.type==="老师标签" && t.name.includes(query)).map(tag=><article key={tag.id} className="inset">
-                  <div className="row wrap"><strong>{tag.name}</strong><span>{tag.tagCategory || "其他"}</span><span>{({green:"绿色 · 优势",yellow:"黄色 · 需关注",red:"红色 · 风险",purple:"紫色 · 特色"})[tag.tagColor || "green"]}</span><Badge tone={tag.enabled ? "success" : "neutral"}>{tag.enabled ? "启用" : "已停用"}</Badge><Button size="sm" onClick={()=>openEntry({...tag})}>编辑</Button><Button size="sm" onClick={()=>run({type:"catalog.save",entry:{...tag,enabled:!tag.enabled}})}>{tag.enabled ? "停用" : "启用"}</Button></div>
-                  <p>{tag.tagMeaning || "未填写释义"}</p><p>{tag.tagExample}</p><small>{tag.tagAdvice}</small>
-                </article>)}</div>
               ) : tab === "basics" && catalogType === "队伍" ? (
                 <TeamGroupTree catalog={data.catalog} query={query}
                   onEdit={value => openEntry({...value})}
@@ -1646,13 +1652,6 @@ export default function Settings() {
                 </Select>
               </Field>
             )}
-            {entry.type === "老师标签" && <>
-              <Field label="标签分类"><input value={entry.tagCategory || ""} onChange={e=>setEntry({...entry,tagCategory:e.target.value})}/></Field>
-              <Field label="标签颜色"><Select value={entry.tagColor || "green"} onValueChange={value=>{const color=(["green","yellow","red","purple"] as const).find(c=>c===value);if(color)setEntry({...entry,tagColor:color});}}><option value="green">绿色 · 优势</option><option value="yellow">黄色 · 需关注</option><option value="red">红色 · 风险</option><option value="purple">紫色 · 特色</option></Select></Field>
-              <Field label="标签释义"><textarea value={entry.tagMeaning || ""} onChange={e=>setEntry({...entry,tagMeaning:e.target.value})}/></Field>
-              <Field label="具体表现"><textarea value={entry.tagExample || ""} onChange={e=>setEntry({...entry,tagExample:e.target.value})}/></Field>
-              <Field label="匹配处理说明" hint="说明供教务参考；自动匹配规则按标准标签执行，新建标签不会仅凭名称产生规则。"><textarea value={entry.tagAdvice || ""} onChange={e=>setEntry({...entry,tagAdvice:e.target.value})}/></Field>
-            </>}
             {entry.type === "组别" && <Field label="所属队伍"><input readOnly value={data.catalog.find(t => t.id === entry.parentId)?.name || ""}/></Field>}
             {entry.type === "反馈分类" && (
               <div className="settings-category-context">

@@ -10,7 +10,7 @@ it("账号退款清零共享余额并取消所有关联学员未来课，保留�
   state.packageBalanceVersion = 2;
   state.orders = [{ id: "shared", studentIds: [a.id, b.id], units: 72, balance: 48, date: DEMO_TODAY, kind: "新购", channel: a.channel, project: a.project },
     { id: "other", studentIds: [other.id], units: 72, balance: 60, date: DEMO_TODAY, kind: "新购", channel: other.channel, project: other.project }];
-  for (const s of [a, b, other]) { s.status = "在读"; s.balanceKnown = true; }
+  for (const s of [a, b, other]) { s.status = "在读"; }
   const base = state.lessons[0];
   state.lessons = [a, b, other].map((s, i) => ({ ...base, id: `future-${i}`, studentId: s.id, date: DEMO_TODAY, status: "未开始" }));
   state.lessons.push({ ...base, id: "history", studentId: a.id, date: "2020-01-01", status: "已取消" });

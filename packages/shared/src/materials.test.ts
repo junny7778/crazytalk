@@ -64,7 +64,7 @@ it("教材是硬条件，手动确认也不能绕过；拒绝未知、未登记�
   student.materialIds = ["m2"];
   expect(() => transition(data, command)).toThrow("学员资料");
 });
-it("按课次保存不同教材，任一教材失败整批不写入", () => {
+it("同批课次使用一本教材，混用教材时整批不写入", () => {
   const { data, teacher, command } = fixture();
   teacher.materialIds = ["m1", "m2"];
   const mixed = {
@@ -75,12 +75,9 @@ it("按课次保存不同教材，任一教材失败整批不写入", () => {
     ],
   };
   const parsed = commandSchema.parse(mixed);
-  expect(transition(data, parsed).data.lessons.map((l) => l.material)).toEqual([
-    "Power Up 1",
-    "Power Up 3",
-  ]);
-  teacher.materialIds = ["m1"];
-  expect(() => transition(data, mixed)).toThrow("授课能力");
+  expect(() => transition(data, parsed)).toThrow("本次排课只能选择一本教材");
+  const singleBook = {...mixed, slots: mixed.slots.map(slot => ({...slot, material:"Power Up 3"}))};
+  expect(transition(data, singleBook).data.lessons.map(l => l.material)).toEqual(["Power Up 3", "Power Up 3"]);
   expect(data.lessons).toHaveLength(0);
 });
 it("教材多选资料保存不覆盖原教材进度和其他字段", () => {

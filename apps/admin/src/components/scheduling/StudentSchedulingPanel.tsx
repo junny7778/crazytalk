@@ -1,15 +1,15 @@
+import { RemainingCreditsField } from "./RemainingCreditsField";
 import { schedulingBookingIssue } from "@crazytalk/shared";
 import { SchedulingAccountNotice } from "./SchedulingAccountNotice";
-import { TimePicker } from "@crazytalk/ui";
+import { WeeklyAvailabilityEditor, availabilityInputError } from "@crazytalk/ui";
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
-import MaterialPicker from "../MaterialPicker";
 import { studentMaterials } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
 import { ZodError } from "zod";
 import { useEffect, useMemo, useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
 import {
-  DEMO_TODAY,
+  DEMO_TODAY, getScheduleCredits, scheduleUnits,
   scheduleIntentSchema,
   isScheduleDate,
   addDays,
@@ -53,20 +53,21 @@ export function StudentSchedulingPanel({
 }) {
   const { data, act, can, preview } = useDemo();
   const toast = useToast();
-  const [draft, setDraft] = useState<Intent>(
-    student.scheduleIntent
-      ? {...student.scheduleIntent, mode: "fixed", materialIds: student.scheduleIntent.materialIds || studentMaterials(data, student).slice(0, 1).map(c => c.id), priority: student.scheduleIntent.priority || "teacher"}
-      : {
-          mode: "fixed",
-          startDate: DEMO_TODAY,
-          weeks: 4,
-          duration: 25,
-          frequency: 2,
-          windows: [],
-          materialIds: studentMaterials(data, student).slice(0, 1).map(c => c.id),
-          priority: "teacher",
-        },
-  );
+  const books = useMemo(() => studentMaterials(data, student), [data, student]);
+  const saved = useMemo(() => {
+    const intent = student.scheduleIntent;
+    if (!intent) return null;
+    const id = intent.materialIds?.find(id => books.some(book => book.id === id)) ?? books[0]?.id;
+    return {...intent, materialIds: id ? [id] : []};
+  }, [student.scheduleIntent, books]);
+  const [draft, setDraft] = useState<Intent>(() => ({
+    startDate: DEMO_TODAY, weeks: 4, duration: 25, frequency: 2, windows: [],
+    materialIds: books.slice(0, 1).map(book => book.id),
+    unlimited: saved ? !!saved.unlimited : true, dailyLimit: 1,
+    ...saved,
+    mode: "fixed",
+    priority: saved?.priority || "teacher",
+  }));
   const [editingIntent, setEditingIntent] = useState(true);
   useEffect(() => {
     if (editingIntent) onStageChange("setup");
@@ -81,41 +82,33 @@ export function StudentSchedulingPanel({
     onDirtyChange(JSON.stringify(draft) !== initialDraft);
   }, [draft, initialDraft, onDirtyChange]);
   const [query, setQuery] = useState("");
-  const saved = student.scheduleIntent;
-  const windowErrors = draft.windows.map((window) => {
-    if (!window.start || !window.end) return "请填写开始和结束时间";
-    const minutes = (time: string) =>
-      Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
-    if (window.end <= window.start) return "结束时间需晚于开始时间";
-    if (minutes(window.end) - minutes(window.start) < draft.duration)
-      return `时间范围需至少容纳 ${draft.duration} 分钟课程`;
-    return "";
-  });
+  const intentAvailability = {availability: draft.windows, availabilityFrom: "", availabilityNote: ""};
+  const windowError = availabilityInputError(intentAvailability) || (draft.windows.some(({start, end}) => {
+    const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+    return minutes(end) - minutes(start) < draft.duration;
+  }) ? `时间范围需至少容纳 ${draft.duration} 分钟课程` : "");
   const accountIssue = schedulingBookingIssue(data, student.id);
+  const units = scheduleUnits(draft.duration, draft.unitsPerLesson);
+  const credits = getScheduleCredits(data, student.id, 0, units ?? 1);
+  const target = draft.unlimited ? (units ? credits.affordableLessons : 0) : draft.frequency * draft.weeks;
+  const weeks = draft.unlimited ? Math.ceil(target / draft.frequency) : draft.weeks;
+  const daysSelected = new Set(draft.windows.map(w => w.day)).size;
+  const dailyLimit = draft.dailyLimit ?? 1;
   const validDraft =
+    (!draft.unlimited || (!!units && target > 0 && !credits.error)) &&
     !accountIssue &&
     !!draft.materialIds?.length &&
     draft.materialIds.every(id => studentMaterials(data, student).some(c => c.id === id)) &&
-    scheduleIntentSchema.safeParse(draft).success &&
+    scheduleIntentSchema.safeParse({...draft, weeks}).success &&
     isScheduleDate(draft.startDate) &&
     draft.startDate >= DEMO_TODAY &&
-    windowErrors.every((error) => !error);
-  function toggleDay(day: number) {
-    const selected = draft.windows.some((window) => window.day === day);
-    update({
-      windows: selected
-        ? draft.windows.filter((window) => window.day !== day)
-        : [...draft.windows, { day, start: "19:00", end: "21:00" }].sort(
-            (a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7),
-          ),
-    });
-  }
+    !windowError;
   const fixedPlans = useMemo(
     () =>
-      saved?.mode === "fixed"
+      !editingIntent && saved?.mode === "fixed"
         ? getFixedSchedulePlans(data, student.id, saved)
         : [],
-    [data, student.id, saved],
+    [data, student.id, saved, editingIntent],
   );
   const sortedPlans = fixedPlans
     .filter((plan) =>
@@ -156,7 +149,7 @@ export function StudentSchedulingPanel({
                 .map((w) => `${days[w.day]} ${w.start}–${w.end}`)
                 .join("、")}{" "}
               · 每节 {saved.duration} 分钟 · 每周 {saved.frequency} 节 · 共{" "}
-              {saved.weeks} 周
+              {saved.weeks} 周 · 每天最多 {saved.dailyLimit ?? saved.frequency} 节
             </p>
             <small>{saved.startDate} 起</small>
           </div>
@@ -173,72 +166,87 @@ export function StudentSchedulingPanel({
           className="schedule-intent-card stack"
           aria-label="学员排课意向"
         >
-          <h4>排课设置</h4>
-          <Field label="本次教材"><MaterialPicker label="本次教材" catalog={studentMaterials(data, student)} value={draft.materialIds || []} onChange={materialIds => update({materialIds})}/></Field>
-          {(draft.materialIds?.length || 0) > 1 && <small className="muted">选择了多本教材，请在方案日历中确认每一节使用的教材。</small>}
-          {!studentMaterials(data, student).length && <p role="alert">请先在学员详情的编辑资料中登记学习教材，再安排课程。</p>}
-          <Field label="匹配策略"><div className="schedule-strategy-row">
-            <label className={draft.priority === "teacher" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "teacher"} onChange={() => update({priority: "teacher"})}/><strong>老师优先</strong><small>优先适配，尽量同一老师。</small></label>
-            <label className={draft.priority === "time" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "time"} onChange={() => update({priority: "time"})}/><strong>时间优先</strong><small>优先排满，可组合多位老师。</small></label>
-          </div></Field>
-          <div className="form-grid intent-settings-grid">
-            <Field label="开始日期">
-              <DatePicker
-                placeholder="开始日期"
-                mode="date"
-                min={DEMO_TODAY}
-                value={draft.startDate}
-                onValueChange={(nextValue) => update({ startDate: nextValue })}
-              />
-            </Field>
-            <Field label="排课周期">
-              <Select
-                value={draft.weeks}
-                onValueChange={(v) => update({ weeks: Number(v) })}
-              >
-                {[1, 2, 4, 8].map((n) => (
-                  <option key={n} value={n}>
-                    {n} 周
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="每节时长">
-              <Select
-                value={draft.duration}
-                onValueChange={(v) =>
-                  update({
-                    duration:
-                      v === "50"
-                        ? 50
-                        : v === "55"
-                          ? 55
-                          : v === "120"
-                            ? 120
-                            : 25,
-                  })
-                }
-              >
-                {[25, 50, 55, 120].map((n) => (
-                  <option key={n} value={n}>
-                    {n} 分钟
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="每周节数">
-              <Select
-                value={draft.frequency}
-                onValueChange={(v) => update({ frequency: Number(v) })}
-              >
-                {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                  <option key={n} value={n}>
-                    {n} 节
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
+          <section className="stack" aria-label="基础信息">
+            <h4>基础信息</h4>
+            <div className="form-grid intent-settings-grid">
+              <RemainingCreditsField studentId={student.id} />
+              <Field label="本次教材">
+                <Select size="form" searchable={false} value={draft.materialIds?.[0] ?? ""} disabled={!books.length}
+                  onValueChange={id => update({materialIds: [id]})}>
+                  {books.map(book => <option key={book.id} value={book.id}>{book.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="开始日期">
+                <DatePicker
+                  placeholder="开始日期"
+                  mode="date"
+                  min={DEMO_TODAY}
+                  value={draft.startDate}
+                  onValueChange={(nextValue) => update({ startDate: nextValue })}
+                />
+              </Field>
+              <Field label="排课周期">
+                <Select
+                  value={draft.unlimited ? "unlimited" : String(draft.weeks)}
+                  onValueChange={v => update(v === "unlimited" ? {unlimited: true} : {unlimited: false, weeks: Number(v)})}
+                >
+                  <option value="unlimited">不限（按剩余课时）</option>
+                  {[1, 2, 4, 8, 16, 32].map((n) => (
+                    <option key={n} value={n}>
+                      {n} 周
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="每周节数">
+                <Select
+                  value={draft.frequency}
+                  onValueChange={(v) => update({ frequency: Number(v), dailyLimit: Math.min(dailyLimit, Number(v)) })}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                    <option key={n} value={n}>
+                      {n} 节
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="每天最多上几节">
+                <Select value={dailyLimit} onValueChange={v => update({dailyLimit: Number(v)})}>
+                  {Array.from({length: draft.frequency}, (_, i) => <option key={i} value={i+1}>{i+1} 节</option>)}
+                </Select>
+              </Field>
+              <Field label="每节时长">
+                <Select
+                  value={draft.duration}
+                  onValueChange={(v) =>
+                    update({
+                      unitsPerLesson: undefined,
+                      duration:
+                        v === "50"
+                          ? 50
+                          : v === "55"
+                            ? 55
+                            : v === "120"
+                              ? 120
+                              : 25,
+                    })
+                  }
+                >
+                  {[25, 50, 55, 120].map((n) => (
+                    <option key={n} value={n}>
+                      {n} 分钟
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {draft.unlimited && !scheduleUnits(draft.duration) && <Field label="每节预计扣课数" required>
+                <input type="number" min="0.01" step="any" value={draft.unitsPerLesson ?? ""}
+                  onChange={e => update({unitsPerLesson: Number(e.target.value) || undefined})}/>
+              </Field>}
+            </div>
+            {draft.unlimited && <small>{(units ?? 0) < 0.01 ? "请填写每节预计扣课数（至少 0.01 课时）以计算排课周期" : credits.error || (target ? `按剩余 ${credits.available} 课时，预计可新增 ${target} 节，约 ${weeks} 周` : `剩余 ${credits.available} 课时，不足以安排一节（需 ${units} 课时）`)}</small>}
+            {!books.length && <p role="alert">请先在学员详情的编辑资料中登记学习教材，再安排课程。</p>}
+          </section>
           <section
             className="intent-time-section"
             aria-label={
@@ -257,116 +265,19 @@ export function StudentSchedulingPanel({
                 </h4>
               </div>
             </div>
-            <div
-              className="intent-weekdays"
-              role="group"
-              aria-label="每周上课日"
-            >
-              {[1, 2, 3, 4, 5, 6, 0].map((day) => (
-                <button
-                  key={day}
-                  type="button"
-                  aria-pressed={draft.windows.some(
-                    (window) => window.day === day,
-                  )}
-                  onClick={() => toggleDay(day)}
-                >
-                  {days[day]}
-                </button>
-              ))}
-            </div>
-            <div className="intent-days">
-              {[1, 2, 3, 4, 5, 6, 0]
-                .filter((day) => draft.windows.some((w) => w.day === day))
-                .map((day) => (
-                  <div className="intent-day-row" key={day}>
-                    <strong>{days[day]}</strong>
-                    <div className="intent-day-content">
-                      <div className="intent-ranges">
-                        {draft.windows.map(
-                          (window, index) =>
-                            window.day === day && (
-                              <div
-                                className="intent-range"
-                                key={index}
-                                role="group"
-                                aria-label={`意向时间${index + 1}`}
-                              >
-                                <div className="intent-range-inputs">
-                                  <TimePicker
-                                    label={`意向${index + 1}开始时间`}
-                                    value={window.start}
-                                    onChange={(value) =>
-                                      update({
-                                        windows: draft.windows.map((w, i) =>
-                                          i === index
-                                            ? { ...w, start: value }
-                                            : w,
-                                        ),
-                                      })
-                                    }
-                                  />
-                                  <span>—</span>
-                                  <TimePicker
-                                    label={`意向${index + 1}结束时间`}
-                                    value={window.end}
-                                    onChange={(value) =>
-                                      update({
-                                        windows: draft.windows.map((w, i) =>
-                                          i === index
-                                            ? { ...w, end: value }
-                                            : w,
-                                        ),
-                                      })
-                                    }
-                                  />
-                                  <button
-                                    type="button"
-                                    className="intent-remove"
-                                    aria-label={`删除${days[day]}时间段${index + 1}`}
-                                    onClick={() =>
-                                      update({
-                                        windows: draft.windows.filter(
-                                          (_, i) => i !== index,
-                                        ),
-                                      })
-                                    }
-                                  >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                      <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" />
-                                    </svg>
-                                  </button>
-                                </div>
-                                {windowErrors[index] && (
-                                  <small
-                                    className="intent-window-error"
-                                    role="status"
-                                  >
-                                    {windowErrors[index]}
-                                  </small>
-                                )}
-                              </div>
-                            ),
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={draft.windows.some(window => !window.start || !window.end)}
-                        onClick={() =>
-                          update({
-                            windows: [
-                              ...draft.windows,
-                              { day, start: "", end: "" },
-                            ],
-                          })
-                        }
-                      >
-                        ＋ 添加{days[day]}时间段
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+            <WeeklyAvailabilityEditor
+              studentIntent
+              value={intentAvailability}
+              onChange={({availability}) => update({windows: availability})}
+            />
+            {daysSelected > 0 && daysSelected * dailyLimit < draft.frequency && <small>已选 {daysSelected} 个上课日，每天最多 {dailyLimit} 节，每周最多可排 {daysSelected * dailyLimit} 节，低于目标 {draft.frequency} 节。</small>}
+            {windowError && <small className="intent-window-error" role="status">{windowError}</small>}
+          </section>
+          <section className="stack" aria-label="匹配策略">
+            <h4>匹配策略</h4>
+            <div className="schedule-strategy-row">
+              <label className={draft.priority === "teacher" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "teacher"} onChange={() => update({priority: "teacher"})}/><strong>老师优先</strong><small>优先适配，尽量同一老师。</small></label>
+              <label className={draft.priority === "time" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "time"} onChange={() => update({priority: "time"})}/><strong>时间优先</strong><small>优先排满，可组合多位老师。</small></label>
             </div>
           </section>
           {error && (
@@ -379,7 +290,7 @@ export function StudentSchedulingPanel({
       {editingIntent && (
         <div className="schedule-flow-actions schedule-setup-actions row wrap">
           <span className="intent-total">
-            每周 {draft.frequency} 节 · 共 {draft.frequency * draft.weeks} 节
+            每周 {draft.frequency} 节 · 共 {target} 节
           </span>
           <Button disabled={generating} onClick={onClose}>
             返回概况
@@ -388,7 +299,7 @@ export function StudentSchedulingPanel({
             <Button
               disabled={generating}
               onClick={() => {
-                setDraft(saved);
+                setDraft({...saved, dailyLimit: saved.dailyLimit ?? 1});
                 setError("");
                 setEditingIntent(false);
               }}
@@ -410,7 +321,7 @@ export function StudentSchedulingPanel({
                 const result = await act({
                   type: "student.scheduleIntent.update",
                   studentId: student.id,
-                  intent: draft,
+                  intent: {...draft, dailyLimit, weeks},
                 });
                 setError("");
                 toast(result.message);
@@ -442,12 +353,35 @@ export function StudentSchedulingPanel({
             const fit = teacherFit(data, student, teacher);
             const names = [...new Set(plan.slots.map(s => s.teacherId).filter(Boolean))];
             return <article className="schedule-match-card" key={teacher.id}>
-              <div className="schedule-match-heading"><Avatar name={teacher.name}/><strong>{teacher.name}</strong><Badge tone={plan.complete ? "success" : "warning"}>方案可排 {plan.coveredCount}/{plan.requiredCount} 节</Badge></div>
-              <dl className="schedule-match-meta"><div><dt>SO</dt><dd>{teacher.so}</dd></div><div><dt>口音等级</dt><dd>{teacher.accent || "未填写"}</dd></div><div><dt>老师等级</dt><dd>{teacher.level || "未填写"}</dd></div></dl>
-              <div className="row wrap">{studentMaterials(data, student).filter(c => saved.materialIds?.includes(c.id) && teacher.materialIds?.includes(c.id)).map(c => <Badge key={c.id} tone="success">可教 {c.name}</Badge>)}</div>
-              <div className="schedule-match-reasons"><strong>推荐原因</strong><div className="row wrap">{[...fit.matchedPrimary, ...fit.matchedSecondary].map(reason => <Badge key={reason}>{reason}</Badge>)}</div>{!fit.matchedPrimary.length && !fit.matchedSecondary.length && <small>{plan.primaryCount ? "教材与授课时间匹配，暂无其他偏好命中。" : "教材匹配，当前意向时间内暂无可排课次。"}</small>}{fit.warnings.map(w => <small key={w}>{w}</small>)}</div>
-              <dl className="schedule-plan-details"><div><dt>主老师承担</dt><dd>{plan.primaryCount} 节</dd></div><div><dt>整个方案</dt><dd>可排 {plan.coveredCount}/{plan.requiredCount} 节 · {plan.teacherCount} 位老师</dd></div>{plan.teacherCount > 1 && <div><dt>老师分工</dt><dd>{names.map(id => `${data.teachers.find(t => t.id === id)?.name} ${plan.slots.filter(s => s.teacherId === id).length} 节`).join(" · ")}</dd></div>}<div><dt>待安排</dt><dd>{plan.requiredCount - plan.coveredCount} 节</dd></div><div><dt>本周已排课数</dt><dd>{data.lessons.filter(l => l.teacherId === teacher.id && l.status !== "已取消" && l.date >= workloadStart && l.date < addDays(workloadStart, 7)).length} 节（所有学员）</dd></div></dl>
-              {names.filter(id=>id!==teacher.id).map(id=>{const backup=data.teachers.find(t=>t.id===id)!;const match=teacherFit(data,student,backup);return <div key={id} className="schedule-match-reasons"><strong>{backup.name} · 补充 {plan.slots.filter(s=>s.teacherId===id).length} 节</strong><small>{[...match.matchedPrimary,...match.matchedSecondary].join("、") || "教材与时间符合要求"}；补充主老师无法覆盖的课次。</small></div>;})}
+              <div className="schedule-match-heading"><Avatar name={teacher.name}/><strong>{teacher.name}</strong>{teacher.needConfirm && <Badge tone="warning">排课前请联系老师</Badge>}<Badge tone={plan.complete ? "success" : "warning"}>方案可排 {plan.coveredCount}/{plan.requiredCount} 节</Badge></div>
+              <dl className="schedule-plan-details">
+                <div><dt>SO</dt><dd>{teacher.so}</dd></div>
+                <div><dt>口音等级</dt><dd>{teacher.accent || "未填写"}</dd></div>
+                <div><dt>老师等级</dt><dd>{teacher.level || "未填写"}</dd></div>
+                <div><dt>可教教材</dt><dd>{studentMaterials(data, student)
+                  .filter(c => saved.materialIds?.includes(c.id) && teacher.materialIds?.includes(c.id))
+                  .map(c => c.name).join("、")}</dd></div>
+                <div>
+                  <dt>推荐原因</dt>
+                  <dd>
+                    {[...fit.matchedPrimary, ...fit.matchedSecondary].join("、") ||
+                      (plan.primaryCount ? "教材与授课时间匹配，暂无其他偏好命中。" : "教材匹配，当前意向时间内暂无可排课次。")}
+                    {fit.warnings.map(w => <div key={w}>{w}</div>)}
+                  </dd>
+                </div>
+              </dl>
+              <dl className="schedule-plan-details"><div><dt>主老师承担</dt><dd>{plan.primaryCount} 节</dd></div><div><dt>整个方案</dt><dd>可排 {plan.coveredCount}/{plan.requiredCount} 节 · {plan.teacherCount} 位老师</dd></div>{plan.teacherCount > 1 && <div><dt>老师分工</dt><dd>{names.map(id => `${data.teachers.find(t => t.id === id)?.name} ${plan.slots.filter(s => s.teacherId === id).length} 节`).join(" · ")}</dd></div>}<div><dt>待安排</dt><dd>{plan.requiredCount - plan.coveredCount} 节</dd></div><div><dt>本周已排课数</dt><dd>{data.lessons.filter(l => l.teacherId === teacher.id && l.status !== "已取消" && l.date >= workloadStart && l.date < addDays(workloadStart, 7)).length} 节（所有学员）</dd></div>
+                {names.filter(id => id !== teacher.id).map(id => {
+                  const backup = data.teachers.find(t => t.id === id)!;
+                  const match = teacherFit(data, student, backup);
+                  return <div key={id}>
+                    <dt>补充老师</dt>
+                    <dd>{backup.name} {backup.needConfirm && <Badge tone="warning">排课前请联系老师</Badge>} · 补充 {plan.slots.filter(s => s.teacherId === id).length} 节
+                      <div>{[...match.matchedPrimary, ...match.matchedSecondary].join("、") || "教材与时间符合要求"}；补充主老师无法覆盖的课次。</div>
+                    </dd>
+                  </div>;
+                })}
+              </dl>
               <div className="schedule-match-actions"><Button variant="primary" disabled={!plan.coveredCount || !!accountIssue || preview || !can("schedule.create")} onClick={() => onFixedPlan(plan, saved)}>查看排课方案</Button><Button variant="ghost" onClick={() => onViewTeacher(teacher.id)}>查看老师资料</Button></div>
             </article>;
           })}</div>

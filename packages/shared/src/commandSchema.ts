@@ -97,6 +97,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("slot.lock"),
+    manual: z.boolean().optional(),
     studentId: id,
     slots: z.array(z.object({ teacherId: id, date, time })).min(1),
     duration,
@@ -173,12 +174,6 @@ export const commandSchema = z.discriminatedUnion("type", [
     mode: z.enum(["skip", "update"]),
   }),
   z.object({
-    type: z.literal("student.balance.open"),
-    id,
-    balance: nonnegative,
-    reason: id,
-  }),
-  z.object({
     type: z.literal("student.create"),
     student: studentProfileSchema,
   }),
@@ -238,6 +233,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("lesson.schedule"),
+    schedulePlanId: id.optional(),
     scheduleRevision: z.number().int().nonnegative().optional(),
     selectionMode: z.enum(["recommended", "manual"]).optional(),
     schedulingMode: z.literal("flex").optional(),

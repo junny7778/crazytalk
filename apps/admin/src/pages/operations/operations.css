@@ -1014,9 +1014,70 @@
 .payroll-totals > div:first-child { padding-left: 0; border: 0; }
 .payroll-totals span, .payroll-totals strong { display: block; }
 .payroll-totals strong { font-size: 1.5rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.payroll-statement details { border: 1px solid var(--ct-gray-200); border-radius: 8px; }
-.payroll-statement summary { padding: 12px; cursor: pointer; font-weight: 600; }
-.payroll-statement form { display: grid; gap: 12px; }
+.payroll-statement > .page-heading { margin-bottom: 0; }
+.payroll-statement-actions { flex-wrap: wrap; }
+@container (max-width: 650px) {
+  .payroll-statement > .page-heading { flex-direction: column; align-items: flex-start; }
+}
 .payroll-statement .table-wrap { overflow-x: auto; }
 .payroll-statement td { white-space: normal; }
 .payroll-statement td:first-child { white-space: nowrap; }
+
+.payroll-review-pairs { margin: 0; grid-template-columns: min(110px, 33%) minmax(0, 1fr); align-items: baseline; }
+.payroll-review-pairs dd { overflow-wrap: anywhere; }
+.payroll-ledger { min-width: 0; }
+.payroll-ledger .record-list-tools > .field { flex: 0 0 160px; }
+.payroll-column-options { margin-bottom: 16px; }
+.payroll-ledger-scroll { max-height: min(64vh, 640px); overflow: auto; }
+.payroll-ledger table { width: 100%; min-width: 100%; }
+.payroll-ledger th { white-space: nowrap; position: sticky; top: 0; z-index: 1; background: var(--ct-gray-50); }
+.payroll-ledger :is(th, td) { min-width: 7.5rem; padding-inline: 12px; text-align: start; }
+.payroll-ledger td { vertical-align: middle; white-space: nowrap; }
+.payroll-ledger :is(.payroll-basis, .payroll-students) { white-space: normal; overflow-wrap: anywhere; }
+.payroll-ledger .payroll-students { min-width: 7.5rem; max-width: 195px; }
+.payroll-ledger .payroll-basis { min-width: 145px; max-width: 300px; }
+.payroll-ledger .payroll-class-time, .payroll-ledger .payroll-entry-actions { white-space: nowrap; }
+.payroll-entry-actions > :is(a, button) { display: block; width: fit-content; }
+.payroll-entry-actions > * + * { margin-top: 4px; }
+.payroll-ledger .payroll-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.payroll-debit { color: var(--ct-danger); }
+
+.teacher-tag-library-toolbar .ct-select-trigger {
+  min-width: 136px;
+  height: 44px;
+}
+.teacher-tag-table {
+  min-width: 900px;
+  table-layout: fixed;
+  white-space: normal;
+}
+.teacher-tag-table thead th:first-child { width: 90px; }
+.teacher-tag-table thead th:nth-child(2) { width: 156px; }
+.teacher-tag-table thead th:nth-last-child(2) { width: 84px; }
+.teacher-tag-table thead th:last-child { width: 84px; }
+.teacher-tag-table td,
+.teacher-tag-table th {
+  padding-inline: 12px;
+}
+.teacher-tag-table td {
+  padding-block: 12px;
+  vertical-align: top;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.teacher-tag-table .teacher-tag {
+  display: inline-block;
+  font-weight: 600;
+}
+.teacher-tag-table .teacher-tag-category {
+  padding-top: 14px;
+  border-bottom: 1px solid var(--ct-gray-200);
+  border-inline-end: 1px solid var(--ct-gray-200);
+  border-radius: 0;
+  background: transparent;
+  vertical-align: top;
+  font-weight: 600;
+}
+.teacher-tag-table td:nth-last-child(-n + 2) {
+  white-space: nowrap;
+}

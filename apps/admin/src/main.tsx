@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider, BusinessProvider } from "@crazytalk/shared/react";
+import { configureDemoClock, demoRepository } from "@crazytalk/shared";
 import { LoadingFailureScreen, LoadingScreen, ToastProvider } from "@crazytalk/ui";
 import "@crazytalk/ui/styles.css";
 import "./style.css";
@@ -31,15 +32,18 @@ const router = createBrowserRouter([
       : <DemoProvider><App /></DemoProvider>,
   },
 ]);
-function LocalRoster({children}:{children:React.ReactNode}){
-  const shouldLoad=import.meta.env.MODE !== "business" && import.meta.env.DEV && ["localhost","127.0.0.1"].includes(location.hostname) && !/^\/(intake|teacher)(\/|$)/.test(location.pathname);
-  const [ready,setReady]=React.useState(!shouldLoad),[error,setError]=React.useState("");
-  React.useEffect(()=>{if(!shouldLoad)return;let active=true;
-    import("./lib/localRoster").then(m=>m.loadLocalRoster()).then(()=>{if(active)setReady(true);}).catch(e=>{if(active)setError(String(e));});
-    return ()=>{active=false;};
-  },[shouldLoad]);
-  if (!ready && error) return <main className="panel"><p role="alert">{error}</p><button onClick={() => location.reload()}>重新读取</button></main>;
-  if (!ready) return <LoadingScreen message="正在加载学员数据…" />;
+function DemoStartup({children}:{children:React.ReactNode}){
+  const [error] = React.useState(() => {
+    if (import.meta.env.MODE === "business" || location.pathname.startsWith("/intake/")) return "";
+    try {
+      configureDemoClock();
+      demoRepository.initializeDemoSamples();
+      return "";
+    } catch (error) {
+      return String(error);
+    }
+  });
+  if (error) return <main className="panel"><p role="alert">{error}</p><button onClick={() => location.reload()}>重新读取</button></main>;
   return <>{children}</>;
 }
 const routerView = <RouterProvider router={router} />;
@@ -65,13 +69,13 @@ if (import.meta.hot) {
 root.render(
   <React.StrictMode>
     <QueryClientProvider client={client}>
-      <LocalRoster>
+      <DemoStartup>
         <ToastProvider>
           {browserDiagnosticsEnabled
             ? <React.Profiler id="admin" onRender={noteReactCommit}>{routerView}</React.Profiler>
             : routerView}
         </ToastProvider>
-      </LocalRoster>
+      </DemoStartup>
     </QueryClientProvider>
   </React.StrictMode>,
 );

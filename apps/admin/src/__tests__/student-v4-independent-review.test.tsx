@@ -153,7 +153,6 @@ it("independent: new form offers three saves, omits legacy fields, creates linke
   expect(student).toMatchObject({
     name: "独立验收新学员",
     balance: 0,
-    balanceKnown: true,
     status: "待排课",
     orderStatus: "正常",
   });

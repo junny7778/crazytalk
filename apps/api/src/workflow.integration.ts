@@ -62,6 +62,7 @@ export async function verifyWorkflows(
   existing = (await read()).students.find(s => s.id === existing.id)!;
   const imported = {
     ...emptyStudentProfile(),
+    openingBalance: 0, orderStatus: "正常",
     name: "批量新增",
     chineseName: "批量新增",
   };

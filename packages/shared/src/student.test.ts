@@ -13,6 +13,7 @@ import { assertStudentCommandAccess } from "./react";
 import { demoRepository, DEMO_STORAGE_KEY } from "./repository";
 const profile = () => ({
   ...emptyStudentProfile(),
+  openingBalance: 0,
   name: "原表学员",
   teacherName: "未建档老师",
   groupName: "学习群",
@@ -55,11 +56,11 @@ describe("student digital profiles", () => {
     const stored = stateSchema.parse(JSON.parse(JSON.stringify(made)));
     const learner = stored.students.find((student) => student.name === p.name);
     if (!learner) throw new Error("原表学员未导入");
-    expect(studentProfileSchema.parse(learner)).toEqual(p);
+    expect(studentProfileSchema.parse(learner)).toEqual(studentProfileSchema.parse({...p, openingBalance:undefined}));
     expect(learner.age).toBeNull();
     expect(learner.ageText).toBe("/");
     expect(learner.totalUnits).toBeNull();
-    expect(learner.balanceKnown).toBe(false);
+    expect(learner.balance).toBe(0);
     const edited = transition(stored, {
       type: "student.details.update",
       id: learner.id,
@@ -102,7 +103,7 @@ describe("student digital profiles", () => {
     const restored = studentSchema.parse(old);
     expect(restored.name).toBe(old.name);
     expect(restored.balance).toBe(old.balance);
-    expect(restored.balanceKnown).toBe(true);
+    expect(restored.balance).toBe(old.balance);
     expect(restored.monthlyRecords).toEqual([]);
   });
   it("accepts missing phone but rejects malformed phones and imports atomically", () => {
@@ -132,11 +133,11 @@ describe("student digital profiles", () => {
     const learner = first.students.at(-1)!;
     expect(learner.teacherName).toBe("未建档老师");
     expect(learner.teacherId).toBe("");
-    expect(learner.balanceKnown).toBe(false);
+    expect(learner.balance).toBe(0);
     learner.owner = "原负责人";
     learner.project = "原项目";
     learner.balance = 12;
-    learner.balanceKnown = true;
+    first.orders!.find(o => o.studentIds.includes(learner.id))!.balance = 12;
     learner.teacherChanges = [
       {
         id: "h",
@@ -183,31 +184,8 @@ describe("student digital profiles", () => {
       mode: "skip",
     }).data;
     const id = imported.students.at(-1)!.id;
-    expect(() =>
-      transition(imported, {
-        type: "credit.add",
-        studentId: id,
-        units: 3,
-        kind: "购课",
-        note: "",
-      }),
-    ).toThrow(/期初余额/);
-    const opened = transition(imported, {
-      type: "student.balance.open",
-      id,
-      balance: 0,
-      reason: "核对原账本",
-    }).data;
-    expect(opened.students.at(-1)?.balanceKnown).toBe(true);
-    expect(opened.credits[0].units).toBe(0);
-    expect(() =>
-      transition(opened, {
-        type: "student.balance.open",
-        id,
-        balance: 2,
-        reason: "重复",
-      }),
-    ).toThrow();
+    const opened = imported;
+    expect(opened.credits.find(c => c.studentId === id)?.units).toBe(0);
     expect(
       transition(opened, {
         type: "credit.add",
@@ -268,7 +246,6 @@ describe("student digital profiles", () => {
       studentId: before.students[1].id,
     };
     before.lessons.push(unknown);
-    before.students[1].balanceKnown = false;
     before.students[1].balance = 0;
     const snapshot = structuredClone(before);
     expect(() =>
@@ -278,7 +255,7 @@ describe("student digital profiles", () => {
         decision: "扣课",
         reason: "",
       }),
-    ).toThrow(/期初余额/);
+    ).toThrow();
     expect(before).toEqual(snapshot);
     expect(() =>
       transition(before, {
@@ -287,16 +264,7 @@ describe("student digital profiles", () => {
         deduct: true,
         reason: "核对",
       }),
-    ).toThrow(/期初余额/);
-    unknown.deducted = true;
-    expect(() =>
-      transition(before, {
-        type: "lesson.correct",
-        id: unknown.id,
-        deduct: false,
-        reason: "退回",
-      }),
-    ).toThrow(/期初余额/);
+    ).toThrow();
     const stopped = transition(before, {
       type: "student.lifecycle",
       studentId: before.students[1].id,
@@ -304,7 +272,6 @@ describe("student digital profiles", () => {
       reason: "申请",
     }).data.students[1];
     expect(stopped).toMatchObject({
-      balanceKnown: false,
       balance: 0,
       orderStatus: "退款",
     });
@@ -410,50 +377,34 @@ describe("student digital profiles", () => {
     expect(updated.students[0].channel).toBe(learner.channel);
     expect(updated.students[0].project).toBe(learner.project);
   });
-  it("records signed opening balances and applies purchased credits against owed lessons", () => {
-    const imported = transition(createSeed(), {
-      type: "student.import",
-      students: [profile()],
-      mode: "skip",
-    }).data;
-    const id = imported.students.at(-1)!.id;
-    expect(() =>
-      transition(imported, {
-        type: "student.balance.open",
-        id,
-        balance: Number.NaN,
-        reason: "核对欠课",
-      }),
-    ).toThrow(/有效/);
-    const opened = transition(imported, {
-      type: "student.balance.open",
-      id,
-      balance: -3,
-      reason: "核对原账本欠课3节",
-    }).data;
-    expect(opened.students.at(-1)?.balance).toBe(-3);
-    expect(opened.students.at(-1)?.balanceKnown).toBe(true);
-    expect(opened.credits[0]).toMatchObject({
-      type: "期初余额",
-      units: -3,
-      balance: -3,
-      note: "核对原账本欠课3节",
-    });
-    const paid = transition(opened, {
-      type: "credit.add",
-      studentId: id,
-      units: 5,
-      kind: "购课",
-      note: "",
-    }).data;
-    expect(paid.students.at(-1)?.balance).toBe(2);
-    expect(paid.credits[0]).toMatchObject({ units: 5, balance: 2 });
+  it("rejects missing and negative balances and imports shared opening credits once", () => {
+    const before = createSeed();
+    for (const balance of [undefined, -2]) {
+      expect(() => transition(before, {type:"student.import", mode:"skip",
+        students:[{...profile(), openingBalance:balance}]})).toThrow();
+    }
+    const rows = ["甲","乙"].map(name => ({...profile(), name, openingBalance:12, openingGroup:"家庭A"}));
+    const data = transition(before, {type:"student.import", mode:"skip", students:rows}).data;
+    const ids = data.students.slice(-2).map(s => s.id);
+    expect(data.orders?.filter(o => o.studentIds.includes(ids[0]))).toMatchObject([{studentIds:ids, balance:12}]);
+    const credits = data.credits.filter(c => ids.includes(c.studentId));
+    expect(credits.map(c => c.units)).toEqual([12]);
+    const importMember = (amount: number) => transition(data, {type:"student.import", mode:"skip",
+      students:[{...rows[0], name:"丙", openingBalance:amount}]}).data;
+    expect(() => importMember(18)).toThrow("剩余课时不一致");
+    const joined = importMember(12);
+    expect(joined.orders?.find(o => o.openingGroup === "家庭A")?.studentIds).toHaveLength(3);
+    expect(joined.credits.length).toBe(data.credits.length);
+    const updated = transition(data, {type:"student.import",mode:"update",students:[
+      {...profile(), importStudentId:ids[0],orderStatus:"",openingBalance:80}
+    ]}).data;
+    expect(updated.students.slice(-2).map(s => s.balance)).toEqual([12,12]);
+    expect(updated.students.at(-2)?.orderStatus).toBe(rows[0].orderStatus);
   });
   it("requires edit, import and credit permissions for the new actions", () => {
     const commands: Command[] = [
       { type: "student.profile", id: "s1", profile: profile() },
       { type: "student.import", students: [profile()], mode: "skip" },
-      { type: "student.balance.open", id: "s1", balance: 0, reason: "核对" },
     ];
     commands.forEach((command, i) => {
       expect(() => assertStudentCommandAccess(command, () => false)).toThrow(
@@ -480,7 +431,7 @@ describe("student digital profiles", () => {
       removeItem: (k: string) => store.delete(k),
     });
     expect(demoRepository.refresh().students[0].name).toBe("旧档案保留");
-    expect(demoRepository.read().students[0].balanceKnown).toBe(true);
+    expect(demoRepository.read().students[0].balance).toBe(old.students[0].balance);
     vi.unstubAllGlobals();
     demoRepository.refresh();
   });

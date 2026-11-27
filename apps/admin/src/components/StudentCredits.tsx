@@ -2,7 +2,7 @@ import { creditTypeLabel } from "../lib/creditLabels";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { useDemo } from "@crazytalk/shared/react";
-import { getStudentSummary, type Student } from "@crazytalk/shared";
+import { getScheduleCredits, getStudentSummary, type Student } from "@crazytalk/shared";
 import { Button, EmptyState, Field, Modal, Panel, useToast } from "@crazytalk/ui";
 import type { StudentAction } from "./StudentActions";
 import type { StudentRecordTarget } from "../lib/studentActivity";
@@ -25,9 +25,11 @@ export default function StudentCredits({
   const [deductReason, setDeductReason] = useState("");
   const [deductError, setDeductError] = useState("");
   const memberOrders = (data.orders ?? []).filter(order => order.studentIds.includes(student.id));
-  const deductionBalance = student.balance;
+  const deduction = deductOpen ? getScheduleCredits(data, student.id, 0, 1) : undefined;
+  const available = deduction?.available ?? 0;
+  const deductionBalance = deduction?.balance ?? student.balance;
   const amount = Number(deductUnits);
-  const canDeduct = memberOrders.length === 1 && student.status !== "退费" && Number.isFinite(amount) && amount > 0 && amount <= deductionBalance && Boolean(deductReason.trim());
+  const canDeduct = memberOrders.length === 1 && student.status !== "退费" && !deduction?.error && Number.isFinite(amount) && amount > 0 && amount <= available && Boolean(deductReason.trim());
   const afterDeduction = Math.round((deductionBalance - amount) * 1e8) / 1e8;
   async function saveDeduction() {
     try {
@@ -38,9 +40,6 @@ export default function StudentCredits({
       setDeductError(cause instanceof Error ? cause.message : "扣减失败，请检查填写内容");
     }
   }
-  const [opening, setOpening] = useState("");
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState("");
   const credits = data.credits
     .filter((item) => item.studentId === student.id || !!item.orderId && data.orders?.some(o=>o.id===item.orderId && o.studentIds.includes(student.id)))
     .sort(
@@ -49,24 +48,6 @@ export default function StudentCredits({
         (b.recordedAt || "").localeCompare(a.recordedAt || ""),
     );
   const renewal = credits.find((item) => item.type === "续费");
-  async function saveOpening() {
-    setError("");
-    if (!opening.trim() || !Number.isFinite(Number(opening))) {
-      setError("请填写已核实的剩余课时");
-      return;
-    }
-    try {
-      await act({
-        type: "student.balance.open",
-        id: student.id,
-        balance: Number(opening),
-        reason,
-      });
-      toast("剩余课时已登记");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "请检查填写内容");
-    }
-  }
   return (
     <div className="stack">
       <Panel title="课时余额" action={can("credit.add") && <Button variant="primary" size="sm" onClick={() => onAction("credit")}>加课时</Button>}>
@@ -77,25 +58,27 @@ export default function StudentCredits({
             <td>{(order.memberCount ?? order.studentIds.length) > 1 && <span>共享课时 · {order.memberCount ?? order.studentIds.length} 人共用　</span>}
               {order.studentIds.map((id, index) => <span key={id}>{index > 0 && "、"}<Link to={`/students/${id}`}>{data.students.find(s => s.id === id)?.name ?? id}</Link></span>)}
             </td></tr>)}</tbody>
-        </table></div> : <p>暂无课时余额</p>}
+        </table></div> : <p>{student.balance} 课时</p>}
       </Panel>
       <Modal open={deductOpen} onClose={() => setDeductOpen(false)} title={`给 ${student.name} 扣减课时`}
         footer={<><Button onClick={() => setDeductOpen(false)}>取消</Button><Button variant="danger-solid" disabled={!canDeduct} onClick={saveDeduction}>确认扣减</Button></>}>
         <div className="stack">
           <p className="muted">用于多加纠正、历史余额调整。正常上课请通过课程确认扣课，避免重复扣减。</p>
-          {!student.balanceKnown && <p role="alert">请先核实并录入剩余课时。</p>}
           {student.status === "退费" && <p role="alert">退费学员的课包已冻结，请先办理复课。</p>}
           {memberOrders.length > 1 && <p>请先在「加课时 → 共享已有课时」核对并合并历史余额。</p>}
           {memberOrders.length === 1 && (memberOrders[0].memberCount ?? memberOrders[0].studentIds.length) > 1 &&
             <p>共享余额 · {memberOrders[0].studentIds.map(id => data.students.find(s => s.id === id)?.name).join("、")}</p>}
           <Field label="扣减课时" required>
-            <input aria-label="扣减课时" type="number" min="0" step="any" value={deductUnits} onChange={(e) => setDeductUnits(e.target.value)} />
+            <input aria-label="扣减课时" type="number" min="0" max={available} step="any" value={deductUnits} onChange={(e) => setDeductUnits(e.target.value)} />
           </Field>
           <Field label="扣减原因" required>
             <textarea aria-label="扣减原因" value={deductReason} onChange={(e) => setDeductReason(e.target.value)} placeholder="说明需要纠正的记录及原因" />
           </Field>
-          {student.balanceKnown && <div className="inset">当前剩余 {deductionBalance} 课时 → 扣减后 {deductUnits && Number.isFinite(amount) && amount > 0 ? afterDeduction : deductionBalance} 课时</div>}
-          {deductUnits && (!Number.isFinite(amount) || amount <= 0 || amount > deductionBalance) && <p role="alert">请输入大于 0 且不超过剩余课时的扣减量。</p>}
+          {deduction?.error ? <p role="alert">{deduction.error}</p> : <>
+            <p>已预约占用 {deduction?.reserved} 课时，可排课余额 {available} 课时</p>
+            <div className="inset">当前剩余 {deductionBalance} 课时{amount > 0 && amount <= available && ` → 扣减后 ${afterDeduction} 课时`}</div>
+            {deductUnits && (!Number.isFinite(amount) || amount <= 0 || amount > available) && <p role="alert">请输入大于 0 且不超过可排课余额的扣减量。</p>}
+          </>}
           {deductError && <p role="alert">{deductError}</p>}
         </div>
       </Modal>
@@ -118,55 +101,13 @@ export default function StudentCredits({
               : []),
             [
               "剩余课时",
-              student.balanceKnown ? `${student.balance} 课时` : "未核实",
+              `${student.balance} 课时`,
             ],
             ["买单日期", summary.purchaseDate],
             ["是否续课", summary.renewalStatus],
           ]}
         />
       </Panel>
-      {!student.balanceKnown && (
-        <Panel
-          title="录入初始剩余课时"
-          description="核对已有课时台账后登记一次，后续变动会自动汇总。欠课可填写负数。"
-        >
-          {can("credit.add") ? (
-            <form
-              className="student-opening-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                saveOpening();
-              }}
-            >
-              <Field label="初始剩余课时" required>
-                <input
-                  type="number"
-                  step="any"
-                  value={opening}
-                  onChange={(event) => setOpening(event.target.value)}
-                />
-              </Field>
-              <Field label="核实说明" required>
-                <input
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  placeholder="例如：已核对旧课时台账"
-                />
-              </Field>
-              <Button type="submit" variant="primary">
-                确认录入余额
-              </Button>
-              {error && (
-                <p role="alert" className="danger">
-                  {error}
-                </p>
-              )}
-            </form>
-          ) : (
-            <p>请联系负责教务核实余额。</p>
-          )}
-        </Panel>
-      )}
       <Panel
         title="课时与充值明细"
         action={

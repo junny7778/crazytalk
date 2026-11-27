@@ -54,18 +54,24 @@ export async function commandOperationResult(
   // Finish all independent batch items before reporting the final result.
   if (jobs.some((j) => ["pending", "processing"].includes(j.status)))
     return { status: "processing", message: "正在处理" };
-  const failed = jobs.find((j) =>
+  const failures = jobs.filter((j) =>
     ["failed", "uncertain", "blocked"].includes(j.status),
   );
-  if (failed || change?.error)
+  const failed = failures[0];
+  if (failed || change?.error) {
+    const affected = type === "lesson.schedule"
+      ? failures.map(job => state.lessons.find(lesson => lesson.id === job.lessonId))
+          .flatMap(lesson => lesson ? [`${lesson.date} ${lesson.time}`] : [])
+      : [];
     return {
       status: "failed",
       message: operationFailure(
         type,
         change?.error || failed!.error || "请联系管理员",
-      ),
+      ) + (affected.length ? ` 待核对课次：${affected.join("、")}` : ""),
       retryable: !jobs.some((j) => ["uncertain", "blocked"].includes(j.status)),
     };
+  }
   if (jobs.some((j) => j.status === "superseded"))
     return {
       status: "failed",

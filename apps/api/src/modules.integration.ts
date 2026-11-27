@@ -35,11 +35,13 @@ export async function verifyModules(origin: string, headers: Record<string, stri
   assert.ok((await read()).catalog.some(c => c.id === materialId));
   await send({ type: "student.details.update", id: student.id, patch: { material: "专项教材" }, expected: { material: student.material } });
   assert.equal((await read()).students.find(s => s.id === student.id)!.material, "专项教材");
-  await send({ type: "student.import", mode: "skip", batchId: randomUUID(), students: [{ ...emptyStudentProfile(), material: "专项教材", materialIds: [materialId], name: "期初专项", chineseName: "期初专项" }] });
+  for (const openingBalance of [undefined, -1]) {
+    await send({type:"student.import", mode:"skip", students:[{...emptyStudentProfile(), name:"无效期初", chineseName:"无效期初", orderStatus:"正常", openingBalance}]}, 400);
+  }
+  assert.ok(!(await read()).students.some(s => s.name === "无效期初"));
+  await send({ type: "student.import", mode: "skip", batchId: randomUUID(), students: [{ ...emptyStudentProfile(), openingBalance: 12, orderStatus: "正常", material: "专项教材", materialIds: [materialId], name: "期初专项", chineseName: "期初专项" }] });
   const opening = (await read()).students.find(s => s.chineseName === "期初专项")!;
-  await send({ type: "student.balance.open", id: opening.id, balance: 12, reason: "账单核对" });
   assert.equal((await read()).students.find(s => s.id === opening.id)!.balance, 12);
-  await send({ type: "student.balance.open", id: opening.id, balance: 12, reason: "重复核对" }, 400);
   state = await read();
   const sourceTeacher = state.teachers[0];
   const teacherA = { ...sourceTeacher, materialIds: [materialId], id: randomUUID(), name: "专项老师甲", phone: "13911110001", classInUid: "99111", status: "在职" };

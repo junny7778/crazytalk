@@ -299,7 +299,7 @@ describe("跨老师计划与提交边界", () => {
         },
         {
           date: "2026-11-23",
-          time: "18:25",
+          time: "18:30",
           teacherId: second.id,
           confirmedTeacher: false,
         },
@@ -308,9 +308,9 @@ describe("跨老师计划与提交边界", () => {
       kind: "固定课" as const,
       material: student.material,
     };
-    expect(() => transition(data, command)).toThrow("请先与老师确认");
-    command.slots[1].confirmedTeacher = true;
     expect(() => transition(data, command)).toThrow("学员这个时间已经有课");
+    command.slots[1].time = "19:05";
+    expect(() => transition(data, command)).toThrow("整点或半点");
     expect(data.lessons).toHaveLength(0);
   });
 });

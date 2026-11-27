@@ -1,5 +1,5 @@
 import { bindSchedulingStaff } from "../../../../tests/fixtures/scheduling";
-import {clickSchedule, selectSchedule, startTeacherStudent, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
+import {clickSchedule, selectSchedule, selectStudentCard, addCalendarLesson} from "./schedulingTestActions";
 // @vitest-environment jsdom
 import { transferableAbortController } from "node:util";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
@@ -23,7 +23,7 @@ beforeEach(()=>{
  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
  const d=demoRepository.read();d.lessons=[];d.leaves=[];d.students=d.students.slice(0,4);
  d.classInAccounts=d.students.map((s,i)=>({id:`verified-${s.id}`,phone:"",uid:String(990000+i),studentIds:[s.id]}));
- d.students.forEach(s=>{s.balanceKnown=true;s.balance=20;s.status="在读";s.scheduleIntent=null;});
+ d.students.forEach(s=>{s.balance=20;s.status="在读";s.scheduleIntent=null;});
  d.teachers=d.teachers.slice(0,1);Object.assign(d.teachers[0],{classInUid:"998001",status:"在职",trained:true,needConfirm:false,categories:["少儿","成人"],availabilityFrom:"",availability:[{day:1,start:"18:00",end:"21:00"}]});
 });
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
@@ -35,13 +35,75 @@ it("打开排课管理时清除旧版排课草稿，保留其他本地数据", (
   expect(localStorage.getItem("ct-custom-calendar:u2:s1:t1")).toBeNull();
   expect(localStorage.getItem("other-setting")).toBe("keep");
 });
-it("默认学员概况，全部学员可查；人员行只有姓名和ID",()=>{
- const d=demoRepository.read();d.students[0].status="结课";mount();
+it("全部学员可查，姓名同行显示排课或服务状态，下方显示 ID",()=>{
+ const d=demoRepository.read();d.students[0].status="结课";d.students[1].status="退费";d.students[2].status="停课";mount();
  expect(screen.getByRole("tab",{name:"按学员排课"}).getAttribute("aria-selected")).toBe("true");
  const rows=within(screen.getByRole("complementary")).getAllByRole("button");expect(rows).toHaveLength(4);
- expect(rows.at(-1)?.textContent).toBe(d.students[0].name+d.students[0].id);
- expect(rows.every(row=>d.students.some(s=>row.textContent===s.name+s.id))).toBe(true);
+ const expectedTags = [["结课","roster-completed-badge"],["退费","badge-danger"],["停课","badge-warning"],["待排课","badge-neutral"]];
+ for (const [index, student] of d.students.entries()) {
+   const [label, colorClass] = expectedTags[index];
+   const row = rows.find(button => within(button).queryByText("ID："+student.id))!;
+   const heading = within(row).getByText(student.name).parentElement!;
+   expect(within(heading).getByText(label).classList.contains(colorClass)).toBe(true);
+ }
  expect(screen.getByLabelText("排课概况")).toBeTruthy();expect(screen.queryByLabelText("学员排课意向")).toBeNull();expect(screen.queryByRole("button",{name:"确认排课"})).toBeNull();
+});
+it("新方案按剩余课时估算周数，默认每天一节，降低周节数同步收紧每日上限", async () => {
+  const data = demoRepository.read();
+  const student = data.students[0];
+  data.orders = [];
+  student.balance = 10;
+  mount(`/schedule?student=${student.id}`);
+  await click("一键排课");
+  expect(screen.getByRole("combobox", {name:"排课周期"}).textContent).toContain("不限");
+  expect(screen.getByRole("combobox", {name:"每天最多上几节"}).textContent).toContain("1 节");
+  async function choose(field: string, value: string) {
+    const trigger = screen.getByRole("combobox", {name:field});
+    trigger.focus();
+    await selectSchedule(field, value);
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  }
+  await choose("每周节数", "3 节");
+  expect(screen.getByText(/预计可新增 10 节，约 4 周/)).toBeTruthy();
+  await choose("每天最多上几节", "3 节");
+  await choose("每周节数", "2 节");
+  expect(screen.getByRole("combobox", {name:"每天最多上几节"}).textContent).toContain("2 节");
+  await choose("每节时长", "50 分钟");
+  expect(screen.getByText(/预计可新增 5 节，约 3 周/)).toBeTruthy();
+  await choose("每节时长", "55 分钟");
+  fireEvent.change(screen.getByRole("spinbutton", {name:/每节预计扣课数/}), {target:{value:"2.5"}});
+  expect(screen.getByText(/预计可新增 4 节，约 2 周/)).toBeTruthy();
+  await choose("排课周期", "16 周");
+  await choose("排课周期", "32 周");
+  expect(screen.getByText("每周 2 节 · 共 64 节")).toBeTruthy();
+});
+it("已有排课意向时，概况隐藏计划摘要，一键排课沿用原设置", async () => {
+  const student = demoRepository.read().students[0];
+  student.scheduleIntent = {mode: "fixed", startDate: DEMO_TODAY, weeks: 4, frequency: 2, duration: 25,
+    materialIds: student.materialIds, windows: [{day: 1, start: "18:00", end: "19:00"}]};
+  mount(`/schedule?student=${student.id}`);
+  expect(screen.queryByText("当前计划")).toBeNull();
+  expect(screen.queryByText(/还需安排/)).toBeNull();
+  await click("一键排课");
+  expect(screen.getByRole("combobox", {name: "每周节数"}).textContent).toContain("2 节");
+  expect(screen.getByRole("combobox", {name: "排课周期"}).textContent).toContain("4 周");
+});
+it("一键排课从旧计划默认选中一本有效教材，教材多时仍无搜索框", async () => {
+ const data = demoRepository.read(), student = data.students[0];
+ const book = data.catalog.find(c => c.type === "教材" && c.enabled)!;
+ const books = Array.from({length:10}, (_,i) => ({...book,id:`test-book-${i}`,name:`测试教材${i}`}));
+ data.catalog.push(...books);
+ student.materialIds = books.map(b => b.id);
+ student.scheduleIntent = {mode:"fixed",startDate:DEMO_TODAY,weeks:2,frequency:1,duration:25,windows:[],
+   materialIds:["removed",books[2].id,books[1].id]};
+ mount(`/schedule?student=${student.id}`);await click("一键排课");
+ const select = screen.getByRole("combobox",{name:"本次教材"});
+ expect(select.textContent).toContain(books[2].name);
+ fireEvent.click(select);
+ expect(screen.queryByPlaceholderText("搜索选项")).toBeNull();
+ expect(screen.getAllByRole("option",{selected:true})).toHaveLength(1);
+ fireEvent.click(screen.getByRole("option",{name:books[1].name}));
+ expect(select.textContent).toContain(books[1].name);
 });
 it("概况余额沿用已有计算，共享余额说明清楚，余额与课程节数分开",()=>{
  const d=demoRepository.read(),s=d.students[0];const order=d.orders!.find(o=>o.studentIds.includes(s.id))!;order.studentIds=[s.id,d.students[1].id];order.balance=20;
@@ -52,6 +114,7 @@ it("概况余额沿用已有计算，共享余额说明清楚，余额与课程�
 it("按ID搜索，清除筛选可恢复全部列表，停课学员可看不可新增",async()=>{
  const s=demoRepository.read().students[1];s.status="停课";mount();
  fireEvent.change(screen.getByPlaceholderText("搜索姓名或 ID"),{target:{value:s.id}});
+ expect(within(screen.getByRole("complementary")).getByText(`ID：${s.id}`)).toBeTruthy();
  const list=within(screen.getByRole("complementary"));await act(async()=>{fireEvent.click(list.getByRole("button",{name:new RegExp(s.name)}));});
  expect(screen.getByRole("button",{name:"一键排课"}).hasAttribute("disabled")).toBe(true);expect(screen.getByText(/学员当前为停课/)).toBeTruthy();
  await click("清除筛选");expect(list.getAllByRole("button")).toHaveLength(4);
@@ -60,12 +123,12 @@ it("自定义排课分设置预览两步，返回保留输入，确认前不写�
  const d=demoRepository.read(),s=d.students[0];mount(`/schedule?student=${s.id}&date=2026-11-23`);await click("自定义排课");
  expect(screen.queryByRole("button",{name:"确认排课"})).toBeNull();expect(screen.queryByLabelText("学员")).toBeNull();await addCalendarLesson("2026-11-23","18:30");
  await click("预览排课");expect(document.querySelector('.schedule-steps [aria-current="step"]')?.textContent).toBe("② 预览确认");expect(screen.queryByRole("button",{name:"返回概况"})).toBeNull();expect(d.lessons).toHaveLength(0);
- await click("返回调整");expect(screen.getByRole("button",{name:/2026-11-23 18:30 待保存/})).toBeTruthy();await click("预览排课");await click("确认排课");expect(demoRepository.read().lessons).toHaveLength(1);expect(screen.getByLabelText("排课概况")).toBeTruthy();expect(document.querySelector('.roster-person.selected')?.textContent).toContain(s.id);
+ await click("返回调整");expect(screen.getByRole("button",{name:/2026-11-23 18:30 待保存 T\./})).toBeTruthy();await click("预览排课");await click("确认排课");expect(demoRepository.read().lessons).toHaveLength(1);expect(screen.getByLabelText("排课概况")).toBeTruthy();expect(document.querySelector('.roster-person.selected')?.textContent).toContain(s.id);
 
 });
 it("未修改直接返回；有草稿切换人员需确认且继续编辑保留内容", async()=>{
  const d=demoRepository.read();mount(`/schedule?student=${d.students[0].id}&date=2026-11-23`);await click("自定义排课");await click("返回概况");expect(screen.queryByRole("dialog")).toBeNull();await click("自定义排课");await addCalendarLesson("2026-11-23","20:00");
- await act(async()=>{fireEvent.click(within(screen.getByRole("complementary")).getByRole("button",{name:new RegExp(d.students[1].name)}));});await click("继续编辑");expect(screen.getByRole("button",{name:/2026-11-23 20:00 待保存/})).toBeTruthy();
+ await act(async()=>{fireEvent.click(within(screen.getByRole("complementary")).getByRole("button",{name:new RegExp(d.students[1].name)}));});await click("继续编辑");expect(screen.getByRole("button",{name:/2026-11-23 20:00 待保存 T\./})).toBeTruthy();
  await act(async()=>{fireEvent.click(screen.getByRole("tab",{name:"按老师排课"}));});await click("放弃本次修改");expect(Object.keys(localStorage).filter(k=>k.startsWith("ct-custom-calendar:"))).toHaveLength(0);expect(screen.getByRole("button",{name:"为该老师排课"})).toBeTruthy();expect(demoRepository.read().lessons).toHaveLength(0);
 
 });
@@ -119,8 +182,10 @@ it("整批选人按命中数排序，排除余额不足或任一节冲突的学�
 });
 it("已有未来课程可从概况调整时间，成功后仍保留课节和课时余额",async()=>{
  const d=demoRepository.read(),s=d.students[0],t=d.teachers[0];demoRepository.execute({type:"lesson.schedule",studentId:s.id,teacherId:t.id,slots:[{date:"2026-11-23",time:"18:00"}],duration:25,kind:"临时课",material:s.material});
- const balance=getScheduleCredits(demoRepository.read(),s.id,0,1).balance;mount(`/schedule?student=${s.id}`);await click(/^查看课程 /);await click("调课");fireEvent.change(screen.getByLabelText("上课时间"),{target:{value:"18:35"}});await click("确认调整");
- await waitFor(()=>expect(demoRepository.read().lessons[0].time).toBe("18:35"));expect(demoRepository.read().lessons).toHaveLength(1);expect(getScheduleCredits(demoRepository.read(),s.id,0,1).balance).toBe(balance);
+ const balance=getScheduleCredits(demoRepository.read(),s.id,0,1).balance;mount(`/schedule?student=${s.id}`);
+ expect(within(screen.getByRole("complementary")).getByText("已排课").classList.contains("badge-info")).toBe(true);
+ await click(/^查看课程 /);await click("调课");fireEvent.click(screen.getByLabelText("上课时间"));await click("30 分");await click("确认调整");
+ await waitFor(()=>expect(demoRepository.read().lessons[0].time).toBe("18:30"));expect(demoRepository.read().lessons).toHaveLength(1);expect(getScheduleCredits(demoRepository.read(),s.id,0,1).balance).toBe(balance);
 });
 
 function ReadOnlyControl(){const {setRole}=useDemo();return <button onClick={()=>setRole("schedule-reader",false,"schedule-reader-account")}>切换只读验证</button>;}
@@ -131,12 +196,46 @@ it("只读角色可以查看概况，但不能新增或调整课程",async()=>{
  mount(`/schedule?student=${s.id}`);await click("切换只读验证");
  expect(screen.getByLabelText("排课概况")).toBeTruthy();expect(screen.queryByRole("button",{name:"一键排课"})).toBeNull();expect(screen.queryByRole("button",{name:"自定义排课"})).toBeNull();
 });
-it("排序把未排放前，已排齐仍留在列表，筛选能找到已排齐学员",async()=>{
- const d=demoRepository.read(),s=d.students[0];s.scheduleIntent={mode:"fixed",startDate:"2026-11-23",weeks:1,frequency:1,duration:25,windows:[{day:1,start:"18:00",end:"19:00"}]};
- demoRepository.execute({type:"lesson.schedule",studentId:s.id,teacherId:d.teachers[0].id,slots:[{date:"2026-11-23",time:"18:00"}],duration:25,kind:"固定课",material:s.material});
- mount();const rows=within(screen.getByRole("complementary")).getAllByRole("button");expect(rows.at(-1)?.textContent).toContain(s.id);
- await act(async()=>{fireEvent.click(screen.getByRole("combobox",{name:"排课状态"}));});await act(async()=>{fireEvent.click(screen.getByRole("option",{name:"计划已排齐"}));});
- expect(document.querySelectorAll('.roster-person')).toHaveLength(1);expect(document.querySelector('.roster-person')?.textContent).toContain(s.id);
+it("部分排课按计划节数判定，可单独筛选，停课优先", async () => {
+ const data = demoRepository.read();
+ const [partial, full, paused, noPlan] = data.students;
+ const weekday = new Date(DEMO_TODAY).getUTCDay();
+ const lesson = {...createSeed().lessons[0], date: DEMO_TODAY, time:"18:00", duration:25, status:"未开始" as const};
+ for (const student of data.students) {
+   student.scheduleIntent = {mode:"fixed", startDate:DEMO_TODAY, weeks:1, frequency:2, duration:25,
+     windows:[{day:weekday,start:"18:00",end:"20:00"}]};
+   data.lessons.push({...lesson, id:student.id, studentId:student.id});
+ }
+ noPlan.scheduleIntent = null;
+ paused.status = "停课";
+ data.lessons.push({...lesson, id:"second", studentId:full.id, time:"19:00"},
+   {...lesson, id:"cancelled", studentId:partial.id, time:"19:00", status:"已取消"});
+ mount();
+ const roster = within(screen.getByRole("complementary"));
+ for (const [student, label] of [[partial,"部分排课"],[full,"已排课"],[paused,"停课"],[noPlan,"已排课"]] as const)
+   expect(roster.getByRole("button",{name:new RegExp(student.id)}).textContent).toContain(label);
+ fireEvent.click(roster.getByRole("combobox",{name:"排课状态"}));
+ fireEvent.click(screen.getByRole("option",{name:"部分排课"}));
+ const rows = within(roster.getByLabelText("学员列表")).getAllByRole("button");
+ expect(rows).toHaveLength(1);
+ expect(rows[0].textContent).toContain(partial.id);
+});
+
+it("课时已排满的学员归入已排课，无待上课且余额不足的学员单独筛选",async()=>{
+ const d=demoRepository.read();
+ d.orders=[];
+ const [booked, empty, ready, low]=d.students;
+ booked.balance=1; empty.balance=0; low.balance=0.5;
+ demoRepository.execute({type:"lesson.schedule",studentId:booked.id,teacherId:d.teachers[0].id,slots:[{date:"2026-11-23",time:"18:00"}],duration:25,kind:"固定课",material:booked.material});
+ mount();
+ const roster=within(screen.getByRole("complementary"));
+ expect(roster.getAllByRole("button")[0].textContent).toContain(ready.id);
+ for(const [label, students] of [["待排课",[ready]],["已排课",[booked]],["课时不足",[empty,low]]] as const){
+   await act(async()=>{fireEvent.click(roster.getByRole("combobox",{name:"排课状态"}));});
+   await act(async()=>{fireEvent.click(screen.getByRole("option",{name:label}));});
+   expect(within(roster.getByLabelText("学员列表")).getAllByRole("button")).toHaveLength(students.length);
+   for(const s of students) expect(roster.getByRole("button",{name:new RegExp(s.id)}).textContent).toContain(label);
+ }
 });
 
 it("已有灵活意向不被自动改为固定，仍可在学员课表选时间", async()=>{
@@ -147,20 +246,35 @@ it("跨周选时段后返回调整保留每节课", async()=>{
  const d=demoRepository.read();mount(`/schedule?teacher=${d.teachers[0].id}&date=2026-11-23`);await click("为该老师排课");
  await click(/2026-11-23 18:00 可排课/);await click("下一周");await click(/2026-11-30 18:00 可排课/);await click("确认时段");
  await selectStudentCard(d.students[0].name);
- await click(new RegExp(d.teachers[0].name + ".*可教类别"));
- await click("加入课表");await click("预览排课");expect(within(screen.getByLabelText("自定义排课预览")).getAllByRole("row")).toHaveLength(3);
- await click("返回调整");await click("预览排课");expect(screen.getByLabelText("自定义排课预览").textContent).toContain("2026-11-30");
+ expect(screen.getByRole("button",{name:/2026-11-23 18:00 待确认/})).toBeTruthy();
+ await click("下一周");expect(screen.getByRole("button",{name:/2026-11-30 18:00 待确认/})).toBeTruthy();
+ await click("返回调整");expect(screen.getByText("已选 2 个时段")).toBeTruthy();
+ await click("确认时段");await selectStudentCard(d.students[0].name);
+ expect(screen.getByText(/本次安排 2 周，共 2 节课待确认/)).toBeTruthy();
 });
-it("学员筛选仅保留四个排课选项，没有更多筛选",async()=>{
+it("学员筛选展示各排课状态，没有更多筛选",async()=>{
  mount();const roster=within(screen.getByRole("complementary"));expect(roster.queryByText("更多筛选")).toBeNull();expect(roster.queryByLabelText("学员状态")).toBeNull();
  await act(async()=>{fireEvent.click(roster.getByRole("combobox",{name:"排课状态"}));});
- expect(screen.getAllByRole("option").map(option=>option.textContent)).toEqual(["全部学员","未排课","部分已排 / 待完善计划","计划已排齐"]);
+ expect(screen.getAllByRole("option").map(option=>option.textContent)).toEqual(["全部学员","待排课","部分排课","已排课","课时不足"]);
 });
 
 it("两种排课入口统一标题、步骤、字段控件和底部返回",async()=>{
- const s=demoRepository.read().students[0];mount(`/schedule?student=${s.id}`);
+ const data=demoRepository.read(), s=data.students[0];
+ data.orders=[];s.balance=72;
+ demoRepository.execute({type:"lesson.schedule",studentId:s.id,teacherId:data.teachers[0].id,slots:[{date:"2026-11-23",time:"18:00"}],duration:50,kind:"固定课",material:s.material});
+ mount(`/schedule?student=${s.id}`);
  for(const entry of ["一键排课","自定义排课"]){
   await click(entry);
+  const credits = screen.getByRole("textbox", {name:"剩余待排课时"}) as HTMLInputElement;
+  expect(screen.getByRole("heading", {name:"基础信息"})).toBeTruthy();
+  const fields = credits.closest(".intent-settings-grid")!;
+  expect(fields.children[1].textContent).toContain("本次教材");
+  if (entry === "自定义排课") expect(screen.getByRole("heading", {name:/^排课$/})).toBeTruthy();
+  expect(credits.value).toBe("70 课时");
+  expect(credits.disabled).toBe(true);
+  credits.focus();
+  expect(document.activeElement).not.toBe(credits);
+  expect(credits.closest(".form-grid")?.firstElementChild?.contains(credits)).toBe(true);
   expect(screen.getAllByRole("heading",{name:`${s.name} · 安排课程`})).toHaveLength(1);
   expect(document.querySelector('.schedule-steps [aria-current="step"]')?.textContent).toBe("① 设置排课");
   expect(screen.getAllByRole("button",{name:"返回概况"})).toHaveLength(1);
@@ -175,19 +289,12 @@ it("两种排课入口统一标题、步骤、字段控件和底部返回",async
 it("同一天支持分段时间，保存保留两段，删除不影响其他日期",async()=>{
  const s=demoRepository.read().students[0];mount(`/schedule?student=${s.id}`);await click("一键排课");
  fireEvent.change(screen.getByLabelText("开始日期"),{target:{value:"2026-11-23"}});
- await click("周一");
- fireEvent.change(screen.getByLabelText("意向1开始时间"),{target:{value:"10:00"}});
- fireEvent.change(screen.getByLabelText("意向1结束时间"),{target:{value:"11:00"}});
- await click("＋ 添加周一时间段");
- expect(screen.getByRole("button",{name:"＋ 添加周一时间段"}).hasAttribute("disabled")).toBe(true);
- expect(screen.getByRole("button",{name:"生成排课方案"}).hasAttribute("disabled")).toBe(true);
- fireEvent.change(screen.getByLabelText("意向2开始时间"),{target:{value:"19:00"}});
- fireEvent.change(screen.getByLabelText("意向2结束时间"),{target:{value:"20:00"}});
- expect(screen.getByRole("button",{name:"＋ 添加周一时间段"}).hasAttribute("disabled")).toBe(false);
- await click("周三");await click("删除周三时间段3");
+ await click("周一 10:00");await click("周一 10:30");
+ await click("周一 19:00");await click("周一 19:30");
+ await click("按星期填写");await click("周三");await click("周三");
  await click("生成排课方案");
  expect(demoRepository.read().students[0].scheduleIntent?.windows).toEqual([{day:1,start:"10:00",end:"11:00"},{day:1,start:"19:00",end:"20:00"}]);
- await click("修改排课信息");expect(screen.getByLabelText<HTMLInputElement>("意向2开始时间").value).toBe("19:00");
+ await click("修改排课信息");await click("按星期填写");expect(screen.getByLabelText<HTMLInputElement>("周一 开始时间 2").value).toBe("19:00");
 });
 
 vi.mock("@crazytalk/shared/react",async(importOriginal)=>({...await importOriginal<typeof import("@crazytalk/shared/react")>(),businessRequest:vi.fn(async()=>({uid:"881199",addedToInstitution:true}))}));
@@ -231,7 +338,7 @@ it("老师列表只展示在职老师，搜索及清除筛选不会展示离职�
  const roster=within(screen.getByRole("complementary"));
  expect(roster.queryByLabelText("老师状态")).toBeNull();expect(roster.queryByText("更多筛选")).toBeNull();
  expect(roster.queryByText("离职测试老师")).toBeNull();expect(roster.getByText(active.name)).toBeTruthy();
- fireEvent.change(screen.getByPlaceholderText("搜索姓名或 ID"),{target:{value:"离职测试老师"}});
+ fireEvent.change(screen.getByPlaceholderText("搜索姓名"),{target:{value:"离职测试老师"}});
  expect(document.querySelectorAll('.roster-person')).toHaveLength(0);
  await click("清除筛选");expect(document.querySelectorAll('.roster-person')).toHaveLength(1);expect(roster.queryByText("离职测试老师")).toBeNull();
 });
@@ -245,10 +352,12 @@ it("老师顶部统计全部日期未取消课程，不再按周切换",()=>{
  expect(screen.queryByRole("button",{name:"上一周"})).toBeNull();expect(screen.queryByRole("button",{name:"下一周"})).toBeNull();
 });
 
-it("排课按数字编号搜索老师，页面不显示内部关联键",()=>{
+it("老师列表展示 SO，只按姓名搜索",()=>{
  const t=demoRepository.read().teachers[0];mount(`/schedule?teacher=${t.id}`);
- const roster=within(screen.getByRole("complementary"));expect(roster.getByText(t.teacherNumber!)).toBeTruthy();expect(roster.queryByText(t.id)).toBeNull();
- fireEvent.change(screen.getByPlaceholderText("搜索姓名或 ID"),{target:{value:t.teacherNumber}});expect(document.querySelectorAll('.roster-person')).toHaveLength(1);
+ const roster=within(screen.getByRole("complementary"));expect(roster.getByText(`SO：${t.so}`)).toBeTruthy();expect(roster.queryByText(t.teacherNumber!)).toBeNull();expect(roster.queryByText(t.id)).toBeNull();
+ const search=roster.getByPlaceholderText("搜索姓名");
+ fireEvent.change(search,{target:{value:t.teacherNumber}});expect(document.querySelectorAll('.roster-person')).toHaveLength(0);
+ fireEvent.change(search,{target:{value:t.name}});expect(document.querySelectorAll('.roster-person')).toHaveLength(1);
 });
 
 it("老师未绑定时入口拦截，绑定成功后可进入排课",async()=>{
@@ -288,4 +397,25 @@ it("负责教务未绑定时学员入口和老师选学员均拦截",async()=>{
  await act(async()=>{fireEvent.click(screen.getByRole("tab",{name:"按老师排课"}));});await click("为该老师排课");
  await click("下一周");await click(/18:00 可排课/);await click("确认时段");
  expect(within(screen.getByRole("dialog",{name:"选择学员"})).queryByText(student.name)).toBeNull();
+});
+
+it("可用课时为零时两个排课入口都禁用；停课优先显示服务状态", async () => {
+  const data = demoRepository.read();
+  const student = data.students[0];
+  data.orders = [];
+  student.balance = 0;
+  const view = mount(`/schedule?student=${student.id}`);
+  for (const name of ["一键排课","自定义排课"])
+    expect(screen.getByRole("button",{name}).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByText("可用课时不足，无法新增排课。")).toBeTruthy();
+  cleanup();
+  view.dispose();
+  student.status = "停课";
+  data.classInAccounts = [];
+  mount(`/schedule?student=${student.id}`);
+  const hint = screen.getByText("学员当前为停课，不可新增排课");
+  expect(hint.getAttribute("data-status")).toBe("停课");
+  expect(hint.previousElementSibling?.contains(screen.getByRole("button",{name:"自定义排课"}))).toBe(true);
+  expect(hint.classList.contains("notice")).toBe(false);
+  expect(screen.queryByRole("button", {name:"绑定账号"})).toBeNull();
 });

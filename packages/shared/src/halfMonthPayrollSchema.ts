@@ -34,13 +34,20 @@ export const defaultPayRules: z.infer<typeof payRuleValues> = {
 const payEntry = z.object({
   key: z.string(),
   date: z.string(),
-  category: z.enum(["底薪", "奖金", "扣款", "人工调整", "待核"]),
+  category: z.enum(["底薪", "奖金", "扣款", "人工调整", "等待", "待核"]),
   title: z.string(),
   detail: z.string(),
   source: z.string(),
   lessonId: z.string().optional(),
+  dependsOn: z.array(z.string()).optional(),
+  nextChangeAt: z.number().optional(),
   teacher: z.number(),
   office: z.number(),
+  quantity: z.number().optional(),
+  quantityUnit: z.enum(["课时", "分钟", "次"]).optional(),
+  teacherUnitPrice: z.number().optional(),
+  officeUnitPrice: z.number().optional(),
+  payRatio: z.number().optional(),
   pendingRates: z.array(z.enum(["teacher", "office"])).optional(),
 });
 const adjustment = z.object({

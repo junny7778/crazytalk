@@ -22,13 +22,6 @@ export async function selectStudentCard(name: string, id?: string) {
     );
   });
 }
-export async function startTeacherStudent(name: string, id?: string) {
-  const slot = screen.getAllByRole("button", {name: /\d{2}:\d{2} 可排课/})[0];
-  await act(async () => { fireEvent.click(slot); });
-  await clickSchedule("确认时段");
-  await selectStudentCard(name, id);
-  await clickSchedule("取消");
-}
 export async function addCalendarLesson(date: string, time: string) {
   await clickSchedule(new RegExp(`${date} ${time} 可排课`));
   await act(async () => {

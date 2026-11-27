@@ -39,7 +39,7 @@ it("新课等待结束页，正常提交计一次课时；学员缺席生成站�
 
 it("未到堂先通知，后到堂保留提醒；最终老师缺席只退一次", () => {
   let data = createSeed();
-  const l = data.lessons.find(row => row.deducted && row.confirmedUnits && data.students.find(s => s.id === row.studentId)?.balanceKnown)!;
+  const l = data.lessons.find(row => row.deducted && row.confirmedUnits && data.students.some(s => s.id === row.studentId))!;
   const update = (person: "老师" | "学员", result: "到堂" | "未到堂" | "缺席", at: string) => {
     data = transition(data, {type:"lesson.attendance", id:l.id, person, result, at}).data;
     return data.lessons.find(row => row.id === l.id)!;

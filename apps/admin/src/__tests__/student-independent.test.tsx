@@ -19,7 +19,7 @@ import {
   studentHistorySchema,
   studentProfileSchema,
 } from "@crazytalk/shared";
-import { demoRepository } from "../../../../packages/shared/src/repository";
+import { DEMO_STORAGE_KEY, demoRepository } from "../../../../packages/shared/src/repository";
 import App from "../App";
 
 function TestRole() {
@@ -64,7 +64,7 @@ async function choose(label: string, option: string) {
 }
 function originalProfile() {
   return {
-    ...emptyStudentProfile(),
+    ...emptyStudentProfile(), openingBalance:0,
     name: "独立验收学员",
     chineseName: "独立验收学员",
     groupName: "QA901专属学习群",
@@ -104,7 +104,7 @@ function originalProfile() {
 function importProfile() {
   demoRepository.execute({
     type: "student.import",
-    students: [originalProfile()],
+    students: [{...originalProfile(), openingBalance:0}],
     mode: "skip",
   });
   return demoRepository.read().students.find((s) => s.name === "独立验收学员")!;
@@ -224,7 +224,7 @@ describe("独立学员数字化验收", () => {
     });
     expect(
       studentProfileSchema.parse(
-        JSON.parse(localStorage.getItem("crazytalk-demo-v1")!).students.find(
+        JSON.parse(localStorage.getItem(DEMO_STORAGE_KEY)!).students.find(
           (s: { name: string }) => s.name === "完整建档验收",
         ),
       ),
@@ -349,35 +349,13 @@ describe("独立学员数字化验收", () => {
     });
     expect(screen.getByRole("combobox", { name: "客服处理进度" })).toBeTruthy();
   });
-  it("导入未知余额显示未核实，录入0余额必须带核实说明并产生独立流水", async () => {
+  it("导入零余额后直接显示余额和期初流水", () => {
     const student = importProfile();
     mount(`/students/${student.id}?tab=credits`);
-    expect(screen.getAllByText("未核实").length).toBeGreaterThan(0);
-    await change("初始剩余课时", "0");
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
-    });
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(
-      demoRepository.read().students.find((s) => s.id === student.id)
-        ?.balanceKnown,
-    ).toBe(false);
-    await change("核实说明", "已核对原台账为0");
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
-    });
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "确认录入余额" })).toBeNull(),
-    );
-    expect(
-      demoRepository.read().students.find((s) => s.id === student.id),
-    ).toMatchObject({ balanceKnown: true, balance: 0, totalUnits: 0 });
-    expect(
-      demoRepository.read().credits.filter((c) => c.studentId === student.id),
-    ).toHaveLength(1);
-    expect(screen.getByRole("cell", { name: "已核对原台账为0" })).toBeTruthy();
+    expect(screen.queryByText("录入初始剩余课时")).toBeNull();
+    expect(demoRepository.read().credits.filter(c => c.studentId === student.id)).toMatchObject([{type:"期初余额",units:0}]);
   });
-  it("列表按唯一 ID 搜索和订单状态筛选，未知余额保持未核实", async () => {
+  it("列表按唯一 ID 搜索和订单状态筛选，保留明确零余额", async () => {
     const student = importProfile();
     mount();
     await change("搜索学员 ID、姓名或手机号", student.id);
@@ -389,8 +367,8 @@ describe("独立学员数字化验收", () => {
     expect(screen.getByRole("link", { name: "独立验收学员" })).toBeTruthy();
     expect(
       demoRepository.read().students.find((s) => s.id === student.id)
-        ?.balanceKnown,
-    ).toBe(false);
+        ?.balance,
+    ).toBe(0);
   });
   it("教务按权限使用资料功能，导入和导出入口不越权显示", async () => {
     mount();
@@ -449,7 +427,7 @@ describe("独立学员数字化验收", () => {
     await book.xlsx.load(await exported!.arrayBuffer());
     expect(book.worksheets).toHaveLength(1);
     const sheet = book.worksheets[0];
-    expect(sheet.columnCount).toBe(47);
+    expect(sheet.columnCount).toBe(49);
     expect(sheet.rowCount).toBe(2);
     const headers = sheet.getRow(1).values as string[];
     const cell = (name: string) =>
@@ -465,20 +443,9 @@ describe("独立学员数字化验收", () => {
     // Keep the browser URL stub alive until the download revocation timer finishes.
     await new Promise((resolve) => setTimeout(resolve, 1100));
   });
-  it("导入学员可录入负期初余额，续费累加到该课包", async () => {
+  it("导入学员导入零期初余额，续费累加到该课包", async () => {
     const student = importProfile();
     mount(`/students/${student.id}?tab=credits`);
-    await change("初始剩余课时", "-2");
-    await change("核实说明", "旧台账确认欠2课时");
-    await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "确认录入余额" }));
-    });
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "确认录入余额" })).toBeNull(),
-    );
-    expect(
-      demoRepository.read().students.find((s) => s.id === student.id),
-    ).toMatchObject({ balance: -2, balanceKnown: true, totalUnits: 0 });
     await testAct(async () => {
       fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
     });
@@ -500,12 +467,12 @@ describe("独立学员数字化验收", () => {
     );
     expect(
       demoRepository.read().students.find((s) => s.id === student.id),
-    ).toMatchObject({ balance: 70 });
+    ).toMatchObject({ balance: 72 });
     const packages = demoRepository
       .read()
       .orders?.filter((order) => order.studentIds.includes(student.id));
     expect(packages).toHaveLength(1);
-    expect(packages?.[0]).toMatchObject({ kind: "期初余额", balance: 70 });
+    expect(packages?.[0]).toMatchObject({ kind: "期初余额", balance: 72 });
   });
   it("原表没有最后上课日期的在读学员不误列为两周没上课", async () => {
     const profile = { ...originalProfile(), status: "在读" as const };
@@ -561,7 +528,7 @@ describe("独立学员数字化验收", () => {
       demoRepository
         .read()
         .students.find((student) => student.name === "空白编号验收"),
-    ).toMatchObject({ balance: 0, balanceKnown: true });
+    ).toMatchObject({ balance: 0 });
     expect(screen.queryByRole("dialog", { name: "新建学员" })).toBeNull();
     expect(
       await screen.findByRole("dialog", { name: "给 空白编号验收 加课时" }),

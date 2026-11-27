@@ -1,9 +1,9 @@
+export { configureDemoClock, DEMO_NOW, isDemoClockEnabled, operationsNow } from "./clock";
 export * from "./model";
 export * from "./domain";
 export * from "./availability";
 export { resolveStudentId } from "./studentIds";
 export { createSeed } from "./seed";
-export { transition } from "./domain";
 
 export { demoRepository } from "./repository";
 

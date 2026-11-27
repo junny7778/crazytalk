@@ -60,6 +60,11 @@ export function getStudentScheduleProgress(
   studentId: string,
   intent: ScheduleIntent,
 ) {
+  if (intent.unlimited && intent.planId) {
+    const requiredCount = intent.targetLessons ?? intent.weeks * intent.frequency;
+    const scheduledCount = data.lessons.filter(l => l.studentId === studentId && l.schedulePlanId === intent.planId && l.status !== "已取消").length;
+    return {requiredCount, scheduledCount, complete: scheduledCount >= requiredCount};
+  }
   const requiredCount = intent.weeks * intent.frequency;
   if (!valid(intent))
     return { requiredCount, scheduledCount: 0, complete: false };
@@ -118,9 +123,9 @@ export function getTeacherScheduleMatch(
     const date = addDays(intent.startDate, d);
     for (const window of intent.windows.filter((w) => w.day === dayOf(date))) {
       for (
-        let m = minutes(window.start);
+        let m = Math.ceil(minutes(window.start) / 30) * 30;
         m + intent.duration <= minutes(window.end);
-        m += 1
+        m += 30
       ) {
         const slot = { date, time: clock(m) };
         const key = `${date}-${slot.time}`;

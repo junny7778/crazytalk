@@ -1,3 +1,4 @@
+import { operationsNow } from "./clock";
 import { isUnstartedBooking } from "./classInChanges";
 import { type DemoState } from "./model";
 
@@ -31,7 +32,7 @@ export function refreshOffboardRebooking(data: DemoState) {
     task.status = complete ? "已完成" : "待处理";
     task.result = complete ? "已完成离职老师对应课程的重新安排" : "";
     task.completedAt = complete
-      ? task.completedAt || new Date().toISOString()
+      ? task.completedAt || new Date(operationsNow()).toISOString()
       : "";
     if (complete) {
       task.completedBy = "系统";

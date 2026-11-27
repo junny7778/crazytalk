@@ -1,3 +1,4 @@
+import { transition } from "./domain";
 import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { it, expect } from "vitest";
 import { createSeed } from "./seed";
@@ -137,4 +138,56 @@ it("老师优先：主老师节数相同时选备选老师能补齐的时段", (
       { date: "2026-11-25", teacherId: backup.id },
     ],
   });
+});
+
+it("不限按10课时排成3+3+3+1，分天优先，只有一个意向日时保留缺口", () => {
+  const {data, student, intent} = fixture();
+  data.orders = [];
+  student.balance = 10;
+  const windows = [1, 3, 5].map(day => ({day, start:"19:00", end:"21:00"}));
+  for (const teacher of data.teachers) teacher.availability = windows;
+  const saved = transition(data, {type:"student.scheduleIntent.update", studentId:student.id,
+    intent:{...intent, unlimited:true, frequency:3, dailyLimit:1, windows}}).data;
+  const settings = saved.students.find(s => s.id === student.id)!.scheduleIntent!;
+  expect(settings).toMatchObject({weeks:4, targetLessons:10, dailyLimit:1});
+  for (const dailyLimit of [1, 2]) {
+    const [plan] = getFixedSchedulePlans(saved, student.id, {...settings, dailyLimit});
+    expect(plan.requiredCount).toBe(10);
+    expect(plan.coveredCount).toBe(10);
+    expect(new Set(plan.slots.map(s => s.date)).size).toBe(10);
+    expect([0,1,2,3].map(i => plan.slots.filter(s => s.date >= addDays(intent.startDate, i*7) && s.date < addDays(intent.startDate, (i+1)*7)).length)).toEqual([3,3,3,1]);
+  }
+  const [limited] = getFixedSchedulePlans(saved, student.id, {...settings, windows:windows.slice(0,1)});
+  expect(limited).toMatchObject({requiredCount:10, coveredCount:4});
+});
+
+it("历史课程只占时间，本方案分批确认不能绕过每日上限", () => {
+  const {data, student, intent} = fixture();
+  data.teachers[0].availability = [{day:1,start:"18:00",end:"21:00"}];
+  const base = {type:"lesson.schedule" as const, studentId:student.id, teacherId:data.teachers[0].id,
+    duration:25, kind:"固定课" as const, material:student.material};
+  const date = intent.startDate;
+  const prior = transition(data, {...base, slots:[{date,time:"18:00"}]}).data;
+  const saved = transition(prior, {type:"student.scheduleIntent.update", studentId:student.id, intent:{...intent,dailyLimit:1}}).data;
+  const schedulePlanId = saved.students.find(s => s.id === student.id)!.scheduleIntent!.planId!;
+  const first = transition(saved, {...base, schedulePlanId, slots:[{date,time:"19:00"}]}).data;
+  expect(first.lessons).toHaveLength(2);
+  expect(() => transition(first, {...base, schedulePlanId, slots:[{date,time:"19:30"}]})).toThrow(/每天最多 1 节/);
+});
+
+it("不限方案的自动目标用完后，运营仍可用新增余额手动加课", () => {
+  const {data, student, intent} = fixture();
+  data.orders = [];
+  student.balance = 1;
+  data.teachers[0].availability = [{day:1, start:"19:00", end:"21:00"}];
+  const saved = transition(data, {type:"student.scheduleIntent.update", studentId:student.id,
+    intent:{...intent, dailyLimit:1, unlimited:true}}).data;
+  const learner = saved.students.find(s => s.id === student.id)!;
+  expect(learner.scheduleIntent!.targetLessons).toBe(1);
+  learner.balance = 2;
+  const command = {type:"lesson.schedule" as const, studentId:student.id, teacherId:data.teachers[0].id,
+    schedulePlanId:learner.scheduleIntent!.planId, duration:25, kind:"固定课" as const, material:student.material,
+    slots:[{date:intent.startDate,time:"19:00"}, {date:intent.startDate,time:"19:30",extra:true}]};
+  expect(() => transition(saved, {...command, selectionMode:"recommended"})).toThrow(/每天最多/);
+  expect(transition(saved, {...command, selectionMode:"manual"}).data.lessons).toHaveLength(2);
 });

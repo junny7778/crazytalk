@@ -185,6 +185,26 @@ export default function Teachers() {
   const [edit, setEdit] = useState<Teacher | null>(null);
   const [focusScheduling, setFocusScheduling] = useState(false);
   const editId = edit?.id;
+  const editPayMode = params.get("edit") === "payMode";
+  const canEditTeacher = can("teacher.edit");
+  useEffect(() => {
+    if (!editPayMode || !canEditTeacher || !teacher || editId === teacher.id)
+      return;
+    setTrainingOnly(false);
+    setEdit({
+      ...teacher,
+      photo: teacher.photo || defaultAvatarSource(teacher.name),
+    });
+  }, [editPayMode, canEditTeacher, teacher, editId]);
+  function closeTeacherEditor() {
+    setEdit(null);
+    setTrainingOnly(false);
+    if (editPayMode) {
+      const next = new URLSearchParams(params);
+      next.delete("edit");
+      setParams(next, { replace: true });
+    }
+  }
   useEffect(() => {
     setPhotoError("");
     setMediaError("");
@@ -495,8 +515,7 @@ export default function Teachers() {
     const onSaved = () => {
       setAvailabilityDraft(null);
       setPendingTeacher(null);
-      setEdit(null);
-      setTrainingOnly(false);
+      closeTeacherEditor();
     };
     if (businessMode()) {
       await run({ type: "teacher.save", teacher: candidate }, onSaved);
@@ -662,7 +681,16 @@ export default function Teachers() {
                   <dt>证书</dt>
                   <dd>{teacher.certificates || "未填写"}</dd>
                 </div>
-                <div className="teacher-profile-full"><dt>可授教材</dt><dd className="row wrap">{teacher.materialIds?.length ? teacher.materialIds.map(id => <Badge key={id}>{data.catalog.find(c => c.id === id)?.name || "未找到教材"}</Badge>) : "未登记"}</dd></div>
+                <div className="teacher-profile-full">
+                  <dt>可授教材</dt>
+                  <dd className="row wrap material-badges">
+                    {teacher.materialIds?.length
+                      ? teacher.materialIds.map(id => (
+                          <Badge key={id}>{data.catalog.find(c => c.id === id)?.name || "未找到教材"}</Badge>
+                        ))
+                      : "未登记"}
+                  </dd>
+                </div>
                 <div className="teacher-profile-full"><dt>教育背景</dt><dd>{teacher.educationBackground || "未填写"}</dd></div>
                 <div className="teacher-profile-full">
                   <dt>教学经验</dt>
@@ -1101,10 +1129,7 @@ export default function Teachers() {
       <Modal
         drawer={!trainingOnly}
         open={!!edit}
-        onClose={() => {
-          setEdit(null);
-          setTrainingOnly(false);
-        }}
+        onClose={closeTeacherEditor}
         title={
           trainingOnly
             ? "编辑培训记录"
@@ -1115,12 +1140,7 @@ export default function Teachers() {
         width={560}
         footer={
           <>
-            <Button
-              onClick={() => {
-                setEdit(null);
-                setTrainingOnly(false);
-              }}
-            >
+            <Button onClick={closeTeacherEditor}>
               取消
             </Button>
             <Button
@@ -1415,9 +1435,16 @@ export default function Teachers() {
                       </Select>
                     </Field>
                     <Field label="计薪方式">
-                      <Select value={edit.payMode ?? ""} onValueChange={mode => {
-                        setEdit({ ...edit, payMode: mode === "OP" || mode === "NP" ? mode : undefined });
-                      }}>
+                      <Select
+                        autoFocus={editPayMode}
+                        value={edit.payMode ?? ""}
+                        onValueChange={(mode) => {
+                          setEdit({
+                            ...edit,
+                            payMode: mode === "OP" || mode === "NP" ? mode : undefined,
+                          });
+                        }}
+                      >
                         <option value="">请选择</option>
                         <option value="OP">OP · 固定课表计薪</option>
                         <option value="NP">NP · 预约结果计薪</option>

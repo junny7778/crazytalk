@@ -1,5 +1,4 @@
 import { businessMode, businessRequest, businessAccountId } from "@crazytalk/shared/react";
-import { payrollBreakdown } from "@crazytalk/shared";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -90,6 +89,9 @@ export default function TeacherApp() {
     businessMode() ? [] : readString("ct-teacher-seen", "").split(","),
   );
   const [month, setMonth] = useState(DEMO_TODAY.slice(0, 7));
+  const [payHalf, setPayHalf] = useState<"1" | "2">(() =>
+    Number(DEMO_TODAY.slice(8, 10)) <= 15 ? "1" : "2",
+  );
   const [showAllPending, setShowAllPending] = useState(false);
   const language: Language = data.language;
   const t = (key: TextKey) => (language === "zh" ? zh[key] : en[key]);
@@ -156,6 +158,26 @@ export default function TeacherApp() {
       target: "feedback",
       icon: <MessageSquare size={20} />,
     });
+  const payPeriodKey = `${month}-${payHalf}`;
+  const halfMonthRecord = data.halfMonthPayroll?.find(
+    (item) =>
+      item.teacherId === teacher?.id &&
+      item.period === payPeriodKey &&
+      item.status !== "待确认",
+  );
+  const jumpToDemoConfirmedPay = () => {
+    const confirmed = (data.halfMonthPayroll ?? [])
+      .filter((item) => item.teacherId === teacher?.id && item.status !== "待确认")
+      .sort((a, b) => b.period.localeCompare(a.period));
+    const latest = confirmed[0];
+    if (latest) {
+      setMonth(latest.period.slice(0, 7));
+      setPayHalf(latest.period.endsWith("-2") ? "2" : "1");
+    } else {
+      setMonth("2026-10");
+      setPayHalf("1");
+    }
+  };
   const unread = notifications.filter((n) => !seen.includes(n.id)).length;
   async function markSeen(...ids: string[]) {
     if (businessMode()) {
@@ -433,7 +455,7 @@ export default function TeacherApp() {
                     className="teacher-prompt"
                     onClick={() => {
                       markSeen(n.id);
-                      if (n.id === "pay" && !businessMode()) setMonth("2026-09");
+                      if (n.id === "pay" && !businessMode()) jumpToDemoConfirmedPay();
                       go(n.target);
                     }}
                   >
@@ -971,18 +993,27 @@ export default function TeacherApp() {
         {view === "pay" && (
           <>
             <MonthSelect value={month} onChange={setMonth} t={t} />
-            {data.settlements?.some(r=>r.teacherId===teacher.id && r.month===month) ?
-              data.settlements.filter(r=>r.teacherId===teacher.id && r.month===month).map(r=><FeatureCard key={r.at} title={language==="en"?"Confirmed earnings":"已确认薪资"}>
-                <strong>PHP {r.lines.reduce((n,l)=>n+(l.teacher||0),0).toFixed(2)}</strong>{r.lines.map((l,i)=><dl className="teacher-payslip-facts" key={i}><dt>{language==="en"?"Source":"来源"}</dt><dd>{l.source}</dd><dt>{language==="en"?"Pay item":"计薪项目"}</dt><dd>{l.label}</dd><dt>{language==="en"?"Amount":"金额"}</dt><dd>PHP {l.teacher?.toFixed(2)}</dd></dl>)}</FeatureCard>) :
+            <div className="teacher-language" role="group" aria-label={t("month")}>
+              <button
+                type="button"
+                className={payHalf === "1" ? "active" : ""}
+                onClick={() => setPayHalf("1")}
+              >
+                {t("firstHalf")}
+              </button>
+              <button
+                type="button"
+                className={payHalf === "2" ? "active" : ""}
+                onClick={() => setPayHalf("2")}
+              >
+                {t("secondHalf")}
+              </button>
+            </div>
             <PayContent
-              pay={(() => { const hasOfficeTerms = data.payTerms?.some(t => t.teacherId === teacher.id && t.month === month); const record = data.payroll.find((p) => p.teacherId === teacher.id && p.month === month); return !hasOfficeTerms && record ? payrollBreakdown(data, record.id) : undefined; })()}
-              payroll={data.payroll.find(
-                (p) => p.teacherId === teacher.id && p.month === month,
-              )}
+              record={halfMonthRecord}
               t={t}
-              findStudent={findStudent}
               onFeedback={() => go("feedback")}
-            />}
+            />
           </>
         )}
         {view === "messages" && (
@@ -1002,7 +1033,7 @@ export default function TeacherApp() {
                 className={`teacher-message teacher-card ${seen.includes(n.id) ? "" : "teacher-message-unread"}`}
                 onClick={() => {
                   markSeen(n.id);
-                  if (n.id === "pay" && !businessMode()) setMonth("2026-09");
+                  if (n.id === "pay" && !businessMode()) jumpToDemoConfirmedPay();
                   go(n.target);
                 }}
               >

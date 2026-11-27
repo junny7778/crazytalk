@@ -2,6 +2,7 @@ import type { Cell, Worksheet } from "exceljs";
 import {
   emptyStudentProfile,
   splitRosterName,
+  serviceStatusForOrder,
   studentOrganization,
   type Student,
   type DemoState,
@@ -26,6 +27,8 @@ export const rosterHeaders = [
   "每周固定课节数",
   "开始上课时间",
   "总课时",
+  "剩余课时",
+  "共享课包编号",
   "起始教材",
   "性别",
   "年龄",
@@ -101,7 +104,7 @@ export function parseCustomerRoster(sheet: Worksheet, data: DemoState) {
     if (match) positions.set(match, i);
   }
   if (!positions.has("队别") || !positions.has("套餐共用")) return null;
-  const missing = rosterHeaders.filter((h) => !positions.has(h));
+  const missing = rosterHeaders.filter((h) => !["剩余课时", "共享课包编号"].includes(h) && !positions.has(h));
   if (missing.length)
     throw new Error("新版学生信息表缺少字段：" + missing.join("、"));
   const rows: StudentProfileInput[] = [],
@@ -148,6 +151,8 @@ export function parseCustomerRoster(sheet: Worksheet, data: DemoState) {
       ...(flat && row.getCell(1).text
         ? { importStudentId: row.getCell(1).text.trim() }
         : {}),
+      openingBalance: get("剩余课时") ? Number(get("剩余课时")) : undefined,
+      openingGroup: get("共享课包编号") || undefined,
       roster: { key, fields, row: n },
       name, chineseName, englishName,
       owner: get("教务"),
@@ -156,15 +161,7 @@ export function parseCustomerRoster(sheet: Worksheet, data: DemoState) {
       teacherId:
         tutors.get(teacher.replace(/^T\.\s*/i, "").toLowerCase()) || "",
       orderStatus: status,
-      status: status.includes("退费")
-        ? "退费"
-        : status.includes("停课")
-          ? "停课"
-          : status.includes("结课")
-            ? "结课"
-            : status === "已开课"
-              ? "在读"
-              : "待排课",
+      status: serviceStatusForOrder(status),
       totalUnits: /^\d+(\.\d+)?$/.test(total) ? Number(total) : null,
       material: get("起始教材"),
       scheduleText: get("上课时间"),
@@ -189,6 +186,7 @@ export function rosterValues(
   data: DemoState,
 ): Record<string, string | number> {
   const raw = s.roster?.fields ?? {};
+  const sharedOrder = data.orders?.find(o => (o.openingGroup || o.studentIds.length > 1) && o.studentIds.includes(s.id));
   const org = studentOrganization(data.accounts, s.owner, s.roster, s.ownerAccountId);
   return {
     ...raw,
@@ -205,6 +203,8 @@ export function rosterValues(
     上课时间: s.scheduleText,
     每周固定课节数: s.frequencyText,
     开始上课时间: s.firstLessonDate,
+    剩余课时: s.balance,
+    共享课包编号: sharedOrder?.openingGroup ?? sharedOrder?.id ?? "",
     总课时:
       s.totalUnits ??
       (raw["总课时"] && !/^\d+(\.\d+)?$/.test(raw["总课时"])

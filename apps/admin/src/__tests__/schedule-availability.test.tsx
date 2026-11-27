@@ -17,7 +17,7 @@ import {
   demoRepository,
   DEMO_STORAGE_KEY,
 } from "../../../../packages/shared/src/repository";
-import { clickSchedule, startTeacherStudent, addCalendarLesson } from "./schedulingTestActions";
+import { clickSchedule, selectStudentCard, addCalendarLesson } from "./schedulingTestActions";
 import Schedule from "../pages/Schedule";
 
 function mount(path = "/schedule?teacher=t1&date=2026-11-20") {
@@ -92,16 +92,15 @@ describe("可用时间与临时排课", () => {
     data.leaves = [];
     mount();
     await clickSchedule("为该老师排课");
-    await startTeacherStudent(student.name);
+
     const outside = screen.getByRole("button", { name: /2026-11-20 19:00 不可安排/ });
     expect(outside.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(outside);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("button", { name: "预览排课" }).hasAttribute("disabled")).toBe(true);
-    await addCalendarLesson("2026-11-20", "16:35");
-    await clickSchedule("预览排课");
+    expect(screen.queryByRole("button", { name: "确认时段" })).toBeNull();
+    await clickSchedule(/2026-11-20 16:35 可排课/);await clickSchedule("确认时段");await selectStudentCard(student.name);
     expect(demoRepository.read().lessons).toHaveLength(0);
-    await clickSchedule("确认排课");
+    await clickSchedule("确定排课");
     expect(demoRepository.read().lessons).toMatchObject([{
       date: "2026-11-20", time: "16:35", studentId: student.id,
       teacherId: teacher.id, kind: "临时课", status: "未开始",

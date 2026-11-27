@@ -41,7 +41,6 @@ export function refreshPackageBalances(data: DemoState) {
     const balance = balances.get(student.id);
     if (balance !== undefined) {
       student.balance = balance;
-      student.balanceKnown = true;
     }
   }
 }
@@ -56,7 +55,6 @@ export function migratePackageBalances(data: DemoState) {
     );
     for (const student of data.students) {
       if (
-        student.balanceKnown &&
         (student.balance !== 0 || hasHistory.has(student.id))
       )
         createOpeningPackage(data, student, student.balance);
@@ -171,8 +169,6 @@ export function schedulingAccountIssue(data: DemoState, id: string) {
 // Imported balances may repeat the same household balance on multiple student rows.
 export function accountBalanceReviewIssue(data: DemoState, members: string[]) {
   const sources = (data.orders ?? []).filter(order => order.studentIds.some(id => members.includes(id)));
-  if (members.some(id => data.students.some(student => student.id === id && student.roster && !student.balanceKnown)))
-    return "历史学员余额待核实，请先核实历史余额再关联共享账号";
   if (sources.length > 1 && sources.some(order => order.kind === "期初余额" && order.studentIds.some(id => data.students.some(student => student.id === id && student.roster))))
     return "存在历史导入的多份余额，可能重复记录家庭余额，请先核实历史余额再合并";
   return "";

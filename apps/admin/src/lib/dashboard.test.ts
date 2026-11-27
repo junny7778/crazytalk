@@ -107,7 +107,7 @@ describe("约课统计", () => {
       lesson({ status: "缺席" }),
       lesson({ date: "2026-10-25" }),
       lesson({ date: "2026-11-02" }),
-    ], "2026-10-26", "2026-11-01");
+    ], "2026-10-26", "2026-11-01", Date.parse("2026-10-31T12:00:00+08:00"));
     expect(result).toEqual({ total: 5, upcoming: 1, completed: 1, pending: 1, absent: 1, cancelled: 1, cancellationRate: 20 });
   });
   it("无约课不显示取消率，非空时保留一位小数", () => {

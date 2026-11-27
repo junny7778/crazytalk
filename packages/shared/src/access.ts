@@ -5,6 +5,8 @@ import {
   permissionGroups,
   superAdminRole,
 } from "./model";
+import type { HalfMonthRecord } from "./halfMonthPayrollSchema";
+import { studentImportMatches } from "./domain";
 import { studentInScope } from "./organization";
 import { sharedBalanceGroup } from "./packageBalances";
 import { withScopedReservations } from "./scheduleCredits";
@@ -38,7 +40,6 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "student.details.update": "student.edit",
   "student.history.update": "student.edit",
   "student.import": "student.import",
-  "student.balance.open": "credit.add",
   "lesson.attendance": "classin.manage",
   "lesson.incident": "lesson.correct",
   "lesson.notice": "lesson.confirm",
@@ -320,6 +321,7 @@ export function assertCommandAccess(
   if (command.type === "student.import") {
     for (const profile of command.students) {
       if (profile.importStudentId) checkStudent(profile.importStudentId);
+      if (profile.openingGroup && !studentImportMatches(state.students, profile).length) state.orders?.find(o => o.openingGroup === profile.openingGroup)?.studentIds.forEach(checkStudent);
       checkProfile(profile);
     }
   }
@@ -449,6 +451,38 @@ export function assertCommandAccess(
   }
 }
 
+export function redactHalfMonthForTeacher(
+  record: HalfMonthRecord,
+): HalfMonthRecord {
+  return {
+    teacherId: record.teacherId,
+    period: record.period,
+    status: record.status,
+    adjustments: record.adjustments.filter((adj) => adj.side === "teacher"),
+    verifiedRates: undefined,
+    networkPay: undefined,
+    decisions: undefined,
+    seriousComplaints: undefined,
+    snapshot: record.snapshot && {
+      ...record.snapshot,
+      officeRate: undefined,
+      rows: record.snapshot.rows
+        .filter(
+          (row) =>
+            !(row.category === "人工调整" && row.teacher === 0) &&
+            row.category !== "等待" &&
+            row.category !== "待核",
+        )
+        .map((row) => ({
+          ...row,
+          office: 0,
+          officeUnitPrice: undefined,
+          pendingRates: row.pendingRates?.filter((side) => side !== "office"),
+        })),
+    },
+  };
+}
+
 export function scopeState(
   state: DemoState,
   identity: BusinessIdentity,
@@ -509,7 +543,6 @@ export function scopeState(
             email: "",
             roster: undefined,
             balance: 0,
-            balanceKnown: false,
             totalUnits: null,
             purchaseDate: "",
             renewalStatus: "",
@@ -591,8 +624,17 @@ export function scopeState(
         ? item.teacherId === teacherId && item.status !== "待确认"
         : can("payroll.view") && teacherIds.has(item.teacherId),
     ),
-    halfMonthPayroll: can("payroll.view") && can("field.pay_amount") && !teacherId
-      ? state.halfMonthPayroll?.filter(item => teacherIds.has(item.teacherId)) : [],
+    halfMonthPayroll: teacherId
+      ? (state.halfMonthPayroll
+          ?.filter(
+            (item) => item.teacherId === teacherId && item.status !== "待确认",
+          )
+          .map(redactHalfMonthForTeacher) ?? [])
+      : can("payroll.view") && can("field.pay_amount")
+        ? (state.halfMonthPayroll?.filter((item) =>
+            teacherIds.has(item.teacherId),
+          ) ?? [])
+        : [],
     payRuleChanges: canSeePay ? state.payRuleChanges : undefined,
     lessonPayBasis: canSeePay ? Object.fromEntries(Object.entries(state.lessonPayBasis ?? {}).filter(([id]) => lessonIds.has(id))) : undefined,
     officeRateHistory: canSeePay ? Object.fromEntries(Object.entries(state.officeRateHistory ?? {}).filter(([so]) => state.teachers.some(t => t.so === so && teacherIds.has(t.id)))) : undefined,

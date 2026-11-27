@@ -210,7 +210,6 @@ export default function Students() {
     if (view === "low")
       return (
         s.orderStatus === "正常" &&
-        s.balanceKnown &&
         s.balance > 0 &&
         s.balance <= data.rules.lowBalance
       );
@@ -221,7 +220,6 @@ export default function Students() {
           (l) => l.studentId === s.id && l.status === "未开始",
         ) && !["停课", "结课", "退款"].includes(s.orderStatus)
       );
-    if (view === "debt") return s.balanceKnown && s.balance < 0;
     if (view === "paused") return s.orderStatus === "停课";
     if (view === "inactive")
       return (
@@ -381,9 +379,9 @@ export default function Students() {
       {
         id: "balance",
         header: "剩余课时",
-        accessorFn: (s) => (s.balanceKnown ? s.balance : undefined),
+        accessorFn: (s) => s.balance,
         cell: ({ row }) =>
-          row.original.balanceKnown ? `${row.original.balance} 课时` : "未核实",
+          `${row.original.balance} 课时`,
       },
       { id:"team", header:"所属队伍", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster,s.ownerAccountId).team },
       { id:"group", header:"所属组别", accessorFn: s => studentOrganization(data.accounts,s.owner,s.roster,s.ownerAccountId).group },

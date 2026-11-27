@@ -4,6 +4,7 @@ import {
   applyHalfMonthCommand,
   halfMonthStatement,
   payDates,
+  payrollReadiness,
 } from "./halfMonthPayroll";
 import { canAutoSettleLesson } from "./autoLessonSettlement";
 import { defaultPayRules } from "./halfMonthPayrollSchema";
@@ -162,6 +163,9 @@ describe("half-month payroll", () => {
         note: "已核实",
       },
     }));
+    data.lessons[1].incident = undefined;
+    data.lessons[1].teacherAttendance = ["迟到"];
+    data.lessons[1].classInTeacherExceptionMinutes = 10;
     for (const [id, at] of [
       ["24h", "2026-11-01T19:00:00+08:00"],
       ["5d", "2026-10-28T19:00:00+08:00"],
@@ -182,6 +186,9 @@ describe("half-month payroll", () => {
     expect(
       rows.filter((r) => r.category === "扣款").map((r) => r.teacher),
     ).toEqual([-6, -18, -540, -360, -180]);
+    expect(rows.find(r => r.key === "attendance:late-10")).toMatchObject({
+      quantity: 10, quantityUnit: "分钟", teacherUnitPrice: 2, teacher: -18,
+    });
     expect(rows.filter(r => r.title === "迟到或早退").map(r => r.detail)).toEqual([
       "3 分钟 × ₱2 / 分钟", "10 分钟 × ₱2 / 分钟，单节上限 ₱18",
     ]);
@@ -246,7 +253,12 @@ describe("half-month payroll", () => {
       afterPeriod,
     );
     expect(halfMonthStatement(data, teacher, period)).toEqual(before);
-    expect(stateSchema.parse(data).halfMonthPayroll?.[0].status).toBe("已发放");
+    const saved = stateSchema.parse(data).halfMonthPayroll![0];
+    expect(saved.status).toBe("已发放");
+    expect(saved.snapshot?.rows[0]).toMatchObject({
+      quantity: 1, quantityUnit: "课时", teacherUnitPrice: 180, officeUnitPrice: 60, payRatio: 1,
+    });
+    expect(saved.snapshot?.rows[1].quantity).toBeUndefined();
     expect(() =>
       applyHalfMonthCommand(
         data,
@@ -493,9 +505,104 @@ it("最后一天的 OP 保障时段未结束时保留应得金额，结束当刻
   const rows = halfMonthStatement(data, teacher, period, Date.parse(beforeEnd)).rows;
   expect(rows).toContainEqual(expect.objectContaining({key: "op:2026-11-15:19:00", teacher: 360, office: 120}));
   expect(rows).toContainEqual(expect.objectContaining({
-    category: "待核", title: "固定时段尚未结束", detail: "时段结束后可确认工资单",
+    category: "等待", title: "固定时段尚未结束", detail: "时段结束后可确认工资单",
   }));
-  expect(() => applyHalfMonthCommand(data, command, beforeEnd)).toThrow("待核");
+  expect(() => applyHalfMonthCommand(data, command, beforeEnd)).toThrow("等待");
   applyHalfMonthCommand(data, command, "2026-11-15T20:00:00+08:00");
   expect(data.halfMonthPayroll?.[0].status).toBe("已确认");
+});
+
+it("缺单价时保留适用的倍数扣款并复用单价核定，免扣和零倍率课程无扣款", () => {
+  const { data, teacher, lesson } = setup();
+  teacher.rate = 0;
+  const cancel = {
+    ...lesson,
+    status: "已取消" as const,
+    cancellation: {
+      kind: "老师取消",
+      responsibility: "老师",
+      at: "2026-11-02T12:00:00+08:00",
+      waived: false,
+    },
+  };
+  data.lessons = [
+    {
+      ...lesson,
+      id: "absent",
+      attendance: "老师缺席",
+      teacherAttendance: ["缺席"],
+      status: "缺席",
+    },
+    { ...cancel, id: "late-cancel" },
+    {
+      ...cancel,
+      id: "waived",
+      cancellation: { ...cancel.cancellation, waived: true },
+    },
+    {
+      ...cancel,
+      id: "early",
+      cancellation: { ...cancel.cancellation, at: "2026-10-20T12:00:00+08:00" },
+    },
+  ];
+  const rows = () => halfMonthStatement(data, teacher, period).rows;
+  expect(
+    rows()
+      .filter((r) => r.category === "待核")
+      .map((r) => r.key),
+  ).toEqual(["teacher-rate"]);
+  expect(
+    rows()
+      .filter((r) => r.category === "扣款")
+      .map((r) => [r.key, r.detail, r.pendingRates]),
+  ).toEqual([
+    ["attendance:absent", "课时费待核 × 3", ["teacher"]],
+    ["attendance:late-cancel", "课时费待核 × 2", ["teacher"]],
+  ]);
+  data.payRuleChanges = [
+    {
+      at: "2026-10-01T00:00:00+08:00",
+      values: { ...defaultPayRules, shortCancelMultiple: 0 },
+    },
+  ];
+  expect(rows().some((r) => r.key === "attendance:late-cancel")).toBe(false);
+  teacher.rate = 180;
+  expect(rows().find((r) => r.key === "attendance:absent")).toMatchObject({
+    teacher: -540,
+    detail: "课时费 ₱180 × 3",
+  });
+});
+
+it("结算日仅把之前仍缺摘要的课程转为待核，当日课等待到次日零点", () => {
+  const { data, teacher, lesson } = setup();
+  const draft = {
+    ...lesson, status: "待确认" as const,
+    attendance: "无数据" as const, classInAttendanceReceived: false,
+  };
+  data.lessons = [draft, { ...draft, id: "last-day", date: "2026-11-15" }];
+  const confirm = { type: "halfPay.status", status: "已确认", teacherId: teacher.id, period } as const;
+  for (const [timestamp, waiting, review] of [
+    ["2026-11-14T23:59:59+08:00", 2, 0],
+    ["2026-11-15T00:00:00+08:00", 1, 1],
+    ["2026-11-15T19:15:00+08:00", 1, 1],
+    ["2026-11-15T23:59:59+08:00", 1, 1],
+    ["2026-11-16T00:00:00+08:00", 0, 2],
+  ] as const) {
+    const now = Date.parse(timestamp);
+    const rows = halfMonthStatement(data, teacher, period, now).rows;
+    expect(payrollReadiness(rows, period, now)).toEqual({ waiting, review, canConfirm: false });
+    expect(() => applyHalfMonthCommand(data, confirm, timestamp)).toThrow();
+  }
+});
+
+it("结算日的待确认课程收到完整考勤后，本节结束当刻可关账", () => {
+  const { data, teacher, lesson } = setup();
+  data.lessons = [{ ...lesson, date: "2026-11-15", status: "待确认", deducted: false }];
+  const confirm = { type: "halfPay.status", status: "已确认", teacherId: teacher.id, period } as const;
+  const before = "2026-11-15T19:24:59+08:00";
+  const end = "2026-11-15T19:25:00+08:00";
+  expect(() => applyHalfMonthCommand(data, confirm, before)).toThrow("等待");
+  applyHalfMonthCommand(data, confirm, end);
+  const frozen = data.halfMonthPayroll?.find(r => r.teacherId === teacher.id)?.snapshot;
+  expect(frozen?.rows.map(r => [r.teacher, r.office])).toEqual([[180, 60]]);
 });

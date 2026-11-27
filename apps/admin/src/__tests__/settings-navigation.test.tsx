@@ -17,7 +17,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DemoProvider } from "@crazytalk/shared/react";
 import { ToastProvider } from "@crazytalk/ui";
-import { demoRepository } from "../../../../packages/shared/src/repository";
+import { DEMO_STORAGE_KEY, demoRepository } from "../../../../packages/shared/src/repository";
 import App from "../App";
 
 const routers: ReturnType<typeof createMemoryRouter>[] = [];
@@ -561,7 +561,7 @@ describe("反馈分类维护", () => {
     const original = demoRepository.read();
     const history = original.feedback;
     localStorage.setItem(
-      "crazytalk-demo-v1",
+      DEMO_STORAGE_KEY,
       JSON.stringify({
         ...original,
         catalog: [
@@ -581,7 +581,7 @@ describe("反馈分类维护", () => {
     ).toHaveLength(3);
     expect(upgraded.feedback).toEqual(history);
     const persisted = JSON.parse(
-      localStorage.getItem("crazytalk-demo-v1") || "{}",
+      localStorage.getItem(DEMO_STORAGE_KEY) || "{}",
     );
     expect(
       persisted.catalog.find((item: { id: string }) => item.id === "old").name,
@@ -1030,17 +1030,33 @@ it("普通账号可选择全部本队本组，管理员使用全部", async () =
  expect(form.getByRole("combobox", {name:"数据范围"}).textContent).toBe("本组");
 });
 
-it("基础资料提供老师标签库，编辑标准标签保留稳定ID", async () => {
+it("老师标签库仅提供启停操作，并保留标签说明", async () => {
  mount("/settings?tab=basics");
  fireEvent.click(await screen.findByRole("tab", {name:"老师标签"}));
- const library=within(screen.getByLabelText("老师标签库"));
- const row=library.getByText("有亲和力").closest("article")!;
- fireEvent.click(within(row).getByRole("button", {name:"编辑"}));
- const dialog=within(screen.getByRole("dialog", {name:"编辑老师标签"}));
- expect(dialog.getByLabelText("标签释义")).toBeTruthy();
- fireEvent.change(dialog.getByLabelText("名称"),{target:{value:"亲和力标签测试"}});
- fireEvent.click(dialog.getByRole("button", {name:"保存"}));
- await waitFor(()=>expect(demoRepository.read().catalog.find(t=>t.id==="tt-35")?.name).toBe("亲和力标签测试"));
+ const library=within(screen.getByRole("table", {name:"老师标签库"}));
+ expect(library.getAllByRole("columnheader").map(header => header.textContent)).toEqual(
+   ["标签类型", "标签", "含义", "具体表现", "匹配建议", "状态", "操作"],
+ );
+ const row=library.getByText("有亲和力").closest("tr")!;
+ const tag=demoRepository.read().catalog.find(entry => entry.id === "tt-35")!;
+ expect(screen.queryByRole("button", {name:"新增"})).toBeNull();
+ expect(library.queryByRole("button", {name:"编辑"})).toBeNull();
+ expect(within(row).getByRole("cell", {name:"有亲和力"})).toBeTruthy();
+ for (const cell of [tag.tagMeaning, tag.tagExample, tag.tagAdvice]) {
+   if (cell) expect(within(row).getByRole("cell", {name:cell})).toBeTruthy();
+ }
+ fireEvent.click(within(row).getByRole("button", {name:"停用"}));
+ await waitFor(() => {
+   expect(within(row).getByText("已停用")).toBeTruthy();
+   expect(demoRepository.read().catalog.find(entry => entry.id === tag.id)).toEqual({...tag, enabled:false});
+ });
+ fireEvent.click(within(row).getByRole("button", {name:"启用"}));
+ await waitFor(() => {
+   expect(within(row).getByRole("button", {name:"停用"})).toBeTruthy();
+   expect(demoRepository.read().catalog.find(entry => entry.id === tag.id)).toEqual(tag);
+ });
+ fireEvent.click(screen.getByRole("tab", {name:"教材"}));
+ expect(screen.getByRole("button", {name:"新增"})).toBeTruthy();
 });
 
 it.each(["ops", "tm"])("%s 的 ClassIn 关联独立提交，不保存账号编辑草稿", async (roleId) => {

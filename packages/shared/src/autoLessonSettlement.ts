@@ -28,6 +28,7 @@ export function autoSettleLessons(
   now = Date.now(),
 ): DemoState {
   const balances = new Map(input.orders?.map(order => [order.id, order.balance]));
+  const individualBalances = new Map(input.students.map(s => [s.id, s.balance]));
   const batches: { units: number; ids: string[] }[] = [];
   for (const lesson of input.lessons) {
     if (!canAutoSettleLesson(lesson, now)) continue;
@@ -39,9 +40,10 @@ export function autoSettleLessons(
       const available = balances.get(order.id) ?? 0;
       if (available < units) continue;
       balances.set(order.id, available - units);
-    } else if (lesson.orderId || input.packageBalanceVersion || memberOrders.length ||
-      !input.students.some(student => student.id === lesson.studentId && student.balanceKnown)) {
-      continue;
+    } else {
+      const available = individualBalances.get(lesson.studentId) ?? 0;
+      if (lesson.orderId || memberOrders.length || available < units) continue;
+      individualBalances.set(lesson.studentId, available - units);
     }
     const batch = batches.at(-1);
     if (batch?.units === units) batch.ids.push(lesson.id);

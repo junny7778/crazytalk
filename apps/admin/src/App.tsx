@@ -1,3 +1,5 @@
+import { operationsNow } from "@crazytalk/shared";
+import { lessonRecordStatus } from "./lib/lessonStatus";
 import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { useSurveyPrefill } from "./lib/surveyPrefill";
 import AccountPasswordModal from "./components/AccountPasswordModal";
@@ -170,7 +172,8 @@ export default function App() {
         <TeacherApp />
       </Suspense>
     );
-  const pending = data.lessons.filter((l) => l.status === "待确认").length;
+  const now = operationsNow();
+  const pending = data.lessons.filter((l) => lessonRecordStatus(l, now) === "待确认").length;
   const feedbackCount = data.feedback.filter(
     (f) => f.status !== "已完成",
   ).length;
@@ -482,6 +485,10 @@ export default function App() {
               />
               <Route
                 path="/payroll"
+                element={guard("payroll.view", <Payroll />)}
+              />
+              <Route
+                path="/payroll/:period/:teacherId"
                 element={guard("payroll.view", <Payroll />)}
               />
               <Route

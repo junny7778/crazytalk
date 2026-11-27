@@ -1,3 +1,4 @@
+import { RemainingCreditsField } from "./RemainingCreditsField";
 import { schedulingBookingIssue, teacherSchedulingAccountIssue } from "@crazytalk/shared";
 import { SchedulingAccountNotice, TeacherSchedulingAccountNotice } from "./SchedulingAccountNotice";
 import { useCallback, useMemo, useState } from "react";
@@ -12,7 +13,6 @@ import {
   type ScheduleIntent,
 } from "@crazytalk/shared";
 import { Avatar, Button, Field, Modal, SearchInput, Select, useToast } from "@crazytalk/ui";
-import MaterialPicker from "../MaterialPicker";
 import { FlexStudentCalendar } from "./FlexStudentCalendar";
 
 type Time = { date: string; time: string };
@@ -51,15 +51,12 @@ export function CustomSchedulingPanel({
   const [pickedTimes, setPickedTimes] = useState(initialTimes);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [duration, setDuration] = useState(25);
+  const [adjusting, setAdjusting] = useState(false);
+  const [manualUnits, setManualUnits] = useState("");
+  const teacherReview = !!teacher && !!student && !adjusting;
   const [repeatWeeks, setRepeatWeeks] = useState(1);
-  const [materialIds, setMaterialIds] = useState(
-    () =>
-      student
-        ? studentMaterials(data, student)
-            .slice(0, 1)
-            .map((c) => c.id)
-        : [],
-  );
+  const books = student ? studentMaterials(data, student) : [];
+  const [materialId, setMaterialId] = useState(() => books[0]?.id ?? "");
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
   const [busy, setBusy] = useState(false);
@@ -95,14 +92,13 @@ export function CustomSchedulingPanel({
   }
   function selectStudent(id: string) {
     setPickerOpen(false);
+    setAdjusting(false);
     setStudent(id);
     const next = data.students.find((s) => s.id === id)!;
-    setMaterialIds(
-      studentMaterials(data, next)
-        .filter((c) => !teacher || teacher.materialIds?.includes(c.id))
-        .slice(0, 1)
-        .map((c) => c.id),
-    );
+    const common = studentMaterials(data, next)
+        .filter((c) => !teacher || teacher.materialIds?.includes(c.id));
+    if (id !== studentId || !common.some(c => materialId === c.id))
+      setMaterialId(common[0]?.id ?? "");
   }
   const intent = useMemo<ScheduleIntent>(
     () => ({
@@ -112,7 +108,7 @@ export function CustomSchedulingPanel({
       duration,
       frequency: student?.scheduleIntent?.frequency || 1,
       windows: student?.scheduleIntent?.windows || [],
-      materialIds,
+      materialIds: materialId ? [materialId] : [],
     }),
     [
       time,
@@ -120,11 +116,11 @@ export function CustomSchedulingPanel({
       repeatWeeks,
       duration,
       student?.scheduleIntent,
-      materialIds,
+      materialId,
     ],
   );
-  const choosingStudent = !!teacher && pickerOpen && !student;
-  const units = scheduleUnits(duration);
+  const choosingStudent = !!teacher && pickerOpen;
+  const units = scheduleUnits(duration, Number(manualUnits) || undefined);
   const candidates = useMemo(() => {
     if (!choosingStudent || !teacher) return [];
     return data.students
@@ -134,8 +130,7 @@ export function CustomSchedulingPanel({
         if (schedulingBookingIssue(data, s.id, [teacher.id])) return [];
         const common = studentMaterials(data, s).filter(c => teacher.materialIds?.includes(c.id));
         if (!common.length) return [];
-        // Custom durations have their deduction entered later in the booking flow.
-        const credits = getScheduleCredits(data, s.id, units === undefined ? 0 : pickedTimes.length, units ?? 1);
+        const credits = getScheduleCredits(data, s.id, pickedTimes.length, units ?? NaN);
         if (credits.available <= 0 || credits.error) return [];
         if (pickedTimes.some(slot => isAvailable(data, teacher.id, slot.date, slot.time, duration, s.id, undefined, false, true).length)) return [];
 
@@ -152,17 +147,27 @@ export function CustomSchedulingPanel({
       {student && (
         <SchedulingAccountNotice key={student.id} student={student} />
       )}
-      {student && !teacher && data.teachers.filter(t=>t.status!=="已离职" && teacherSchedulingAccountIssue(t) && materialIds.some(id=>t.materialIds?.includes(id))).map(t=><div key={t.id} className="stack"><button className="flex-teacher-choice" disabled>{t.name} · 未绑定 ClassIn</button><TeacherSchedulingAccountNotice teacher={t}/></div>)}
-      <fieldset
+      {student && !teacher && data.teachers.filter(t=>t.status!=="已离职" && teacherSchedulingAccountIssue(t) && t.materialIds?.includes(materialId)).map(t=><div key={t.id} className="stack"><button className="flex-teacher-choice" disabled>{t.name} · 未绑定 ClassIn</button><TeacherSchedulingAccountNotice teacher={t}/></div>)}
+      {!teacherReview && <fieldset
         disabled={busy || preview || !can("schedule.create")}
         className="schedule-custom-settings"
       >
-        <div className={teacher ? "row wrap schedule-teacher-fields" : "form-grid"}>
+        {!teacher && <h4>基础信息</h4>}
+        <div className={teacher ? "row wrap schedule-teacher-fields" : "form-grid intent-settings-grid"}>
+          {student && !teacher && <RemainingCreditsField studentId={student.id} />}
+          {student && !teacher && (
+            <Field label="本次教材">
+              <Select size="form" searchable={false} value={materialId} disabled={!books.length}
+                onValueChange={id => change(() => setMaterialId(id))}>
+                {books.map(book => <option key={book.id} value={book.id}>{book.name}</option>)}
+              </Select>
+            </Field>
+          )}
           <Field label="每节时长">
             <Select
               value={duration}
               onValueChange={(value) =>
-                change(() => setDuration(Number(value)))
+                change(() => { setDuration(Number(value)); setManualUnits(""); })
               }
             >
               {[25, 50, 55, 120].map((n) => (
@@ -172,6 +177,7 @@ export function CustomSchedulingPanel({
               ))}
             </Select>
           </Field>
+          {teacher && scheduleUnits(duration) === undefined && <Field label="每节预计扣课数" required><input type="number" min="0.01" step="any" value={manualUnits} onChange={e => setManualUnits(e.target.value)} /></Field>}
           {!teacher && <Field label="重复安排">
             <Select
               value={repeatWeeks}
@@ -191,13 +197,13 @@ export function CustomSchedulingPanel({
               placeholder="请选择可授教材"
               disabled={busy || savingMaterials || preview || !can("teacher.edit")}
               onValueChange={ids => {
-                const removesSelected = !!student && materialIds.some(id => !ids.includes(id));
+                const removesSelected = !!student && !!materialId && !ids.includes(materialId);
                 const save = async () => {
                   setSavingMaterials(true);
                   try {
                     await act({type: "teacher.save", teacher: {...teacher, materialIds: ids}});
                     if (removesSelected) {
-                      setMaterialIds(materialIds.filter(id => ids.includes(id)));
+                      setMaterialId("");
                       setTime(undefined);
                       setPickedTimes([]);
                       setRevision(v => v + 1);
@@ -218,35 +224,42 @@ export function CustomSchedulingPanel({
             </Select>
           </Field>}
         </div>
-        {student && (
-          <Field label="本次教材">
-            <MaterialPicker
-              label="本次教材"
-              catalog={studentMaterials(data, student).filter(
-                (c) => !teacher || teacher.materialIds?.includes(c.id),
-              )}
-              value={materialIds}
-              onChange={(ids) => change(() => setMaterialIds(ids))}
-            />
-          </Field>
-        )}
-        {student && !materialIds.length && (
+        {student && !materialId && (
           <p role="alert">
             请选择本次教材；未登记教材时请通过学员的编辑资料补充。
           </p>
         )}
-      </fieldset>
-      {teacher && student && <Button variant="ghost" disabled={busy || preview} onClick={() => change(() => {
-        setStudent("");
-        setTime(undefined);
-        setPickedTimes([]);
-      })}>{student.name} · 更换学员</Button>}
+      </fieldset>}
+      {teacherReview && student && teacher && <>
+        <div className="row wrap schedule-review-fields">
+          <Field label="教材">
+            <Select size="form" searchable={false} value={materialId} onValueChange={setMaterialId}
+              disabled={busy || preview || !can("schedule.create")}>
+              {studentMaterials(data, student).filter(c => teacher.materialIds?.includes(c.id)).map(c =>
+                <option key={c.id} value={c.id}>{c.name}</option>
+              )}
+            </Select>
+          </Field>
+          <Field label="学员">
+            <div className="row">
+              <input disabled value={student.name}/>
+              <Button size="sm" variant="ghost" disabled={busy || preview} onClick={() => {
+                setPickerOpen(true);
+                setQuery("");
+                setVisibleCount(30);
+              }}>更换学员</Button>
+            </div>
+          </Field>
+        </div>
+      </>}
       <div className={teacher ? "schedule-custom-layout" : ""}>
         <div>
-          {(!student || materialIds.length > 0) && (
+          {(!student || !!materialId) && (
             <FlexStudentCalendar
-              key={`${studentId}-${revision}`}
-              studentId={studentId}
+              key={`${studentId}-${adjusting}-${revision}`}
+              studentId={adjusting ? "" : studentId}
+              teacherUnits={teacher ? units : undefined}
+              onAdjustTeacherTimes={teacherReview ? () => setAdjusting(true) : undefined}
               teacherId={teacherId}
               initialTime={time}
               initialTimes={pickedTimes}
@@ -311,7 +324,7 @@ export function CustomSchedulingPanel({
           </Modal>
         )}
       </div>
-      {(!student || !materialIds.length) && (
+      {(!student || !materialId) && (
         <Button onClick={onClose}>返回概况</Button>
       )}
       {pending && (

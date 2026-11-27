@@ -73,6 +73,7 @@ function mount(path = "/students") {
   );
 }
 beforeEach(() => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-31T00:00:00+08:00"));
   vi.stubGlobal(
     "AbortController",
     class {
@@ -412,6 +413,8 @@ describe("数据看板概览与下钻", () => {
     expect(screen.getByText(/全部项目 · 未开始/)).toBeTruthy();
   });
   it("展示四张业务卡片和四个分析区块，不展示首页学员表格", async () => {
+    const absence = demoRepository.read().lessons.find(l => l.attendance === "学员缺席")!;
+    Object.assign(absence, { classInAttendanceReceived: true, teacherAttendance: ["正常"], studentAttendance: ["缺席"] });
     mount("/");
     const cards = await screen.findByRole("region", { name: "基础数据" });
     expect(within(cards).getAllByRole("button")).toHaveLength(4);

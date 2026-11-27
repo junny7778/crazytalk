@@ -1,3 +1,4 @@
+import { DEMO_DATE, DEMO_NOW, isDemoClockEnabled, operationsNow } from "./clock";
 import { halfMonthRecord, payRuleValues, type HalfMonthCommand } from "./halfMonthPayrollSchema";
 import { matchingSurveyAnswers, studentSurveyPrefillSchema } from "./studentSurvey";
 import { z } from "zod";
@@ -7,7 +8,12 @@ export const scheduleIntentSchema = z
     materialIds: z.array(z.string()).optional(),
     priority: z.enum(["teacher", "time"]).optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    weeks: z.number().int().min(1).max(52),
+    weeks: z.number().int().positive(),
+    unlimited: z.boolean().optional(),
+    targetLessons: z.number().int().positive().optional(),
+    dailyLimit: z.number().int().min(1).max(14).optional(),
+    unitsPerLesson: z.number().min(0.01).finite().optional(),
+    planId: z.string().optional(),
     duration: z
       .number()
       .refine(
@@ -23,6 +29,8 @@ export const scheduleIntentSchema = z
       }),
     ),
   })
+  .refine(value => value.unlimited || value.weeks <= 52, {message:"排课周期不能超过52周"})
+  .refine(value => !value.dailyLimit || value.dailyLimit <= value.frequency, {message:"每日节数不能超过每周节数"})
   .refine((value) => value.mode === "flex" || value.windows.length > 0, {
     message: "请选择固定上课意向时间",
     path: ["windows"],
@@ -58,7 +66,7 @@ export const studentSchema = z.object({
   materialIds: z.array(z.string()).optional(),
   unit: z.string(),
   teacherId: z.string(),
-  balance: z.number(),
+  balance: z.number().finite().nonnegative(),
   preferences: z.string(),
   scheduleIntent: scheduleIntentSchema.nullable().optional(),
   goal: z.string(),
@@ -85,7 +93,6 @@ export const studentSchema = z.object({
   firstChangedTeacher: z.string().default(""),
   secondChangedTeacher: z.string().default(""),
   totalUnits: z.number().nonnegative().nullable().default(null),
-  balanceKnown: z.boolean().default(true),
   monthlyRecords: z
     .array(
       z.object({
@@ -126,10 +133,11 @@ export const studentProfileSchema = studentSchema
     createdAt: true,
     lastLesson: true,
     teacherChanges: true,
-    balanceKnown: true,
     serviceStopResults: true,
   })
   .extend({
+    openingBalance: z.number().finite().nonnegative("剩余课时不能为负数").optional(),
+    openingGroup: z.string().trim().optional(),
     importStudentId: z.string().optional(),
     name: z.string().trim().min(1, "请填写学员姓名"),
     phone: z
@@ -323,7 +331,10 @@ export const teacherSchema = z.preprocess(
 export const lessonSchema = z.object({
   cancellation:z.object({kind:z.string(),at:z.string(),responsibility:z.string(),waived:z.boolean()}).optional(),
   requiresScreenshot:z.boolean().optional(),
+  classInTeacherExceptionMinutes: z.number().nonnegative().optional(),
   classInAttendanceReceived: z.boolean().optional(),
+  classInAttendanceIssue: z.string().optional(),
+  classInSummaryAt: z.number().optional(),
   teacherRescheduleDates: z.array(z.string()).optional(),
   incident:z.object({networkOutcome:z.enum(["正常完课","取消"]).optional(),minutes:z.number().nonnegative().optional(),reason:z.string(),note:z.string(),at:z.string(),operator:z.string()}).optional(),
   attendanceMessages: z.object({ 学员: z.string().optional(), 老师: z.string().optional() }).optional(),
@@ -334,6 +345,7 @@ export const lessonSchema = z.object({
   id: z.string(),
   studentId: z.string(),
   teacherId: z.string(),
+  schedulePlanId: z.string().optional(),
   scheduleExtra: z.boolean().optional(),
   fixedOrigin: z.object({ date: z.string(), time: z.string() }).optional(),
   date: z.string(),
@@ -679,7 +691,7 @@ export const stateSchema = z.object({
   studentIdAliases: z.record(z.string()).optional(),
   classInAccounts: z.array(z.object({id:z.string(), phone:z.string(), uid:z.string(), studentIds:z.array(z.string())})).optional(),
   packageBalanceVersion: z.union([z.literal(1), z.literal(2)]).optional(),
-  orders: z.array(z.object({ id:z.string(), classInAccountId:z.string().optional(), purchaseStudentIds:z.array(z.string()).optional(), memberCount:z.number().optional(), hiddenReservations:z.object({ units:z.number(), unknownCount:z.number() }).optional(), studentIds:z.array(z.string()), units:z.number(), balance:z.number(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
+  orders: z.array(z.object({ id:z.string(), openingGroup:z.string().optional(), classInAccountId:z.string().optional(), purchaseStudentIds:z.array(z.string()).optional(), memberCount:z.number().optional(), hiddenReservations:z.object({ units:z.number(), unknownCount:z.number() }).optional(), studentIds:z.array(z.string()), units:z.number(), balance:z.number().finite().nonnegative(), date:z.string(), kind:z.string(), channel:z.string(), project:z.string() })).optional(),
   slotLocks:z.array(z.object({studentId:z.string(),teacherId:z.string(),date:z.string(),time:z.string(),duration:z.number().positive(),operator:z.string(),expiresAt:z.string()})).optional(),
   halfMonthPayroll: z.array(halfMonthRecord).optional(),
   officePayRates: z.record(z.string(), z.number().nonnegative()).optional(),
@@ -720,7 +732,7 @@ export type Lesson = z.infer<typeof lessonSchema>;
 export function canSubmitLessonReport(lesson: Lesson): boolean {
   return (
     (lesson.date <= DEMO_TODAY && ["待确认", "已完成", "缺席"].includes(lesson.status))
-    || (!!lesson.requiresScreenshot && lesson.status==="未开始" && Date.parse(lesson.date+"T"+lesson.time+":00+08:00")+lesson.duration*60000<=Date.now())
+    || (!!lesson.requiresScreenshot && lesson.status==="未开始" && Date.parse(lesson.date+"T"+lesson.time+":00+08:00")+lesson.duration*60000<=operationsNow())
   );
 }
 export type Feedback = z.infer<typeof feedbackSchema>;
@@ -744,9 +756,11 @@ export function studentOrderStatus(status: Student["status"]): string {
       : status;
 }
 export function serviceStatusForOrder(orderStatus: string): Student["status"] {
+  orderStatus = orderStatus.split(/[（(]/, 1)[0].trim();
   if (orderStatus === "退款" || orderStatus === "退费") return "退费";
+  if (orderStatus === "已结课") return "结课";
   if (orderStatus === "停课" || orderStatus === "结课") return orderStatus;
-  return orderStatus === "正常" || orderStatus === "在读" ? "在读" : "待排课";
+  return ["正常", "已开课", "在读"].includes(orderStatus) ? "在读" : "待排课";
 }
 export type Command = { operator?: string } & (
   | {
@@ -795,7 +809,7 @@ export type Command = { operator?: string } & (
       studentId: string;
       intent: ScheduleIntent;
     }
-  | {type:"slot.lock";studentId:string;slots:{teacherId:string;date:string;time:string}[];duration:number;expiresAt:string}
+  | {type:"slot.lock";manual?:boolean;studentId:string;slots:{teacherId:string;date:string;time:string}[];duration:number;expiresAt:string}
   | {type:"lesson.incident";minutes?:number;id:string;reason:string;note:string}
   | {type:"lesson.attendance";id:string;person:"学员"|"老师";result:"未到堂"|"到堂"|"缺席";at:string;operator?:string}
   | {type:"lesson.notice";id:string;sent:boolean;error:string}
@@ -814,12 +828,6 @@ export type Command = { operator?: string } & (
       batchId?: string;
       students: StudentProfileInput[];
       mode: "skip" | "update";
-    }
-  | {
-      type: "student.balance.open";
-      id: string;
-      balance: number;
-      reason: string;
     }
   | {
       type: "student.create";
@@ -880,6 +888,7 @@ export type Command = { operator?: string } & (
     }
   | {
       type: "lesson.schedule";
+      schedulePlanId?: string;
       scheduleRevision?: number;
       selectionMode?: "recommended" | "manual";
       schedulingMode?: "flex";
@@ -1044,9 +1053,9 @@ export type Command = { operator?: string } & (
   | { type: "language.set"; language: "zh" | "en" }
 );
 // Demo keeps its reference date. Business entry points refresh this before reading or writing.
-export let DEMO_TODAY = "2026-10-31";
+export let DEMO_TODAY = DEMO_DATE;
 let businessNow: number | undefined;
-export function schedulingNow() { return businessNow ?? Date.parse(DEMO_TODAY + "T00:00:00+08:00"); }
+export function schedulingNow() { return businessNow ?? (isDemoClockEnabled() ? DEMO_NOW : Date.parse(DEMO_TODAY + "T00:00:00+08:00")); }
 export function configureBusinessClock(now = Date.now()) {
   businessNow = now;
   DEMO_TODAY = new Date(now + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);

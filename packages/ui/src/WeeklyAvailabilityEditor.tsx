@@ -43,6 +43,7 @@ export function WeeklyAvailabilityEditor({
   disabled = false,
   language = "zh",
   heading,
+  studentIntent = false,
 }: {
   value: AvailabilityValue;
   onChange: (value: AvailabilityValue) => void;
@@ -50,6 +51,7 @@ export function WeeklyAvailabilityEditor({
   language?: "zh" | "en";
   legacy?: boolean;
   heading?: string;
+  studentIntent?: boolean;
 }) {
   const remembered = useRef<Record<number, AvailabilityValue["availability"]>>(
     {},
@@ -180,7 +182,7 @@ export function WeeklyAvailabilityEditor({
       <div
         className="weekly-availability-weekdays"
         role="group"
-        aria-label={english ? "Teaching days" : "每周授课日"}
+        aria-label={studentIntent ? "每周上课日" : english ? "Teaching days" : "每周授课日"}
       >
         {week.map((day) => {
           const ranges = value.availability.filter(
@@ -242,7 +244,7 @@ export function WeeklyAvailabilityEditor({
           <small>
             {english
               ? "Replaces existing ranges on selected days. Changes take effect after saving."
-              : "将覆盖所选日期的已有时段，保存可用时间后生效。"}
+              : studentIntent ? "将覆盖所选日期的已有时段，生成排课方案后保存。" : "将覆盖所选日期的已有时段，保存可用时间后生效。"}
           </small>
           {copyHasExactTime && <p role="alert">{english ? "Choose whole or half hours for this day before copying." : "请先将当天的起止时间调整为整点或半点，再复制。"}</p>}
           <div className="row">
@@ -297,7 +299,7 @@ export function WeeklyAvailabilityEditor({
       )}
       {!value.availability.length && (
         <p className="weekly-availability-empty">
-          {english
+          {studentIntent ? "请先选择学员的意向上课日。" : english
             ? disabled
               ? "Usual teaching hours have not been set. Please contact your coordinator."
               : "Usual teaching hours have not been set. Select teaching days to get started."
@@ -436,7 +438,7 @@ export function WeeklyAvailabilityEditor({
           })}
       </div>
       </>}
-      <div className="weekly-availability-meta">
+      {!studentIntent && <div className="weekly-availability-meta">
         <label>
           {english ? "Notes (optional)" : "时间说明（选填）"}
           <textarea
@@ -453,7 +455,7 @@ export function WeeklyAvailabilityEditor({
             }
           />
         </label>
-      </div>
+      </div>}
     </div>
   );
 }

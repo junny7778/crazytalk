@@ -23,7 +23,6 @@ export function applyBusinessEffects(state: DemoState, command: Command) {
   refreshPackageBalances(state);
   for (const student of state.students.filter(item => members.has(item.id))) {
     student.balance = 0;
-    student.balanceKnown = true;
     if (!changed.has(student.id)) continue;
     student.serviceStopResults = [
       { step: "固定安排", status: "已完成", detail: "账号共享课时已清零，所有关联学员停止继续排课，历史安排保留。" },

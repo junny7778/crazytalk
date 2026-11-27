@@ -28,7 +28,7 @@ it("同手机号新增两个独立学员，重放批次不再发号", () => {
   const row = {
     ...emptyStudentProfile(),
     importStudentId: "",
-    name: "甲",
+    openingBalance:0, orderStatus:"正常", name: "甲",
     phone: "13900001234",
   };
   const command = {

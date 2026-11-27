@@ -134,7 +134,7 @@ describe("学员资料与历史分离 V4", () => {
         demoRepository
           .read()
           .students.find((item) => item.name === "新资料建档"),
-      ).toMatchObject({ balance: 0, balanceKnown: true, orderStatus: "正常" }),
+      ).toMatchObject({ balance: 0, orderStatus: "正常" }),
     );
   });
   it("只保存变动资料，不用打开时的旧进度覆盖后续业务更新", async () => {

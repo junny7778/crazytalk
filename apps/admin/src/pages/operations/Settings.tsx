@@ -866,7 +866,7 @@ export default function Settings() {
             >
               {tab === "org" && <Tabs value={organizationType} onChange={value => {
                 if (value === "渠道" || value === "项目") { setOrganizationType(value); setQuery(""); }
-              }} items={[{value:"渠道",label:"渠道"},{value:"项目",label:"项目"}]}/>}
+              }} items={[{value:"渠道",label:"渠道（一级）"},{value:"项目",label:"项目（课包/课程产品）"}]}/>}
               {tab === "basics" && (
                 <Tabs
                   value={catalogType}
@@ -938,7 +938,7 @@ export default function Settings() {
                         <tr>
                           <th>名称</th>
                           {showCatalogType && <th>类型</th>}
-                          {tab === "org" && <><th>{organizationType === "渠道" ? "合作项目" : "合作渠道"}</th>{organizationType === "项目" && <th>月应上课数</th>}</>}
+                          {tab === "org" && <><th>{organizationType === "渠道" ? "下属项目（课包）" : "所属一级渠道"}</th>{organizationType === "项目" && <><th>月应上课数</th><th>结算单价</th></>}</>}
                           <th>说明</th>
                           <th>状态</th>
                           <th>操作</th>
@@ -951,7 +951,7 @@ export default function Settings() {
                               <strong>{c.name}</strong>
                             </td>
                             {showCatalogType && <td>{c.type}</td>}
-                            {tab === "org" && <><td>{c.type === "项目" ? data.catalog.filter(channel=>c.channelIds?.includes(channel.id)).map(channel=>channel.name).join("、") || "暂无合作渠道" : data.catalog.filter(p => p.type === "项目" && p.channelIds?.includes(c.id)).map(p => p.name).join("、") || "暂无合作项目"}</td>{organizationType === "项目" && <td>{c.monthlyLessons ?? "待补录"}</td>}</>}
+                            {tab === "org" && <><td>{c.type === "项目" ? data.catalog.filter(channel => (c.parentId ? channel.id === c.parentId : c.channelIds?.includes(channel.id))).map(channel => channel.name).join("、") || "待绑定渠道" : data.catalog.filter(p => p.type === "项目" && (p.parentId === c.id || p.channelIds?.includes(c.id))).map(p => p.name).join("、") || "暂无下属项目"}</td>{organizationType === "项目" && <><td>{c.monthlyLessons ?? "待补录"}</td><td>{c.unitPrice !== undefined ? `¥${c.unitPrice}/课时` : "未设置"}</td></>}</>}
                             <td>{c.detail || "—"}</td>
                             <td>
                               <Badge tone={c.enabled ? "success" : "neutral"}>
@@ -960,6 +960,26 @@ export default function Settings() {
                             </td>
                             <td>
                               <div className="row">
+                                {tab === "org" && c.type === "渠道" && c.enabled && (
+                                  <Button
+                                    size="xs"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setOrganizationType("项目");
+                                      openEntry({
+                                        id: `c${Date.now()}`,
+                                        type: "项目",
+                                        parentId: c.id,
+                                        channelIds: [c.id],
+                                        name: "",
+                                        detail: "",
+                                        enabled: true,
+                                      });
+                                    }}
+                                  >
+                                    新增项目
+                                  </Button>
+                                )}
                                 <Button
                                   size="xs"
                                   variant="ghost"
@@ -1679,7 +1699,7 @@ export default function Settings() {
                 }
               />
             </Field>
-            {entry.type === "渠道" && <Field label="合作项目"><div className="settings-partner-options">
+            {entry.type === "渠道" && <Field label="下属项目（课包/课程产品）"><div className="settings-partner-options">
               {data.catalog.filter(p => p.type === "项目").map(p => <label key={p.id} className="select-row">
                 <input type="checkbox" checked={selectedProjectIds.includes(p.id)} disabled={!p.enabled && !p.channelIds?.includes(entry.id)} onChange={e => setSelectedProjectIds(e.target.checked ? [...selectedProjectIds, p.id] : selectedProjectIds.filter(id => id !== p.id))}/>
                 {p.name}{!p.enabled && "（已停用）"}
@@ -1687,13 +1707,32 @@ export default function Settings() {
               {!data.catalog.some(p => p.type === "项目") && <small>暂无可选项目，可先保存渠道，创建项目后再关联。</small>}
             </div></Field>}
             {entry.type === "项目" && <>
-              <Field label="合作渠道"><div className="settings-partner-options">
-                {data.catalog.filter(c => c.type === "渠道").map(c => <label key={c.id} className="select-row">
-                  <input type="checkbox" checked={entry.channelIds?.includes(c.id) || false} disabled={!c.enabled && !entry.channelIds?.includes(c.id)} onChange={e => setEntry({...entry, channelIds: e.target.checked ? [...(entry.channelIds || []), c.id] : (entry.channelIds || []).filter(id => id !== c.id)})}/>
-                  {c.name}{!c.enabled && "（已停用）"}
-                </label>)}
-              </div></Field>
-              <Field label="月应上课数" required><input type="number" min={1} step={1} value={entry.monthlyLessons ?? ""} onChange={e => setEntry({...entry, monthlyLessons: e.target.value ? Number(e.target.value) : undefined})}/></Field>
+              <Field label="所属一级渠道" required>
+                <Select
+                  aria-label="所属一级渠道"
+                  value={entry.parentId || entry.channelIds?.[0] || ""}
+                  onValueChange={(channelId) =>
+                    setEntry({
+                      ...entry,
+                      parentId: channelId || undefined,
+                      channelIds: channelId ? [channelId] : [],
+                    })
+                  }
+                >
+                  <option value="">请选择所属一级渠道</option>
+                  {data.catalog
+                    .filter(c => c.type === "渠道" && (c.enabled || entry.channelIds?.includes(c.id) || entry.parentId === c.id))
+                    .map(c => (
+                      <option key={c.id} value={c.id} disabled={!c.enabled}>
+                        {c.name}{!c.enabled ? "（已停用）" : ""}
+                      </option>
+                    ))}
+                </Select>
+              </Field>
+              <div className="form-grid">
+                <Field label="月应上课数" required><input type="number" min={1} step={1} value={entry.monthlyLessons ?? ""} onChange={e => setEntry({...entry, monthlyLessons: e.target.value ? Number(e.target.value) : undefined})}/></Field>
+                <Field label="结算单价（元/课时，选填）"><input type="number" min={0} step="any" placeholder="按实际登记金额汇总" value={entry.unitPrice ?? ""} onChange={e => setEntry({...entry, unitPrice: e.target.value === "" ? undefined : Number(e.target.value)})}/></Field>
+              </div>
             </>}
             <Field
               label={

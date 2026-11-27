@@ -124,6 +124,7 @@ export default function Lessons() {
         (delivery ||
           !params.get("project") ||
           student(l.studentId)?.project === params.get("project")) &&
+        (!params.get("kind") || l.kind === params.get("kind")) &&
         (!params.get("bookingStatus") ||
           lessonRecordStatus(l, now) === params.get("bookingStatus")) &&
         (!params.get("attendance") ||
@@ -238,10 +239,11 @@ export default function Lessons() {
               size="sm"
               onClick={() =>
                 exportCsv("上课记录", [
-                  ["日期", "时间", "学员", "老师", "状态", "扣课"],
+                  ["日期", "时间", "课程类型", "学员", "老师", "状态", "扣课"],
                   ...filtered.map((l) => [
                     l.date,
                     l.time,
+                    l.kind,
                     student(l.studentId)?.name || "",
                     teacher(l.teacherId)?.name || "",
                     recordStatus(l),
@@ -345,6 +347,15 @@ export default function Lessons() {
             />
           </>
           <Select
+            aria-label="课程类型"
+            value={params.get("kind") || ""}
+            onValueChange={(v) => update("kind", v)}
+          >
+            <option value="">全部课程类型</option>
+            <option value="固定课">固定课</option>
+            <option value="临时课">临时课</option>
+          </Select>
+          <Select
             aria-label="处理状态"
             value={tab === "confirm" ? "待确认" : statusFilter}
             onValueChange={(v) => {
@@ -442,7 +453,11 @@ export default function Lessons() {
                     </td>
                     <td>{l.duration} 分钟</td>
                     {delivery && <td>{l.duration / 25}</td>}
-                    <td>{l.kind}</td>
+                    <td>
+                      <Badge tone={l.kind === "固定课" ? "info" : "neutral"}>
+                        {l.kind}
+                      </Badge>
+                    </td>
                     <td>
                       <Link to={`/students/${l.studentId}`}>
                         {student(l.studentId)?.name}

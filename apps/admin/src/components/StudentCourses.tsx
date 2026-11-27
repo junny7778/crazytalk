@@ -12,7 +12,7 @@ import {
   type Student,
   type Lesson,
 } from "@crazytalk/shared";
-import { Badge, Button, EmptyState, Field, Panel, Select } from "@crazytalk/ui";
+import { Badge, Button, EmptyState, Field, Modal, Panel, Select, useToast } from "@crazytalk/ui";
 import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import {
   lessonEnd,
@@ -50,7 +50,12 @@ export default function StudentCourses({
   onSchedule?: () => void;
   onChangeTeacher?: () => void;
 }) {
-  const { data, can } = useDemo();
+  const { data, can, act } = useDemo();
+  const toast = useToast();
+  const [materialModalOpen, setMaterialModalOpen] = useState(false);
+  const [nextMaterialId, setNextMaterialId] = useState("");
+  const [savingMaterial, setSavingMaterial] = useState(false);
+  const [materialError, setMaterialError] = useState("");
   const activeService = !["停课", "结课", "退费"].includes(student.status);
   const [month, setMonth] = useState(DEMO_TODAY.slice(0, 7));
   const [monthlyMode, setMonthlyMode] = useState<"planned" | "actual" | null>(
@@ -159,10 +164,23 @@ export default function StudentCourses({
               <dt>学习教材</dt>
               <dd className="row wrap material-badges">
                 {studentMaterialIds(data, student).length
-                  ? studentMaterialIds(data, student).map(id => (
+                  ? studentMaterialIds(data, student).slice(0, 1).map(id => (
                       <Badge key={id}>{data.catalog.find(c => c.id === id)?.name || "未找到教材"}</Badge>
                     ))
                   : "未登记"}
+                {can("student.edit") && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      setNextMaterialId(studentMaterialIds(data, student)[0] || "");
+                      setMaterialError("");
+                      setMaterialModalOpen(true);
+                    }}
+                  >
+                    {studentMaterialIds(data, student).length ? "更换教材" : "绑定教材"}
+                  </Button>
+                )}
               </dd>
             </div>
             <div>
@@ -291,7 +309,11 @@ export default function StudentCourses({
                           </button>
                         </td>
                         <td>{lesson.duration} 分钟</td>
-                        <td>{lesson.kind}</td>
+                        <td>
+                          <Badge tone={lesson.kind === "固定课" ? "info" : "neutral"}>
+                            {lesson.kind}
+                          </Badge>
+                        </td>
                         <td>{teacherName(data, lesson.teacherId)}</td>
                         <td>{lesson.material || "未填写"}</td>
                         <td>
@@ -306,6 +328,15 @@ export default function StudentCourses({
                           >
                             {lesson.status}
                           </Badge>
+                          {(lesson.incident || lesson.conflict || lesson.leaveFlag) && (
+                            <small className="danger">
+                              {lesson.incident
+                                ? `异常：${lesson.incident.reason}`
+                                : lesson.conflict
+                                  ? "时间冲突"
+                                  : "老师请假"}
+                            </small>
+                          )}
                         </td>
                         <td>
                           {lesson.status === "未开始"
@@ -422,7 +453,8 @@ export default function StudentCourses({
                           </strong>
                           <span>
                             {teacherName(data, lesson.teacherId)} ·{" "}
-                            {calendarLessonStatus(lesson.status)}
+                            {calendarLessonStatus(lesson.status)} · {lesson.kind}
+                            {lesson.incident ? ` · ${lesson.incident.reason}` : ""}
                           </span>
                         </button>
                       ))}
@@ -663,6 +695,66 @@ export default function StudentCourses({
         onClose={() => setLessonId(null)}
         onReschedule={onReschedule}
       />
+      <Modal
+        open={materialModalOpen}
+        onClose={() => !savingMaterial && setMaterialModalOpen(false)}
+        title={studentMaterialIds(data, student).length ? "更换学习教材" : "绑定学习教材"}
+        width={460}
+        footer={
+          <>
+            <Button disabled={savingMaterial} onClick={() => setMaterialModalOpen(false)}>取消</Button>
+            <Button
+              variant="primary"
+              loading={savingMaterial}
+              disabled={!nextMaterialId || savingMaterial}
+              onClick={async () => {
+                if (!nextMaterialId) return;
+                setSavingMaterial(true);
+                setMaterialError("");
+                try {
+                  await act({
+                    type: "student.details.update",
+                    id: student.id,
+                    patch: { materialIds: [nextMaterialId] },
+                    expected: { materialIds: student.materialIds },
+                  });
+                  const bookName = data.catalog.find((c) => c.id === nextMaterialId)?.name || "";
+                  toast(`已将学习教材更新为「${bookName}」`);
+                  setMaterialModalOpen(false);
+                } catch (cause) {
+                  setMaterialError(cause instanceof Error ? cause.message : "教材更新失败");
+                } finally {
+                  setSavingMaterial(false);
+                }
+              }}
+            >
+              确认保存
+            </Button>
+          </>
+        }
+      >
+        <div className="stack">
+          <p className="muted">教材为单选；更换后将应用于后续新排课程，已完成的课程及学习进度保持原教材不变。</p>
+          <Field label="选择教材" required>
+            <Select
+              aria-label="选择学习教材"
+              searchable
+              value={nextMaterialId}
+              onValueChange={setNextMaterialId}
+            >
+              <option value="">请选择教材</option>
+              {data.catalog
+                .filter((c) => c.type === "教材" && (c.enabled || studentMaterialIds(data, student).includes(c.id)))
+                .map((c) => (
+                  <option key={c.id} value={c.id} disabled={!c.enabled}>
+                    {c.name}{!c.enabled ? "（已停用）" : ""}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          {materialError && <p role="alert" className="danger">{materialError}</p>}
+        </div>
+      </Modal>
     </div>
   );
 }

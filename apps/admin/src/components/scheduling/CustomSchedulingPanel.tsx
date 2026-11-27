@@ -19,6 +19,7 @@ type Time = { date: string; time: string };
 export function CustomSchedulingPanel({
   studentId: initialStudent,
   teacherId,
+  defaultKind = "固定课",
   initialTime,
   initialTimes = [],
   startDate = DEMO_TODAY,
@@ -30,6 +31,7 @@ export function CustomSchedulingPanel({
 }: {
   studentId: string;
   teacherId?: string;
+  defaultKind?: "固定课" | "临时课";
   initialTime?: Time;
   initialTimes?: Time[];
   startDate?: string;
@@ -55,8 +57,15 @@ export function CustomSchedulingPanel({
   const [manualUnits, setManualUnits] = useState("");
   const teacherReview = !!teacher && !!student && !adjusting;
   const [repeatWeeks, setRepeatWeeks] = useState(1);
+  const [lessonKind, setLessonKind] = useState<"固定课" | "临时课">(defaultKind);
   const books = student ? studentMaterials(data, student) : [];
   const [materialId, setMaterialId] = useState(() => books[0]?.id ?? "");
+  const [bindingBookId, setBindingBookId] = useState("");
+  const [bindingBookBusy, setBindingBookBusy] = useState(false);
+  const enabledBooks = useMemo(
+    () => data.catalog.filter((c) => c.type === "教材" && c.enabled),
+    [data.catalog],
+  );
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
   const [busy, setBusy] = useState(false);
@@ -156,13 +165,71 @@ export function CustomSchedulingPanel({
         <div className={teacher ? "row wrap schedule-teacher-fields" : "form-grid intent-settings-grid"}>
           {student && !teacher && <RemainingCreditsField studentId={student.id} />}
           {student && !teacher && (
-            <Field label="本次教材">
-              <Select size="form" searchable={false} value={materialId} disabled={!books.length}
-                onValueChange={id => change(() => setMaterialId(id))}>
-                {books.map(book => <option key={book.id} value={book.id}>{book.name}</option>)}
-              </Select>
+            <Field
+              label="上课教材"
+              hint={books.length ? undefined : "尚未绑定教材，可在此直接绑定"}
+            >
+              {books.length ? (
+                <input
+                  aria-label="上课教材"
+                  disabled
+                  value={books.find((b) => b.id === materialId)?.name || books[0].name}
+                />
+              ) : (
+                <div className="row">
+                  <Select
+                    aria-label="绑定学习教材"
+                    searchable
+                    value={bindingBookId}
+                    onValueChange={setBindingBookId}
+                  >
+                    <option value="">请选择要绑定的教材</option>
+                    {enabledBooks.map((book) => (
+                      <option key={book.id} value={book.id}>
+                        {book.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={!bindingBookId || bindingBookBusy || busy}
+                    loading={bindingBookBusy}
+                    onClick={async () => {
+                      if (!bindingBookId || !student) return;
+                      setBindingBookBusy(true);
+                      try {
+                        await act({
+                          type: "student.details.update",
+                          id: student.id,
+                          patch: { materialIds: [bindingBookId] },
+                          expected: { materialIds: student.materialIds },
+                        });
+                        change(() => setMaterialId(bindingBookId));
+                        toast("已为学员绑定教材");
+                      } catch (cause) {
+                        toast(cause instanceof Error ? cause.message : "绑定教材失败", { tone: "error" });
+                      } finally {
+                        setBindingBookBusy(false);
+                      }
+                    }}
+                  >
+                    绑定教材
+                  </Button>
+                </div>
+              )}
             </Field>
           )}
+          <Field label="课程类型">
+            <Select
+              aria-label="课程类型"
+              value={lessonKind}
+              onValueChange={(value) => setLessonKind(value === "临时课" ? "临时课" : "固定课")}
+            >
+              <option value="固定课">固定课</option>
+              <option value="临时课">临时课</option>
+            </Select>
+          </Field>
           <Field label="每节时长">
             <Select
               value={duration}
@@ -226,7 +293,7 @@ export function CustomSchedulingPanel({
         </div>
         {student && !materialId && (
           <p role="alert">
-            请选择本次教材；未登记教材时请通过学员的编辑资料补充。
+            请选择上课教材；未登记教材时请通过学员的编辑资料补充。
           </p>
         )}
       </fieldset>}
@@ -238,6 +305,17 @@ export function CustomSchedulingPanel({
               {studentMaterials(data, student).filter(c => teacher.materialIds?.includes(c.id)).map(c =>
                 <option key={c.id} value={c.id}>{c.name}</option>
               )}
+            </Select>
+          </Field>
+          <Field label="课程类型">
+            <Select
+              aria-label="课程类型"
+              value={lessonKind}
+              disabled={busy || preview || !can("schedule.create")}
+              onValueChange={(value) => setLessonKind(value === "临时课" ? "临时课" : "固定课")}
+            >
+              <option value="固定课">固定课</option>
+              <option value="临时课">临时课</option>
             </Select>
           </Field>
           <Field label="学员">
@@ -271,6 +349,7 @@ export function CustomSchedulingPanel({
                 setVisibleCount(30);
               }}
               intent={intent}
+              lessonKind={lessonKind}
               repeatWeeks={repeatWeeks}
               onDirtyChange={setDirtyState}
               onBusyChange={setBusyState}

@@ -126,12 +126,6 @@ it("老师优先与时间优先均补齐主老师缺口；无教材资格不推�
   expect(first.teacherCount).toBe(2);
   expect(first.primaryCount).toBe(1);
   expect(first.coveredCount).toBe(2);
-  const second = getFixedSchedulePlans(data, student.id, {
-    ...intent,
-    priority: "time",
-  })[0];
-  expect(second.coveredCount).toBe(2);
-  expect(second.teacherCount).toBe(2);
   teacher.materialIds = [];
   expect(
     getFixedSchedulePlans(data, student.id, intent).some(
@@ -154,14 +148,12 @@ function backupFixture() {
   const intent: ScheduleIntent = {mode:"fixed",materialIds:["m1"],priority:"teacher",startDate:"2026-11-23",weeks:1,frequency:3,duration:25,windows:[1,3,5].map(day=>({day,start:"19:00",end:"19:25"}))};
   return {...f,matching,covering,intent};
 }
-it("老师优先按适配补人、时间优先按覆盖补人；主老师顺序与已分配课次保留", () => {
+it("老师优先按适配补人；主老师顺序与已分配课次保留", () => {
   const {data,student,teacher,matching,covering,intent} = backupFixture();
   const plans=getFixedSchedulePlans(data,student.id,intent);
   expect(plans[0].primaryTeacherId).toBe(teacher.id);
   expect(plans[0]).toMatchObject({primaryCount:1,coveredCount:3,complete:true});
   expect(plans[0].slots.map(s=>s.teacherId)).toEqual([teacher.id,matching.id,covering.id]);
-  const timePlan=getFixedSchedulePlans(data,student.id,{...intent,priority:"time"}).find(p=>p.primaryTeacherId===teacher.id)!;
-  expect(timePlan.slots.map(s=>s.teacherId)).toEqual([teacher.id,covering.id,covering.id]);
 });
 it("补充老师同样适配时优先覆盖更多课次；没合格备选时明确保留缺口", () => {
   const {data,student,teacher,matching,covering,intent}=backupFixture();

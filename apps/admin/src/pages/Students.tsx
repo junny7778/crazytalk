@@ -89,6 +89,19 @@ const studentColumnOrder = [
   "renewalStatus",
 ];
 const orderStatuses = ["正常", "停课", "结课", "退款"];
+function studentSurveyStatus(s: Student): "已完成" | "待填写" | "未发放" {
+  if (s.surveySubmittedAt) return "已完成";
+  if (s.surveyToken) return "待填写";
+  return "未发放";
+}
+function matchesBalanceRange(balance: number, range: string) {
+  if (!range) return true;
+  if (range === "0") return balance === 0;
+  if (range === "1-8") return balance > 0 && balance <= 8;
+  if (range === "9-24") return balance > 8 && balance <= 24;
+  if (range === "25+") return balance > 24;
+  return true;
+}
 export default function Students() {
   const { data, can } = useDemo();
   const toast = useToast();
@@ -145,7 +158,8 @@ export default function Students() {
           defaultColumns.includes(field.key),
         ]),
       ),
-      ["balance", false],
+      ["balance", true],
+      ["surveyStatus", true],
       ["owner", true],
       ["unit", false],
     ]),
@@ -246,7 +260,9 @@ export default function Students() {
                 ? (s.renewalStatus || summaries.get(s.id)?.renewalStatus)
                 : s[key]) === params.get(key),
           ) &&
-          (!params.get("teacher") || teacherFor(s) === params.get("teacher")),
+          (!params.get("teacher") || teacherFor(s) === params.get("teacher")) &&
+          (!params.get("surveyStatus") || studentSurveyStatus(s) === params.get("surveyStatus")) &&
+          matchesBalanceRange(s.balance, params.get("balanceRange") || ""),
       ),
     [data, params.toString()],
   );
@@ -377,8 +393,31 @@ export default function Students() {
         }),
       ),
       {
+        id: "surveyStatus",
+        header: "问卷状态",
+        enableSorting: true,
+        accessorFn: (s) => studentSurveyStatus(s),
+        cell: ({ getValue }) => {
+          const status = getValue<"已完成" | "待填写" | "未发放">();
+          return (
+            <Badge
+              tone={
+                status === "已完成"
+                  ? "success"
+                  : status === "待填写"
+                    ? "warning"
+                    : "neutral"
+              }
+            >
+              {status}
+            </Badge>
+          );
+        },
+      },
+      {
         id: "balance",
         header: "剩余课时",
+        enableSorting: true,
         accessorFn: (s) => s.balance,
         cell: ({ row }) =>
           `${row.original.balance} 课时`,
@@ -429,7 +468,7 @@ export default function Students() {
     data: filtered,
     columns,
     manualPagination: true,
-    state: { sorting: sort, columnVisibility, columnOrder: ["select","sourceSequence","name","id","team","group","owner",...["orderStatus","teacherName","拉群日期（充值）","起始教材","scheduleText","totalUnits","套餐共用"]] },
+    state: { sorting: sort, columnVisibility, columnOrder: ["select","sourceSequence","name","id","team","group","owner","surveyStatus","balance",...["orderStatus","teacherName","拉群日期（充值）","起始教材","scheduleText","totalUnits","套餐共用"]] },
     onSortingChange: setSort,
     onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
@@ -525,6 +564,27 @@ export default function Students() {
             </Select>
           ))}
           <OrganizationFilters data={data}/>
+          <Select
+            aria-label="问卷状态筛选"
+            value={params.get("surveyStatus") || ""}
+            onValueChange={(v) => update("surveyStatus", v)}
+          >
+            <option value="">全部问卷状态</option>
+            <option value="已完成">已完成</option>
+            <option value="待填写">待填写</option>
+            <option value="未发放">未发放</option>
+          </Select>
+          <Select
+            aria-label="剩余课时筛选"
+            value={params.get("balanceRange") || ""}
+            onValueChange={(v) => update("balanceRange", v)}
+          >
+            <option value="">全部剩余课时</option>
+            <option value="0">0 课时</option>
+            <option value="1-8">1–8 课时</option>
+            <option value="9-24">9–24 课时</option>
+            <option value="25+">25 课时及以上</option>
+          </Select>
           <div className="toolbar-spacer" />
           <span className="muted">共 {filtered.length} 位学员</span>
           <Button size="sm" onClick={() => setColumnsOpen(!columnsOpen)}>

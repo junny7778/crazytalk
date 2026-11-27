@@ -68,7 +68,9 @@ export function StudentActionModal({
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const navigate = useNavigate();
   const [kind, setKind] = useState("新购");
-  const isPurchase = kind === "新购" || kind === "续费";
+  const isNewPurchase = kind === "新购";
+  const isRenewal = kind === "续费";
+  const isPurchase = isNewPurchase || isRenewal;
   const memberOrders = (data.orders ?? []).filter(order => order.studentIds.includes(student.id));
   function memberName(id: string) {
     const name = data.students.find(s => s.id === id)?.name ?? id;
@@ -79,6 +81,7 @@ export function StudentActionModal({
   const isCredit = action === "credit" || action === "compensate";
   const [stars,setStars]=useState(0),[visitStage,setVisitStage]=useState("首三节"),[visitEvidence,setVisitEvidence]=useState("");
   const [units, setUnits] = useState(72);
+  const [amount, setAmount] = useState("");
   const orderKey = useRef("");
 
   const [businessDate, setBusinessDate] = useState(DEMO_TODAY);
@@ -118,6 +121,7 @@ export function StudentActionModal({
     setVisitAttempted(false);
     setStars(0);setVisitEvidence("");setVisitStage("首三节");
     setUnits(action === "compensate" ? 1 : 72);
+    setAmount("");
     orderKey.current=crypto.randomUUID();
     setNote("");
     setAck(false);
@@ -252,10 +256,14 @@ export function StudentActionModal({
         case "credit":
         case "compensate":
           if (isPurchase) {
-            if (units !== 72 && units !== 144) throw new Error("请选择购买课时");
+            if (isNewPurchase && units !== 72 && units !== 144) throw new Error("新购请选择 72 或 144 课时套餐");
+            if (isRenewal && (!Number.isFinite(units) || units <= 0)) throw new Error("请填写大于 0 的续费课时数");
+            const parsedAmount = amount.trim() === "" ? undefined : Number(amount);
+            if (parsedAmount !== undefined && (!Number.isFinite(parsedAmount) || parsedAmount < 0))
+              throw new Error("实收金额需为非负数");
             cmd = memberOrders.length
-              ? { type: "credit.add", purchaseId: orderKey.current, studentId: student.id, units, kind, date: businessDate, note }
-              : { type: "order.buy", id: orderKey.current, studentId: student.id, studentIds: [student.id], units, kind, date: businessDate, note };
+              ? { type: "credit.add", purchaseId: orderKey.current, studentId: student.id, units, kind, date: businessDate, note, ...(parsedAmount !== undefined ? { amount: parsedAmount } : {}) }
+              : { type: "order.buy", id: orderKey.current, studentId: student.id, studentIds: [student.id], units, kind, date: businessDate, note, ...(parsedAmount !== undefined ? { amount: parsedAmount } : {}) };
             break;
           }
           cmd = {
@@ -372,7 +380,7 @@ export function StudentActionModal({
             {["新购", "续费",
               ...(can("credit.compensate") ? ["补偿", "赠送"] : [])].map(t =>
                 <Button key={t} size="sm" variant={kind === t ? "primary" : "secondary"}
-                  onClick={() => { setKind(t); setUnits(["补偿","赠送"].includes(t) ? 1 : 72); setError(""); }}>
+                  onClick={() => { setKind(t); setUnits(t === "新购" ? 72 : t === "续费" ? 5 : 1); setError(""); }}>
                   {t}
                 </Button>)}
           </div>
@@ -386,8 +394,56 @@ export function StudentActionModal({
                 本次仅登记课时，服务状态保持不变；重新上课请办理复课。
               </p>
             )}
-            {isPurchase ? <Field label="购买课时"><Select value={String(units)} onValueChange={value => setUnits(Number(value))}><option value="72">72 课时</option><option value="144">144 课时</option></Select></Field>
-              : <Field label="课时数" required><input aria-label="课时数" type="number" min="0" step="any" value={units} onChange={e=>setUnits(Number(e.target.value))}/></Field>}
+            {isNewPurchase ? (
+              <Field label="购买课时">
+                <Select value={String(units)} onValueChange={value => setUnits(Number(value))}>
+                  <option value="72">72 课时</option>
+                  <option value="144">144 课时</option>
+                </Select>
+              </Field>
+            ) : isRenewal ? (
+              <Field label="续费课时数" required hint="支持输入小额课节（如 5 节），也可快捷点选常用套餐。">
+                <div className="stack">
+                  <input
+                    aria-label="续费课时数"
+                    type="number"
+                    min="0.5"
+                    step="any"
+                    value={units}
+                    onChange={e => setUnits(Number(e.target.value))}
+                  />
+                  <div className="row wrap">
+                    {[5, 10, 24, 72, 144].map((preset) => (
+                      <Button
+                        key={preset}
+                        size="xs"
+                        variant={units === preset ? "primary" : "ghost"}
+                        onClick={() => setUnits(preset)}
+                      >
+                        {preset} 节
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </Field>
+            ) : (
+              <Field label="课时数" required>
+                <input aria-label="课时数" type="number" min="0" step="any" value={units} onChange={e=>setUnits(Number(e.target.value))}/>
+              </Field>
+            )}
+            {isPurchase && (
+              <Field label="实收金额（元，选填）">
+                <input
+                  aria-label="实收金额"
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="用于渠道/项目结算统计，未知可留空"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </Field>
+            )}
             {memberOrders.length === 1 && <div className="inset">当前剩余 {student.balance} 课时 · {memberOrders[0].studentIds.map(memberName).join("、")}</div>}
             {kind === "补偿" && (
               <Field

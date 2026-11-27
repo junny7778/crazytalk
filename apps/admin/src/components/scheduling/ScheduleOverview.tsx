@@ -18,7 +18,7 @@ type Props = {
   person:
     | { kind: "student"; value: Student }
     | { kind: "teacher"; value: Teacher };
-  onStart: (mode: "auto" | "custom") => void;
+  onStart: (mode: "auto" | "custom" | "temp") => void;
   onLesson: (id: string) => void;
   onReschedule: (id: string) => void;
   onTeacherProfile: () => void;
@@ -167,6 +167,15 @@ export function ScheduleOverview({
             >
               {student ? "自定义排课" : "为该老师排课"}
             </Button>
+            {student && (
+              <Button
+                variant="secondary"
+                disabled={preview || !!blocked || !!accountIssue || noCredits}
+                onClick={() => onStart("temp")}
+              >
+                临时排课
+              </Button>
+            )}
           </div>
         )}
         {hint && (

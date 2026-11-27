@@ -398,7 +398,27 @@ export default function StudentProfileEditor({
             <Field label="所属组别"><input disabled className="student-organization-value" value={organization.group}/></Field>
           </div>
         </section>
-        <section><h3>学习教材</h3><MaterialPicker label="学习教材" catalog={data.catalog} value={studentMaterialIds(data, draft)} onChange={materialIds => patch({materialIds})}/></section>
+        <section>
+          <h3>学习教材（单选）</h3>
+          <MaterialPicker
+            label="学习教材"
+            multiple={false}
+            catalog={data.catalog}
+            value={studentMaterialIds(data, draft).slice(0, 1)}
+            onChange={(materialIds) => {
+              const chosen = materialIds[0]
+                ? data.catalog.find((c) => c.id === materialIds[0] && c.type === "教材")
+                : undefined;
+              patch({
+                materialIds: materialIds.slice(0, 1),
+                ...(chosen && (!student || !hasReports) ? { material: chosen.name } : {}),
+              });
+            }}
+          />
+          {student && hasReports && (
+            <small className="muted">已有课后进度，更换教材仅影响后续新排课程，不影响历史课程记录。</small>
+          )}
+        </section>
         {(!student || !hasReports) && (
           <section>
             <h3>初始教学信息</h3>

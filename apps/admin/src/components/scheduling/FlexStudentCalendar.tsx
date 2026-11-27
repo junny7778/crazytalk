@@ -1,7 +1,7 @@
 import { ScheduleTeacherPicker } from "./ScheduleTeacherPicker";
 import { schedulingBookingIssue, teacherSchedulingAccountIssue } from "@crazytalk/shared";
 import { TeacherSchedulingAccountNotice } from "./SchedulingAccountNotice";
-import { addDays,compareTeacherFit,DEMO_TODAY,getStudentScheduleProgress,isAvailable,matchesScheduleWindow,materialMatchIssue,minutes,studentMaterials,type ScheduleIntent } from "@crazytalk/shared";
+import { addDays,compareTeacherFit,DEMO_TODAY,getStudentScheduleProgress,isAvailable,matchesScheduleWindow,materialMatchIssue,minutes,studentMaterials,studentOrganization,teacherFit,type ScheduleIntent } from "@crazytalk/shared";
 import { useDemo } from "@crazytalk/shared/react";
 import { Button,useToast } from "@crazytalk/ui";
 import { ChevronLeft,ChevronRight } from "lucide-react";
@@ -25,6 +25,7 @@ export function FlexStudentCalendar({
   onConfirmTimes,
   onAdjustTeacherTimes,
   teacherUnits,
+  lessonKind,
   repeatWeeks = 1,
   intent,
   onComplete,
@@ -36,6 +37,7 @@ export function FlexStudentCalendar({
   teacherId?: string;
   onAdjustTeacherTimes?: () => void;
   teacherUnits?: number;
+  lessonKind?: "固定课" | "临时课";
   initialTime?: {date: string; time: string};
   initialTimes?: {date: string; time: string}[];
   onConfirmTimes?: (slots: {date: string; time: string}[]) => void;
@@ -106,6 +108,18 @@ export function FlexStudentCalendar({
       lessons.filter((l) => l.status === "已完成").map((l) => l.teacherId),
     );
     const selected = new Set(slots.map((s) => s.teacherId));
+    const studentOrg = student
+      ? studentOrganization(data.accounts, student.owner, student.roster, student.ownerAccountId)
+      : null;
+    const isRecommended = (t: (typeof data.teachers)[number]) => {
+      if (!student || !studentOrg) return false;
+      const sameOrg =
+        studentOrg.team !== "待分配" &&
+        t.team === studentOrg.team &&
+        t.group === studentOrg.group;
+      const ageOk = student.age == null || student.age >= 16 || t.categories.includes("少儿");
+      return sameOrg && ageOk && !teacherFit(data, student, t).blocked.length;
+    };
     return data.teachers
       .filter(
         (t) =>
@@ -126,6 +140,7 @@ export function FlexStudentCalendar({
       )
       .sort(
         (a, b) =>
+          Number(isRecommended(b)) - Number(isRecommended(a)) ||
           (student ? compareTeacherFit(data,student,a,b) : 0) ||
           Number(previous.has(b.id)) - Number(previous.has(a.id)) ||
           Number(selected.has(b.id)) - Number(selected.has(a.id)) ||
@@ -246,7 +261,7 @@ export function FlexStudentCalendar({
         scheduleRevision,
         plannedUnits: credits.units,
         schedulingMode: "flex",
-        kind: repeatWeeks > 1 ? "固定课" : "临时课",
+        kind: lessonKind ?? (repeatWeeks > 1 ? "固定课" : "临时课"),
         studentId,
         teacherId: slots[0].teacherId,
         slots,
@@ -567,7 +582,44 @@ export function FlexStudentCalendar({
         />
       )}
       </div>
-      {reviewing && !teacherReview && <section aria-label="自定义排课预览" className="stack"><p>本次安排 {slots.length} 节课程</p><div className="schedule-lessons-scroll"><table><thead><tr><th>日期时间</th><th>老师</th><th>教材</th><th>时长</th></tr></thead><tbody>{slots.map((slot,i)=><tr key={i}><td>{slot.date} {slot.time}</td><td>{data.teachers.find(t=>t.id===slot.teacherId)?.name}</td><td>{slot.material}</td><td>{intent.duration} 分钟</td></tr>)}</tbody></table></div></section>}
+      {reviewing && !teacherReview && (
+        <section aria-label="自定义排课预览" className="stack">
+          <div className="row between wrap">
+            <p>本次安排 {slots.length} 节课程 · 类型：{lessonKind ?? (repeatWeeks > 1 ? "固定课" : "临时课")}</p>
+            <small className="muted">请核对课程明细后再确认排课</small>
+          </div>
+          <div className="schedule-lessons-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>日期</th>
+                  <th>星期</th>
+                  <th>时间段</th>
+                  <th>老师</th>
+                  <th>教材</th>
+                  <th>课程类型</th>
+                  <th>时长</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slots.map((slot, i) => (
+                  <tr key={i}>
+                    <td>{i + 1}</td>
+                    <td>{slot.date}</td>
+                    <td>{days[dayOf(slot.date)]}</td>
+                    <td>{slot.time}–{clock(minutes(slot.time) + intent.duration)}</td>
+                    <td>{data.teachers.find((t) => t.id === slot.teacherId)?.name}</td>
+                    <td>{slot.material}</td>
+                    <td>{lessonKind ?? (repeatWeeks > 1 ? "固定课" : "临时课")}</td>
+                    <td>{intent.duration} 分钟</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
       {error && !editor && <p role="alert">{error}</p>}
       {hasInvalid && (
         <p role="alert">

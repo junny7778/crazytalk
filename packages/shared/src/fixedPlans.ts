@@ -1,5 +1,6 @@
 import { schedulingBookingIssue, teacherSchedulingAccountIssue } from "./schedulingAccounts";
 import { materialMatchIssue, studentMaterials } from "./materials";
+import { studentOrganization } from "./organization";
 import { teacherFit, compareTeacherFit } from "./teacherMatch";
 import {
   addDays,
@@ -46,8 +47,16 @@ export function getFixedSchedulePlans(
     return [];
   const materials = studentMaterials(data, student).filter(c => intent.materialIds?.includes(c.id));
   if (!materials.length) return [];
+  const studentOrg = studentOrganization(
+    data.accounts,
+    student.owner,
+    student.roster,
+    student.ownerAccountId,
+  );
+  if (studentOrg.team === "待分配" || studentOrg.group === "待分配") return [];
   const teachers = data.teachers.filter(
     (t) =>
+      Boolean(t.team && t.group && t.team === studentOrg.team && t.group === studentOrg.group) &&
       !teacherSchedulingAccountIssue(t) &&
       materials.some(c => !materialMatchIssue(data, student, t, c.name)) &&
       !teacherFit(data, student, t).blocked.length &&
@@ -169,14 +178,11 @@ export function getFixedSchedulePlans(
   });
   const requiredCount = intent.targetLessons ?? intent.frequency * intent.weeks;
   const plans = teachers.map((primary) => {
-    // Prefer primary-teacher coverage or total coverage according to the selected priority.
+    // Always prioritize primary-teacher coverage (teacher-first).
     const score = (c: (typeof candidates)[number]) => {
       const primaryCount = c.series.filter(s => s.ids.includes(primary.id)).length;
       const coveredCount = c.series.filter(s => s.ids.length > 0).length;
-      const [first, second] = intent.priority === "teacher"
-        ? [primaryCount, coveredCount]
-        : [coveredCount, primaryCount];
-      return (first * (requiredCount + 1) + second) * (intent.frequency + 1) + 1;
+      return (primaryCount * (requiredCount + 1) + coveredCount) * (intent.frequency + 1) + 1;
     };
     type Choice = { score: number; indices: number[] };
     const empty = (): Choice => ({score: 0, indices: []});
@@ -247,11 +253,11 @@ export function getFixedSchedulePlans(
     while (remaining.size) {
       const best = teachers.filter(t => [...remaining].some(i => assignments[i].ids.includes(t.id))).sort(
         (a, b) =>
-          (intent.priority === "teacher" ? compareTeacherFit(data, student, a, b) : 0) ||
+          compareTeacherFit(data, student, a, b) ||
           [...remaining].filter((i) => assignments[i].ids.includes(b.id))
             .length -
           [...remaining].filter((i) => assignments[i].ids.includes(a.id))
-            .length || compareTeacherFit(data, student, a, b),
+            .length,
       )[0];
       if (!best) break;
       for (const i of remaining)
@@ -286,7 +292,9 @@ export function getFixedSchedulePlans(
   return plans
     .sort(
       (a, b) =>
-        (intent.priority === "teacher" ? compareTeacherFit(data, student, teachers.find(t => t.id === a.primaryTeacherId)!, teachers.find(t => t.id === b.primaryTeacherId)!) : 0) ||
+        Number(b.primaryTeacherId === student.teacherId) -
+          Number(a.primaryTeacherId === student.teacherId) ||
+        compareTeacherFit(data, student, teachers.find(t => t.id === a.primaryTeacherId)!, teachers.find(t => t.id === b.primaryTeacherId)!) ||
         b.coveredCount - a.coveredCount ||
         b.primaryCount - a.primaryCount ||
         a.teacherCount - b.teacherCount ||

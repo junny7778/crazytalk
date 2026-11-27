@@ -32,6 +32,7 @@ import {
   Plus,
   X,
   AlertTriangle,
+  Download,
 } from "lucide-react";
 import ClassInLinkForm from "../../components/ClassInLinkForm";
 import {
@@ -111,6 +112,45 @@ function TeacherMediaPreview({
       controls
       preload="metadata"
     />
+  );
+}
+function TeacherVideoDownloadButton({
+  source,
+  teacherName,
+}: {
+  source: string;
+  teacherName: string;
+}) {
+  const url = useTeacherMediaSource(source);
+  if (!url) return null;
+  const resolvedUrl = url;
+  async function handleDownload() {
+    const filename = `${teacherName || "老师"}_介绍视频`;
+    if (/^(?:data:|blob:|\/)/.test(resolvedUrl)) {
+      const link = document.createElement("a");
+      link.href = resolvedUrl;
+      link.download = filename;
+      link.click();
+      return;
+    }
+    try {
+      const response = await fetch(resolvedUrl);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(resolvedUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+  return (
+    <Button size="sm" variant="ghost" onClick={() => void handleDownload()}>
+      <Download size={14} />
+      下载视频
+    </Button>
   );
 }
 const trainingStatuses = ["未登记", "未完成", "已完成", "不适用"] as const;
@@ -331,6 +371,18 @@ export default function Teachers() {
       render: (t: Teacher) => t.so || "—",
     },
     {
+      key: "team",
+      label: "所属队伍",
+      defaultVisible: true,
+      render: (t: Teacher) => t.team || <span className="muted">待分配</span>,
+    },
+    {
+      key: "group",
+      label: "所属组别",
+      defaultVisible: true,
+      render: (t: Teacher) => t.group || <span className="muted">待分配</span>,
+    },
+    {
       key: "accent",
       label: "口音等级",
       defaultVisible: true,
@@ -427,6 +479,8 @@ export default function Teachers() {
     (column) => columnVisibility[column.key] ?? column.defaultVisible,
   );
   const [so, setSo] = useState("全部 SO");
+  const [teamFilter, setTeamFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
   const [availabilityDraft, setAvailabilityDraft] =
     useState<AvailabilityValue | null>(null);
   const [pendingTeacher, setPendingTeacher] = useState<Teacher | null>(null);
@@ -457,6 +511,8 @@ export default function Teachers() {
       (!status || t.status === status) &&
       (!training || (training === "completed" ? t.trained : !t.trained)) &&
       (so === "全部 SO" || t.so === so) &&
+      (!teamFilter || (teamFilter === "__unassigned__" ? !t.team : t.team === teamFilter)) &&
+      (!groupFilter || t.group === groupFilter) &&
       `${t.name} ${t.teacherNumber} ${t.so}`.toLowerCase().includes(q.toLowerCase()),
   );
   const listPage = useListPage(filtered);
@@ -660,6 +716,14 @@ export default function Teachers() {
                       ?.name || "待分配"}
                   </dd>
                 </div>
+                <div>
+                  <dt>所属队伍</dt>
+                  <dd>{teacher.team || "待分配"}</dd>
+                </div>
+                <div>
+                  <dt>队内组别</dt>
+                  <dd>{teacher.group || "待分配"}</dd>
+                </div>
               </dl>
             </section>
             <section className="teacher-detail-section">
@@ -714,16 +778,28 @@ export default function Teachers() {
               </dl>
             </section>
             <div className="teacher-profile-media">
-              {teacher.photos?.map((photo, i) => (
-                <TeacherMediaPreview
-                  key={i}
-                  width={120}
-                  source={photo}
-                  alt={teacher.name + " 展示照片 " + (i + 1)}
-                />
-              ))}
+              {!!teacher.photos?.length && (
+                <div className="stack">
+                  <small className="muted">展示照片（仅内部查看）</small>
+                  <div className="row wrap">
+                    {teacher.photos.map((photo, i) => (
+                      <TeacherMediaPreview
+                        key={i}
+                        width={120}
+                        source={photo}
+                        alt={teacher.name + " 展示照片 " + (i + 1)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
               {teacher.introVideo && (
-                <TeacherMediaPreview width={240} source={teacher.introVideo} />
+                <div className="stack">
+                  <TeacherMediaPreview width={240} source={teacher.introVideo} />
+                  <div>
+                    <TeacherVideoDownloadButton source={teacher.introVideo} teacherName={teacher.name} />
+                  </div>
+                </div>
               )}
             </div>
             <section className="teacher-detail-section">
@@ -1034,6 +1110,41 @@ export default function Teachers() {
                 <option value="completed">已完成培训</option>
                 <option value="incomplete">未完成培训</option>
               </Select>
+              <Select
+                aria-label="筛选队伍"
+                value={teamFilter}
+                onValueChange={(value) => {
+                  setTeamFilter(value);
+                  setGroupFilter("");
+                }}
+              >
+                <option value="">全部队伍</option>
+                <option value="__unassigned__">待分配</option>
+                {data.catalog
+                  .filter((c) => c.type === "队伍" && c.enabled)
+                  .map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+              </Select>
+              {teamFilter && teamFilter !== "__unassigned__" && (
+                <Select
+                  aria-label="筛选组别"
+                  value={groupFilter}
+                  onValueChange={setGroupFilter}
+                >
+                  <option value="">全部组别</option>
+                  {data.catalog
+                    .filter(
+                      (c) =>
+                        c.type === "组别" &&
+                        c.enabled &&
+                        c.parentId === data.catalog.find((t) => t.type === "队伍" && t.name === teamFilter)?.id,
+                    )
+                    .map((c) => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                </Select>
+              )}
               {params.get("project") && (
                 <small>项目：{params.get("project")}</small>
               )}
@@ -1042,6 +1153,8 @@ export default function Teachers() {
                 variant="ghost"
                 onClick={() => {
                   setSo("全部 SO");
+                  setTeamFilter("");
+                  setGroupFilter("");
                   setParams({});
                 }}
               >
@@ -1369,9 +1482,16 @@ export default function Teachers() {
                     <Field label="负责 TM">
                       <Select
                         value={edit.tmAccountId || ""}
-                        onValueChange={(tmAccountId) =>
-                          setEdit({ ...edit, tmAccountId })
-                        }
+                        onValueChange={(tmAccountId) => {
+                          const tm = data.accounts.find((a) => a.id === tmAccountId);
+                          setEdit({
+                            ...edit,
+                            tmAccountId,
+                            ...(!edit.team && !edit.group && tm?.team && tm?.group
+                              ? { team: tm.team, group: tm.group }
+                              : {}),
+                          });
+                        }}
                       >
                         <option value="">待分配</option>
                         {data.accounts
@@ -1379,6 +1499,53 @@ export default function Teachers() {
                           .map((a) => (
                             <option value={a.id} key={a.id}>
                               {a.name}
+                            </option>
+                          ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  <div className="form-grid">
+                    <Field
+                      label="所属队伍"
+                      hint="用于一键排课匹配（不限定渠道）；未设置队伍/组别的老师不参与一键匹配"
+                    >
+                      <Select
+                        aria-label="所属队伍"
+                        value={edit.team || ""}
+                        onValueChange={(team) =>
+                          setEdit({ ...edit, team: team || undefined, group: undefined })
+                        }
+                      >
+                        <option value="">待分配</option>
+                        {data.catalog
+                          .filter((c) => c.type === "队伍" && (c.enabled || c.name === edit.team))
+                          .map((t) => (
+                            <option key={t.id} value={t.name} disabled={!t.enabled}>
+                              {t.name}{!t.enabled ? "（已停用）" : ""}
+                            </option>
+                          ))}
+                      </Select>
+                    </Field>
+                    <Field label="队内组别">
+                      <Select
+                        aria-label="队内组别"
+                        disabled={!edit.team}
+                        value={edit.group || ""}
+                        onValueChange={(group) =>
+                          setEdit({ ...edit, group: group || undefined })
+                        }
+                      >
+                        <option value="">待分配</option>
+                        {data.catalog
+                          .filter(
+                            (c) =>
+                              c.type === "组别" &&
+                              c.parentId === data.catalog.find((t) => t.type === "队伍" && t.name === edit.team)?.id &&
+                              (c.enabled || c.name === edit.group),
+                          )
+                          .map((g) => (
+                            <option key={g.id} value={g.name} disabled={!g.enabled}>
+                              {g.name}{!g.enabled ? "（已停用）" : ""}
                             </option>
                           ))}
                       </Select>
@@ -1508,7 +1675,7 @@ export default function Teachers() {
                       }
                     />
                   </Field>
-                  <Field label="展示照片">
+                  <Field label="展示照片（仅内部查看）">
                     <div className="teacher-media-row">
                       <input
                         ref={displayPhotosInputRef}
@@ -1592,6 +1759,9 @@ export default function Teachers() {
                             <X size={14} aria-hidden="true" />
                           </button>
                         </div>
+                      )}
+                      {edit.introVideo && (
+                        <TeacherVideoDownloadButton source={edit.introVideo} teacherName={edit.name} />
                       )}
                     </div>
                   </Field>

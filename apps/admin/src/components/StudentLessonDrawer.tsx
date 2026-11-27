@@ -66,8 +66,10 @@ export function StudentLessonDrawer({
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [editing, setEditing] = useState<
-    "correct" | "cancel" | "report" | null
+    "correct" | "cancel" | "report" | "incident" | null
   >(null);
+  const [incidentReason, setIncidentReason] = useState("学员缺席");
+  const [incidentMinutes, setIncidentMinutes] = useState("");
   const [deduct, setDeduct] = useState(true);
   const [units, setUnits] = useState("");
   const [reason, setReason] = useState("");
@@ -86,6 +88,8 @@ export function StudentLessonDrawer({
   const lesson = data.lessons.find((item) => item.id === lessonId);
   useEffect(() => {
     setEditing(cancelDirectly ? "cancel" : null);setCancelKind("学员请假");setWaived(false);setResponsibility("学员");
+    setIncidentReason("学员缺席");
+    setIncidentMinutes("");
     setError("");
     setReason("");
     setUnits("");
@@ -128,7 +132,9 @@ export function StudentLessonDrawer({
   const dirty =
     editing === "cancel"
       ? !!reason.trim() || responsibility !== "学员" || waived || cancelKind !== "学员请假"
-      : editing === "correct" &&
+      : editing === "incident"
+        ? !!reason.trim() || !!incidentMinutes.trim()
+        : editing === "correct" &&
         (!!reason.trim() ||
           deduct !== (lesson.deducted || pending) ||
           (editableFacts &&
@@ -194,6 +200,40 @@ export function StudentLessonDrawer({
       return;
     }
     setError("");
+    if (editing === "incident") {
+      const timedIncident = incidentReason === "老师迟到" || incidentReason === "老师早退";
+      if (!reason.trim()) {
+        setError("请填写异常核实说明");
+        return;
+      }
+      if (
+        timedIncident &&
+        (!incidentMinutes.trim() ||
+          !Number.isInteger(Number(incidentMinutes)) ||
+          Number(incidentMinutes) < 0)
+      ) {
+        setError("请填写非负整数异常分钟数");
+        return;
+      }
+      setSaving(true);
+      try {
+        await act({
+          type: "lesson.incident",
+          id: lesson.id,
+          reason: incidentReason,
+          ...(timedIncident ? { minutes: Number(incidentMinutes) } : {}),
+          note: reason.trim(),
+        });
+        if (!mounted.current) return;
+        toast("课程异常已登记");
+        setEditing(null);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "异常登记失败");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     if (!reason.trim()) {
       setError(
         editing === "cancel" ? "请填写取消原因" : "请填写更正或确认原因",
@@ -273,13 +313,28 @@ export function StudentLessonDrawer({
                   ? "保存教材进度"
                   : editing === "cancel"
                     ? "确认取消课程"
-                    : pending
-                      ? "确认课程结果"
-                      : "保存更正"}
+                    : editing === "incident"
+                      ? "提交异常登记"
+                      : pending
+                        ? "确认课程结果"
+                        : "保存更正"}
               </Button>
             </>
           ) : (
             <>
+              {lesson.status !== "已取消" && (can("lesson.confirm") || can("lesson.correct")) && (
+                <Button
+                  onClick={() => {
+                    setEditing("incident");
+                    setIncidentReason(lesson.incident?.reason || "学员缺席");
+                    setIncidentMinutes(lesson.incident?.minutes != null ? String(lesson.incident.minutes) : "");
+                    setReason("");
+                    setError("");
+                  }}
+                >
+                  异常登记
+                </Button>
+              )}
               {canChange && onReschedule && (
                 <Button
                   onClick={() => {
@@ -326,8 +381,17 @@ export function StudentLessonDrawer({
             >
               {lesson.status}
             </Badge>
-            <span className="muted">{lesson.kind}</span>
+            <Badge tone={lesson.kind === "固定课" ? "info" : "neutral"}>{lesson.kind}</Badge>
           </div>
+          {lesson.incident && (
+            <div className="notice">
+              <span>
+                异常记录：{lesson.incident.reason}
+                {lesson.incident.minutes != null ? `（${lesson.incident.minutes} 分钟）` : ""} ·{" "}
+                {lesson.incident.note} · {lesson.incident.operator}
+              </span>
+            </div>
+          )}
           <dl className="sc-facts">
             {showStudentInDetails && (
               <div>
@@ -369,6 +433,49 @@ export function StudentLessonDrawer({
               <dd>{lessonCharge(lesson)}</dd>
             </div>
           </dl>
+          {editing === "incident" && (
+            <section {...(saving ? { inert: "" } : {})} className="sc-editor">
+              <h3>登记课程异常</h3>
+              <Field label="异常类型" required>
+                <Select value={incidentReason} onValueChange={setIncidentReason}>
+                  {[
+                    "学员缺席",
+                    "老师缺席",
+                    "老师迟到",
+                    "老师早退",
+                    "老师网络故障",
+                    "学员网络故障",
+                    "教材错误或重复",
+                    "其他异常",
+                  ].map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {(incidentReason === "老师迟到" || incidentReason === "老师早退") && (
+                <Field label="异常分钟数" required>
+                  <input
+                    aria-label="异常分钟数"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={incidentMinutes}
+                    onChange={(event) => setIncidentMinutes(event.target.value)}
+                  />
+                </Field>
+              )}
+              <Field label="异常核实说明" required>
+                <textarea
+                  aria-label="异常核实说明"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder="填写核实情况、沟通依据或后续处理建议"
+                />
+              </Field>
+            </section>
+          )}
           {editing === "report" && (
             <section {...(saving ? {inert:""}: {})} className="sc-editor">
               <h3>更正教材进度</h3>

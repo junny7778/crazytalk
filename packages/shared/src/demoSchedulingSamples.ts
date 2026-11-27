@@ -61,6 +61,7 @@ export function withDemoSchedulingSamples(before: DemoState): DemoState {
   ] as const) {
     data.teachers.push({
       id, name, teacherNumber: newTeacherNumber(data.teachers), so: "BigBrains",
+      ...(id === "demo-tutor-theo" ? { team: "A队", group: "二组" } : {}),
       accent: "B+", level: "B", categories: ["少儿"], status: "在职", trained: true,
       needConfirm: false, phone: "", rate: 180, tags: [],
       availability: [2, 4, 6].map(day => ({day, start: "17:00", end: "21:00"})),
@@ -103,9 +104,9 @@ export function withDemoSchedulingSamples(before: DemoState): DemoState {
     const missingAccount = englishName === "Ivy";
     const missingMaterial = englishName === "Max";
     const owner = availableOwners[i % availableOwners.length];
-    const courseBooks = books.filter((_, n) => n === i % books.length || (i % 2 === 0 && n === (i + 1) % books.length));
-    const materialIds = missingMaterial ? [] : courseBooks.map(c => c.id);
-    const material = missingMaterial ? "" : courseBooks[0].name;
+    const primaryBook = books[i % books.length];
+    const materialIds = missingMaterial ? [] : [primaryBook.id];
+    const material = missingMaterial ? "" : primaryBook.name;
     const id = nextStudentId(data.students);
     const accountId = "demo-schedule-account-" + id;
     const orderId = "demo-schedule-order-" + id;

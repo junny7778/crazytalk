@@ -563,9 +563,6 @@ export default function StudentDetail() {
             onOpen={openRecord}
             onVisit={() => openAction("visit")}
             onFeedback={() => openFeedback()}
-            onCompensate={() =>
-              openAction("compensate")
-            }
           />
         </>
       )}

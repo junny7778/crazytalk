@@ -19,7 +19,7 @@ import {
   type FixedPlanSlot,
   type ScheduleIntent,
 } from "@crazytalk/shared";
-import { Button, Modal, useToast } from "@crazytalk/ui";
+import { Badge, Button, Modal, useToast } from "@crazytalk/ui";
 const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const dayOf = (date: string) => new Date(`${date}T12:00:00+08:00`).getUTCDay();
 const monday = (date: string) => addDays(date, -((dayOf(date) + 6) % 7));
@@ -54,6 +54,7 @@ export function FixedPlanCalendar({
   const student = data.students.find((s) => s.id === studentId);
   const materials = student ? studentMaterials(data, student).filter(c => !intent.materialIds || intent.materialIds.includes(c.id)) : [];
   const [rows, setRows] = useState<Row[]>(() => plan.slots.map(s => ({...s, material: s.material || materials[0]?.name || ""})));
+  const lessonKind = intent.kind ?? "固定课";
   const [viewedLesson, setViewedLesson] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const unchangedRecommendation = !rows.some(r => r.manual) && JSON.stringify(rows.map(({date,time,teacherId,material})=>({date,time,teacherId,material}))) === JSON.stringify(plan.slots.map(({date,time,teacherId,material})=>({date,time,teacherId,material})));
@@ -268,7 +269,7 @@ export function FixedPlanCalendar({
         teacherId: plan.primaryTeacherId,
         slots: ready,
         duration: intent.duration,
-        kind: "固定课",
+        kind: lessonKind,
         material: ready[0].material || "",
       });
       if (!mounted.current) return;
@@ -302,16 +303,46 @@ export function FixedPlanCalendar({
       <StudentLessonDrawer lessonId={viewedLesson} onClose={() => setViewedLesson(null)}/>
       <ClassInOperationFeedback studentId={studentId}/>
       <fieldset disabled={submitting} className="stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
-      <section className="fixed-plan-summary">
-        <div className="row between">
-          <h3>{student?.name} 的方案内容</h3>
-          <span className="fixed-draft-badge">{unchangedRecommendation ? "系统推荐方案" : "教务手动调整"} · 尚未确认</span>
+      <section className="fixed-plan-summary" aria-label="排课方案概览">
+        <div className="fixed-plan-summary-head">
+          <div className="fixed-plan-summary-title">
+            <h3>排课方案概览</h3>
+            <Badge tone={lessonKind === "固定课" ? "info" : "neutral"}>{lessonKind}</Badge>
+          </div>
+          <span className={`fixed-draft-badge${unchangedRecommendation ? "" : " is-manual"}`}>
+            {unchangedRecommendation ? "系统推荐方案" : "教务手动调整"} · 尚未确认
+          </span>
         </div>
-        <dl className="fixed-plan-facts">
-          <dt>本次方案</dt><dd>目标 {plan.requiredCount} 节 · 拟安排 {ready.length} 节 · 待处理 {pendingCount} 节</dd>
-          <dt>自动排课条件</dt><dd>{plan.positions.map(p => `${days[p.day]} ${p.time}`).join("、")} · 每节 {intent.duration} 分钟 · 每周 {intent.frequency} 节{intent.dailyLimit && ` · 每天最多 ${intent.dailyLimit} 节`} · 共 {intent.weeks} 周</dd>
-          <dt>授课老师</dt><dd>{teacherSummary || "尚未分配老师"}</dd>
-        </dl>
+        <div className="fixed-plan-summary-grid">
+          <div className="fixed-plan-metric" data-pending={pendingCount > 0 || undefined}>
+            <span>排课进度</span>
+            <strong>{ready.length} / {plan.requiredCount} 节</strong>
+            <small>目标 {plan.requiredCount} 节 · 拟安排 {ready.length} 节 · 待处理 {pendingCount} 节</small>
+          </div>
+          <div className="fixed-plan-metric">
+            <span>授课老师</span>
+            <strong>{teacherSummary || "尚未分配老师"}</strong>
+          </div>
+          <div className="fixed-plan-metric">
+            <span>上课教材</span>
+            <strong>{materials[0]?.name || student?.material || "未设置"}</strong>
+          </div>
+          <div className="fixed-plan-metric">
+            <span>频次与周期</span>
+            <strong>{intent.duration} 分钟 · 每周 {intent.frequency} 节</strong>
+            <small>{intent.dailyLimit ? `每天最多 ${intent.dailyLimit} 节 · ` : ""}共 {intent.weeks} 周</small>
+          </div>
+        </div>
+        {plan.positions.length > 0 && (
+          <div className="fixed-plan-slots">
+            <span className="fixed-plan-slots-label">固定时段</span>
+            {plan.positions.map((p) => (
+              <span key={`${p.day}-${p.time}`} className="fixed-plan-slot-chip">
+                {days[p.day]} {p.time}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
       {missingTimeCount > 0 && (
         <p role="status">
@@ -582,7 +613,44 @@ export function FixedPlanCalendar({
       ))}
       {message && !focused && <p role="alert">{message}</p>}
       </div>
-      {reviewing && <section aria-label="本次排课核对"><h4>本次安排 {ready.length} 节 · 仍有 {pendingCount} 节待处理</h4><div className="schedule-lessons-scroll"><table><thead><tr><th>日期时间</th><th>老师</th><th>教材</th><th>时长</th></tr></thead><tbody>{ready.map(r => <tr key={rowKey(r)}><td>{r.date} {r.time}</td><td>{data.teachers.find(t => t.id === r.teacherId)?.name}</td><td>{r.material}</td><td>{intent.duration} 分钟</td></tr>)}</tbody></table></div></section>}
+      {reviewing && (
+        <section aria-label="本次排课核对" className="stack">
+          <div className="row between wrap">
+            <h4>本次安排 {ready.length} 节 · 预计扣课 {credits.units ? Math.round(ready.length * credits.units * 100) / 100 : "待核实"} 课时 · 仍有 {pendingCount} 节待处理</h4>
+            <small className="muted">请核对全部排课明细后再提交保存</small>
+          </div>
+          <div className="schedule-lessons-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>日期</th>
+                  <th>星期</th>
+                  <th>时间段</th>
+                  <th>老师</th>
+                  <th>教材</th>
+                  <th>课程类型</th>
+                  <th>时长</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ready.map((r, index) => (
+                  <tr key={rowKey(r)}>
+                    <td>{index + 1}</td>
+                    <td>{r.date}</td>
+                    <td>{days[dayOf(r.date)]}</td>
+                    <td>{r.time}–{clock(minutes(r.time) + intent.duration)}</td>
+                    <td>{data.teachers.find((t) => t.id === r.teacherId)?.name}</td>
+                    <td>{r.material}</td>
+                    <td>{r.extra ? "临时课" : lessonKind}</td>
+                    <td>{intent.duration} 分钟</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
       {teachers.filter(t=>editable.some(r=>r.teacherId===t.id) && teacherSchedulingAccountIssue(t)).map(t=><TeacherSchedulingAccountNotice key={t.id} teacher={t}/>)}
       <ClassInBookingPreview studentId={studentId} teacherIds={ready.map(row => row.teacherId)}/>
       {credits.node}

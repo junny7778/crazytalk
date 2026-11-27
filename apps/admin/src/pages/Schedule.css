@@ -177,8 +177,8 @@
   padding: 0 6px;
 }
 .roster-partial-badge {
-  background: #def4ef;
-  color: #16675a;
+  background: var(--ct-teal-bg);
+  color: var(--ct-teal);
 }
 .schedule-booking-hint {
   margin: 0;
@@ -189,11 +189,11 @@
   color: var(--ct-danger);
 }
 .roster-completed-badge {
-  background: #f1eafa;
+  background: var(--ct-purple-bg);
 }
 .schedule-booking-hint[data-status="结课"],
 .roster-completed-badge {
-  color: #705093;
+  color: var(--ct-purple);
 }
 .roster-person strong > svg {
   color: var(--ct-warning);
@@ -953,17 +953,109 @@
 }
 
 .fixed-plan-summary {
-  padding: 18px 20px;
-  border-radius: 12px;
-  background: var(--ct-brand-50);
+  display: grid;
+  gap: 12px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--ct-gray-200);
 }
-.fixed-plan-summary h3,
-.fixed-plan-summary p {
-  margin: 0 0 8px;
+.fixed-plan-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fixed-plan-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fixed-plan-summary-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ct-gray-900);
 }
 .fixed-draft-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--ct-brand-50);
+  border: 1px solid var(--ct-brand-200);
   color: var(--ct-brand-700);
   font-size: 12px;
+  font-weight: 500;
+}
+.fixed-draft-badge.is-manual {
+  background: var(--ct-info-bg);
+  border-color: var(--ct-gray-200);
+  color: var(--ct-info);
+}
+.fixed-plan-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.fixed-plan-metric {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 10px 12px;
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 8px;
+  background: var(--ct-gray-50);
+}
+.fixed-plan-metric span {
+  font-size: 12px;
+  color: var(--ct-gray-500);
+}
+.fixed-plan-metric strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ct-gray-900);
+  overflow-wrap: anywhere;
+}
+.fixed-plan-metric[data-pending] strong {
+  color: var(--ct-warning);
+}
+.fixed-plan-metric small {
+  font-size: 12px;
+  color: var(--ct-gray-500);
+  line-height: 1.4;
+}
+.fixed-plan-slots {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding-top: 2px;
+}
+.fixed-plan-slots-label {
+  font-size: 12px;
+  color: var(--ct-gray-500);
+  margin-right: 2px;
+}
+.fixed-plan-slot-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--ct-gray-50);
+  border: 1px solid var(--ct-gray-200);
+  color: var(--ct-gray-700);
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (max-width: 900px) {
+  .fixed-plan-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 540px) {
+  .fixed-plan-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .fixed-calendar-scroll {
@@ -1943,11 +2035,78 @@
   background: var(--ct-brand-700);
 }
 
-.fixed-plan-facts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 6px 16px;
-  margin: 12px 0 0;
+.teacher-free-screenshot {
+  background: var(--ct-white);
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 14px;
+  padding: 20px;
 }
-.fixed-plan-facts dt { color: var(--ct-gray-500); }
-.fixed-plan-facts dd { margin: 0; }
+.teacher-free-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.teacher-free-grid-wrap {
+  overflow: auto;
+  max-height: 540px;
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 12px;
+}
+.teacher-free-grid {
+  display: grid;
+  min-width: 720px;
+}
+.teacher-free-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ct-gray-50);
+  border-bottom: 1px solid var(--ct-gray-200);
+  border-right: 1px solid var(--ct-gray-200);
+  padding: 8px 6px;
+  text-align: center;
+  font-size: 13px;
+}
+.teacher-free-head small {
+  display: block;
+  color: var(--ct-gray-500);
+  font-size: 11px;
+}
+.teacher-free-time {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--ct-gray-50);
+  border-bottom: 1px solid var(--ct-gray-200);
+  border-right: 1px solid var(--ct-gray-200);
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ct-gray-500);
+}
+.teacher-free-cell {
+  border-bottom: 1px solid var(--ct-gray-200);
+  border-right: 1px solid var(--ct-gray-200);
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+}
+.teacher-free-cell.is-open {
+  background: var(--ct-success-bg);
+  color: var(--ct-success);
+}
+.teacher-free-cell.is-closed {
+  background: var(--ct-gray-50);
+}
+.teacher-free-summary {
+  line-height: 1.7;
+  font-size: 13px;
+}
+.teacher-free-summary p {
+  margin-top: 6px;
+}

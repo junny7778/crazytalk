@@ -556,8 +556,15 @@ describe("学员中心 V3 独立验收", () => {
     await testAct(async () => {
       fireEvent.click(screen.getByRole("tab", { name: "服务跟进" }));
     });
+    expect(screen.queryByRole("button", { name: "登记补偿" })).toBeNull();
     await testAct(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "登记补偿" }));
+      fireEvent.click(screen.getByRole("tab", { name: "课时与续费" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "加课时" }));
+    });
+    await testAct(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "补偿" }));
     });
     await choose("关联反馈", `${DEMO_TODAY} · 独立验收反馈已编辑`);
     expect(
@@ -575,7 +582,7 @@ describe("学员中心 V3 独立验收", () => {
     });
     expect(
       document.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
-    ).toBe("服务跟进");
+    ).toBe("课时与续费");
   });
   it("取消充值关闭表单且不保存业务日期和流水", async () => {
     mount(`/students/${studentId}?tab=credits`);

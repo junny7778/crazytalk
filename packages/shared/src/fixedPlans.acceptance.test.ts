@@ -16,6 +16,8 @@ function fixture() {
     t.trained = true;
     t.needConfirm = false;
     t.availabilityFrom = "";
+    t.team = "B队";
+    t.group = "一组";
     t.categories = ["少儿"];
     t.availability = [{ day: 1, start: "19:00", end: "19:25" }];
   });

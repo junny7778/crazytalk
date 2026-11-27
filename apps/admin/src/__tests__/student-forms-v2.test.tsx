@@ -241,7 +241,7 @@ describe("学生原表表单与客户操作", () => {
     await testAct(async () => {
       fireEvent.click(screen.getByRole("button", { name: "续费" }));
     });
-    await choose("购买课时", "144 课时");
+    await change("续费课时数", "144");
     await change("业务日期", "2026-10-20");
     expect(screen.queryByLabelText("充值金额")).toBeNull();
     await testAct(async () => {
@@ -509,6 +509,9 @@ it("同一购课入口累计余额，B 的余额合并后归零再购买仍共�
     await testAct(async () => {
       fireEvent.click(screen.getByRole("button", { name: kind }));
     });
+    if (kind === "续费") {
+      await change("续费课时数", "72");
+    }
     await testAct(async () => {
       fireEvent.click(screen.getByRole("button", { name: "确认加 72 课时" }));
     });

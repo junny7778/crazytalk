@@ -3,7 +3,7 @@ import { schedulingBookingIssue } from "@crazytalk/shared";
 import { SchedulingAccountNotice } from "./SchedulingAccountNotice";
 import { WeeklyAvailabilityEditor, availabilityInputError } from "@crazytalk/ui";
 import ClassInOperationFeedback from "../ClassInOperationFeedback";
-import { studentMaterials } from "@crazytalk/shared";
+import { studentMaterials, studentOrganization } from "@crazytalk/shared";
 import { DatePicker } from "@crazytalk/ui";
 import { ZodError } from "zod";
 import { useEffect, useMemo, useState } from "react";
@@ -66,8 +66,25 @@ export function StudentSchedulingPanel({
     unlimited: saved ? !!saved.unlimited : true, dailyLimit: 1,
     ...saved,
     mode: "fixed",
-    priority: saved?.priority || "teacher",
+    kind: saved?.kind || "固定课",
+    priority: "teacher",
   }));
+  const [bindingBookId, setBindingBookId] = useState("");
+  const [bindingBookBusy, setBindingBookBusy] = useState(false);
+  const enabledBooks = useMemo(
+    () => data.catalog.filter((c) => c.type === "教材" && c.enabled),
+    [data.catalog],
+  );
+  const studentOrg = useMemo(
+    () => studentOrganization(data.accounts, student.owner, student.roster, student.ownerAccountId),
+    [data.accounts, student.owner, student.roster, student.ownerAccountId],
+  );
+  useEffect(() => {
+    const activeBookId = books[0]?.id;
+    if (activeBookId && draft.materialIds?.[0] !== activeBookId) {
+      setDraft((current) => ({ ...current, materialIds: [activeBookId] }));
+    }
+  }, [books, draft.materialIds]);
   const [editingIntent, setEditingIntent] = useState(true);
   useEffect(() => {
     if (editingIntent) onStageChange("setup");
@@ -143,7 +160,7 @@ export function StudentSchedulingPanel({
       {saved && !editingIntent ? (
         <section className="schedule-intent-summary" aria-label="学员排课意向">
           <div>
-            <strong>{saved.priority === "teacher" ? "老师优先" : "时间优先"} · {studentMaterials(data, student).filter(c => saved.materialIds?.includes(c.id)).map(c => c.name).join("、")}</strong>
+            <strong>{saved.kind || "固定课"} · 老师队伍 {studentOrg.team} / {studentOrg.group} · {studentMaterials(data, student).filter(c => saved.materialIds?.includes(c.id)).map(c => c.name).join("、")}</strong>
             <p>
               {saved.windows
                 .map((w) => `${days[w.day]} ${w.start}–${w.end}`)
@@ -170,10 +187,70 @@ export function StudentSchedulingPanel({
             <h4>基础信息</h4>
             <div className="form-grid intent-settings-grid">
               <RemainingCreditsField studentId={student.id} />
-              <Field label="本次教材">
-                <Select size="form" searchable={false} value={draft.materialIds?.[0] ?? ""} disabled={!books.length}
-                  onValueChange={id => update({materialIds: [id]})}>
-                  {books.map(book => <option key={book.id} value={book.id}>{book.name}</option>)}
+              <Field
+                label="上课教材"
+                hint={books.length ? undefined : "尚未绑定教材，可在此直接绑定"}
+              >
+                {books.length ? (
+                  <input
+                    aria-label="上课教材"
+                    disabled
+                    value={books.find((b) => b.id === draft.materialIds?.[0])?.name || books[0].name}
+                  />
+                ) : (
+                  <div className="row">
+                    <Select
+                      aria-label="绑定学习教材"
+                      searchable
+                      value={bindingBookId}
+                      onValueChange={setBindingBookId}
+                    >
+                      <option value="">请选择要绑定的教材</option>
+                      {enabledBooks.map((book) => (
+                        <option key={book.id} value={book.id}>
+                          {book.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={!bindingBookId || bindingBookBusy || preview}
+                      loading={bindingBookBusy}
+                      onClick={async () => {
+                        if (!bindingBookId) return;
+                        setBindingBookBusy(true);
+                        try {
+                          await act({
+                            type: "student.details.update",
+                            id: student.id,
+                            patch: { materialIds: [bindingBookId] },
+                            expected: { materialIds: student.materialIds },
+                          });
+                          update({ materialIds: [bindingBookId] });
+                          toast("已为学员绑定教材");
+                        } catch (cause) {
+                          setError(cause instanceof Error ? cause.message : "绑定教材失败");
+                        } finally {
+                          setBindingBookBusy(false);
+                        }
+                      }}
+                    >
+                      绑定教材
+                    </Button>
+                  </div>
+                )}
+              </Field>
+              <Field label="课程类型">
+                <Select
+                  aria-label="课程类型"
+                  value={draft.kind || "固定课"}
+                  onValueChange={(value) =>
+                    update({ kind: value === "临时课" ? "临时课" : "固定课" })
+                  }
+                >
+                  <option value="固定课">固定课</option>
+                  <option value="临时课">临时课</option>
                 </Select>
               </Field>
               <Field label="开始日期">
@@ -200,10 +277,11 @@ export function StudentSchedulingPanel({
               </Field>
               <Field label="每周节数">
                 <Select
+                  searchable={false}
                   value={draft.frequency}
                   onValueChange={(v) => update({ frequency: Number(v), dailyLimit: Math.min(dailyLimit, Number(v)) })}
                 >
-                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
                     <option key={n} value={n}>
                       {n} 节
                     </option>
@@ -211,7 +289,7 @@ export function StudentSchedulingPanel({
                 </Select>
               </Field>
               <Field label="每天最多上几节">
-                <Select value={dailyLimit} onValueChange={v => update({dailyLimit: Number(v)})}>
+                <Select searchable={false} value={dailyLimit} onValueChange={v => update({dailyLimit: Number(v)})}>
                   {Array.from({length: draft.frequency}, (_, i) => <option key={i} value={i+1}>{i+1} 节</option>)}
                 </Select>
               </Field>
@@ -245,7 +323,10 @@ export function StudentSchedulingPanel({
               </Field>}
             </div>
             {draft.unlimited && <small>{(units ?? 0) < 0.01 ? "请填写每节预计扣课数（至少 0.01 课时）以计算排课周期" : credits.error || (target ? `按剩余 ${credits.available} 课时，预计可新增 ${target} 节，约 ${weeks} 周` : `剩余 ${credits.available} 课时，不足以安排一节（需 ${units} 课时）`)}</small>}
-            {!books.length && <p role="alert">请先在学员详情的编辑资料中登记学习教材，再安排课程。</p>}
+            {!books.length && <p role="alert">该学员尚未绑定学习教材，请先在上方选择并绑定教材后再排课。</p>}
+            {(studentOrg.team === "待分配" || studentOrg.group === "待分配") && (
+              <p role="alert">该学员所属教务尚未配置队伍/组别，请先完善负责教务的队伍与组别以匹配同组老师。</p>
+            )}
           </section>
           <section
             className="intent-time-section"
@@ -272,13 +353,6 @@ export function StudentSchedulingPanel({
             />
             {daysSelected > 0 && daysSelected * dailyLimit < draft.frequency && <small>已选 {daysSelected} 个上课日，每天最多 {dailyLimit} 节，每周最多可排 {daysSelected * dailyLimit} 节，低于目标 {draft.frequency} 节。</small>}
             {windowError && <small className="intent-window-error" role="status">{windowError}</small>}
-          </section>
-          <section className="stack" aria-label="匹配策略">
-            <h4>匹配策略</h4>
-            <div className="schedule-strategy-row">
-              <label className={draft.priority === "teacher" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "teacher"} onChange={() => update({priority: "teacher"})}/><strong>老师优先</strong><small>优先适配，尽量同一老师。</small></label>
-              <label className={draft.priority === "time" ? "selected" : ""}><input type="radio" name="schedule-priority" checked={draft.priority === "time"} onChange={() => update({priority: "time"})}/><strong>时间优先</strong><small>优先排满，可组合多位老师。</small></label>
-            </div>
           </section>
           {error && (
             <p role="alert" className="error-text">
@@ -321,7 +395,7 @@ export function StudentSchedulingPanel({
                 const result = await act({
                   type: "student.scheduleIntent.update",
                   studentId: student.id,
-                  intent: {...draft, dailyLimit, weeks},
+                  intent: {...draft, priority: "teacher", dailyLimit, weeks},
                 });
                 setError("");
                 toast(result.message);
@@ -347,14 +421,15 @@ export function StudentSchedulingPanel({
       {saved?.mode === "fixed" && !editingIntent && (
         <section className="schedule-plan-section" aria-label="推荐排课方案">
           <div className="row between"><h4>推荐排课方案</h4><input aria-label="搜索推荐老师" placeholder="搜索老师姓名" value={query} onChange={e => setQuery(e.target.value)}/></div>
-          <p className="muted">{saved.priority === "teacher" ? "优先匹配合适的主老师，无法覆盖的课次由其他合适老师补齐；确认前可继续调整。" : "优先满足目标课次；组合方案明确展示各位老师承担的节数。"}</p>
+          <p className="muted">限定匹配同队伍（{studentOrg.team} / {studentOrg.group}）且可授当前教材的老师（不限渠道），默认优先当前任课老师；确认前可调整单节。</p>
           <div className="schedule-recommendation-grid">{sortedPlans.map(plan => {
             const teacher = data.teachers.find(t => t.id === plan.primaryTeacherId)!;
             const fit = teacherFit(data, student, teacher);
             const names = [...new Set(plan.slots.map(s => s.teacherId).filter(Boolean))];
             return <article className="schedule-match-card" key={teacher.id}>
-              <div className="schedule-match-heading"><Avatar name={teacher.name}/><strong>{teacher.name}</strong>{teacher.needConfirm && <Badge tone="warning">排课前请联系老师</Badge>}<Badge tone={plan.complete ? "success" : "warning"}>方案可排 {plan.coveredCount}/{plan.requiredCount} 节</Badge></div>
+              <div className="schedule-match-heading"><Avatar name={teacher.name}/><strong>{teacher.name}</strong>{student.teacherId === teacher.id && <Badge tone="info">当前任课老师</Badge>}{teacher.needConfirm && <Badge tone="warning">排课前请联系老师</Badge>}<Badge tone={plan.complete ? "success" : "warning"}>方案可排 {plan.coveredCount}/{plan.requiredCount} 节</Badge></div>
               <dl className="schedule-plan-details">
+                <div><dt>队伍 / 组别</dt><dd>{teacher.team || "未分配"} / {teacher.group || "未分配"}</dd></div>
                 <div><dt>SO</dt><dd>{teacher.so}</dd></div>
                 <div><dt>口音等级</dt><dd>{teacher.accent || "未填写"}</dd></div>
                 <div><dt>老师等级</dt><dd>{teacher.level || "未填写"}</dd></div>

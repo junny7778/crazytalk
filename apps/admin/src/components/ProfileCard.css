@@ -1,6 +1,6 @@
 .profile-card-layout { display:grid; gap:16px; }
 .profile-card-layout textarea { width:100%; }
-.profile-card-preview { padding:28px; border:1px solid var(--border, #ddd); background:white; color:#25313a; border-radius:12px; }
+.profile-card-preview { padding:28px; border:1px solid var(--ct-gray-200); background:var(--ct-white); color:var(--ct-gray-900); border-radius:12px; }
 .profile-card-preview p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; }
 .profile-card-preview img { width:160px; height:160px; object-fit:contain; }
 .teacher-card-image { display:block; width:100%; max-width:600px; height:auto; margin:0 auto; }

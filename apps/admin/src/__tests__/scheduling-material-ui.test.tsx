@@ -15,15 +15,15 @@ import { addDays, DEMO_TODAY } from "@crazytalk/shared";
 import { ToastProvider } from "@crazytalk/ui";
 import { demoRepository } from "../../../../packages/shared/src/repository";
 import { CustomSchedulingPanel } from "../components/scheduling/CustomSchedulingPanel";
-function setup(teacherMode = false) {
+function setup(teacherMode = false, studentMaterialIds = ["m1"]) {
   const data = demoRepository.read();
   data.lessons = [];
   data.leaves = [];
   data.students = data.students.slice(0, 2);
   data.teachers = data.teachers.slice(0, 2);
-  data.students.forEach((s) => {
+  data.students.forEach((s, index) => {
     s.status = "在读";
-    s.materialIds = ["m1", "m2"];
+    s.materialIds = teacherMode ? [index ? "m2" : "m1"] : studentMaterialIds;
     s.balance = 50;
   });
   data.classInAccounts = data.students.map((s, i) => ({
@@ -89,11 +89,10 @@ async function click(name: string | RegExp) {
   });
 }
 it("自定义日历仅提供本节教材可授老师，预览不写入，确认后写入教材且不重复提交", async () => {
-  const { data, done } = setup();
-  const book = screen.getByRole("combobox", {name:"本次教材"});
-  fireEvent.click(book);
-  expect(screen.queryByPlaceholderText("搜索选项")).toBeNull();
-  fireEvent.click(screen.getByRole("option", {name:"Power Up 3"}));
+  const { data, done } = setup(false, ["m2"]);
+  const book = screen.getByLabelText("上课教材") as HTMLInputElement;
+  expect(book.disabled).toBe(true);
+  expect(book.value).toBe("Power Up 3");
   await click(new RegExp(`${DEMO_TODAY} 19:00 可排课`));
   const dialog = within(screen.getByRole("dialog"));
   expect(
@@ -135,20 +134,22 @@ it("按老师可先点日历时段，再从卡片选学员和共同教材", asyn
   expect(studentField.disabled).toBe(true);
   fireEvent.click(book);
   const options = screen.getAllByRole("option");
-  expect(options).toHaveLength(2);
+  expect(options).toHaveLength(1);
   expect(options[0].getAttribute("aria-selected")).toBe("true");
-  const material = options[1].textContent!.trim();
-  fireEvent.click(options[1]);
+  const firstMaterial = options[0].textContent!.trim();
+  fireEvent.click(options[0]);
   const card = screen.getByRole("button",{name:/19:00 待确认/});
-  expect(card.textContent).toContain(material);
+  expect(card.textContent).toContain(firstMaterial);
   expect(screen.queryByLabelText("每节时长")).toBeNull();
   await click(/更换学员/);await click("关闭");
-  expect(book.textContent).toContain(material);
+  expect(book.textContent).toContain(firstMaterial);
   await click(/更换学员/);
   fireEvent.click(screen.getByText(data.students[1].name, {selector:".schedule-student-card strong"}));
   expect(screen.getByRole("button",{name:/19:00 待确认/}).textContent).toContain(data.students[1].name);
   fireEvent.click(screen.getByRole("combobox", {name:"教材"}));
-  fireEvent.click(screen.getByRole("option", {name:material}));
+  const secondOption = screen.getByRole("option", {name:"Power Up 3"});
+  const material = secondOption.textContent!.trim();
+  fireEvent.click(secondOption);
   expect(demoRepository.read().lessons).toHaveLength(0);
   await click("确定排课");
   expect(demoRepository.read().lessons[0].material).toBe(material);

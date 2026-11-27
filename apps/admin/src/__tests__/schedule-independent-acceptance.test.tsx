@@ -120,7 +120,7 @@ describe("独立验收：新增排课工作流", () => {
   it("自定义排课尊重后续周冲突，确认不同每周时间后返回概况", async()=>{
  const {student,data}=fixture();student.scheduleIntent={mode:"flex",startDate:"2026-11-23",weeks:2,duration:25,frequency:1,windows:[{day:1,start:"18:00",end:"19:00"}]};
  demoRepository.execute({type:"lesson.schedule",studentId:data.students[0].id,teacherId:"t1",slots:[{date:"2026-11-30",time:"18:00"}],duration:25,kind:"固定课",material:data.students[0].material});
- await mount(`/schedule?student=${student.id}&date=2026-11-23`);await clickSchedule("返回概况");await clickSchedule("自定义排课");await addCalendarLesson("2026-11-23","18:00");
+ await mount(`/schedule?student=${student.id}&date=2026-11-23`);await clickSchedule("返回概况");await clickSchedule("临时排课");await addCalendarLesson("2026-11-23","18:00");
  await clickSchedule("下一周");expect(screen.queryByRole("button",{name:/2026-11-30 18:00 可排课/})).toBeNull();await addCalendarLesson("2026-11-30","18:30");
  await clickSchedule("预览排课");expect(demoRepository.read().lessons.filter(l=>l.studentId===student.id)).toHaveLength(0);await clickSchedule("确认排课");
  const made=demoRepository.read().lessons.filter(l=>l.studentId===student.id);expect(made.map(l=>l.time)).toEqual(["18:00","18:30"]);expect(made.every(l=>l.kind==="临时课")).toBe(true);expect(screen.getByText(/课程已保存，可在下方查看同步状态/)).toBeTruthy();

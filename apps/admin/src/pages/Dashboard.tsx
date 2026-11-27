@@ -3,7 +3,7 @@ import { lessonRecordStatus } from "../lib/lessonStatus";
 import { businessMode, businessRequest } from "@crazytalk/shared/react";
 import { OrganizationFilters } from "../components/OrganizationFilters";
 import {organizationView} from "@crazytalk/shared";
-import { purchasedDelivery } from "@crazytalk/shared";
+import { purchasedDelivery, channelProjectSettlement } from "@crazytalk/shared";
 import { formatStudentProgress } from "@crazytalk/shared";
 import { syncManagementPath, hasSyncIssue } from "../lib/lessonSync";
 import DataTransferButton from "../components/DataTransferButton";
@@ -74,15 +74,44 @@ export default function Dashboard() {
   const weekday = datePart("weekday");
   const todayISO = `${datePart("year")}-${datePart("month").padStart(2, "0")}-${datePart("day").padStart(2, "0")}`;
   const [period, setPeriod] = useState("本周");
+  const [selectedChannel, setChannel] = useState("全部渠道");
   const [selectedProject, setProject] = useState("全部项目");
-  const projects = [...new Set(data.students.map(s => s.project).filter(Boolean))];
+  const [settlementView, setSettlementView] = useState("channel");
+  const channels = [
+    ...new Set([
+      ...data.catalog.filter((c) => c.type === "渠道").map((c) => c.name),
+      ...data.students.map((s) => s.channel).filter(Boolean),
+    ]),
+  ];
+  const channel = channels.includes(selectedChannel) ? selectedChannel : "全部渠道";
+  const channelEntry = data.catalog.find((c) => c.type === "渠道" && c.name === channel);
+  const projects = [
+    ...new Set([
+      ...data.catalog
+        .filter(
+          (p) =>
+            p.type === "项目" &&
+            (channel === "全部渠道" ||
+              !channelEntry ||
+              p.parentId === channelEntry.id ||
+              p.channelIds?.includes(channelEntry.id)),
+        )
+        .map((p) => p.name),
+      ...data.students
+        .filter((s) => channel === "全部渠道" || s.channel === channel)
+        .map((s) => s.project)
+        .filter(Boolean),
+    ]),
+  ];
   const project = projects.includes(selectedProject) ? selectedProject : "全部项目";
   const [trendBy, setTrendBy] = useState("合计");
   const [group, setGroup] = useState("项目");
   const [expanded, setExpanded] = useState<string[]>(["K12"]);
   const [attendanceView, setAttendanceView] = useState("summary");
   const students = data.students.filter(
-    (s) => project === "全部项目" || s.project === project,
+    (s) =>
+      (channel === "全部渠道" || s.channel === channel) &&
+      (project === "全部项目" || s.project === project),
   );
   const delivery = purchasedDelivery(allData, students, DEMO_TODAY.slice(0, 7));
   const studentIds = new Set(students.map((s) => s.id));
@@ -342,6 +371,19 @@ export default function Dashboard() {
             <option>今天</option>
             <option>本周</option>
             <option>本月</option>
+          </Select>
+          <Select
+            className="compact-select"
+            aria-label="看板渠道"
+            value={channel}
+            disabled={!channels.length}
+            onValueChange={(value) => {
+              setChannel(value);
+              setProject("全部项目");
+            }}
+          >
+            <option>全部渠道</option>
+            {channels.map((name) => <option key={name}>{name}</option>)}
           </Select>
           <Select
             className="compact-select"
@@ -983,6 +1025,16 @@ export default function Dashboard() {
               <p className="dashboard-chart-footnote">项目老师按任教学员及课次关联筛选，开放容量未作项目分摊。</p>
             )}
           </section>
+          <DashboardSettlementPanel
+            data={data}
+            from={since}
+            to={DEMO_TODAY}
+            period={period}
+            channel={channel}
+            project={project}
+            view={settlementView}
+            onViewChange={setSettlementView}
+          />
         </>
       ) : (
         <>
@@ -1307,5 +1359,146 @@ function HeatRow({
         );
       })}
     </>
+  );
+}
+
+function DashboardSettlementPanel({
+  data,
+  from,
+  to,
+  period,
+  channel,
+  project,
+  view,
+  onViewChange,
+}: {
+  data: ReturnType<typeof useDemo>["data"];
+  from: string;
+  to: string;
+  period: string;
+  channel: string;
+  project: string;
+  view: string;
+  onViewChange: (view: string) => void;
+}) {
+  const settlement = channelProjectSettlement(data, { from, to, channel, project });
+  return (
+    <section aria-label="渠道项目结算统计">
+      <Panel
+        title="按渠道 / 项目结算统计"
+        action={
+          <div className="row wrap">
+            <Tabs
+              variant="chips"
+              value={view}
+              onChange={onViewChange}
+              items={[
+                { value: "channel", label: "按渠道汇总" },
+                { value: "project", label: "按项目明细" },
+              ]}
+            />
+            <DataTransferButton
+              direction="export"
+              size="sm"
+              disabled={!settlement.rows.length}
+              onClick={() =>
+                void downloadTable(
+                  `渠道项目结算_${from}_${to}`,
+                  ["一级渠道", "项目（课包）", "学员数", "新购课时", "续费课时", "补偿/赠送", "已消课节", "已消课时", "结算单价(元)", "结算金额(元)"],
+                  settlement.rows.map((r) => [
+                    r.channel,
+                    r.project,
+                    r.studentCount,
+                    r.newPurchaseUnits,
+                    r.renewalUnits,
+                    r.compUnits,
+                    r.deliveredLessons,
+                    r.deliveredUnits,
+                    r.unitPrice ?? "按实收金额",
+                    r.settlementAmount,
+                  ]),
+                )
+              }
+            />
+          </div>
+        }
+      >
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>一级渠道</th>
+                {view === "project" && <th>项目（课包）</th>}
+                <th>学员数</th>
+                <th>新购课时</th>
+                <th>续费课时</th>
+                <th>补偿 / 赠送</th>
+                <th>已消课节</th>
+                <th>已消课时</th>
+                {view === "project" && <th>结算单价</th>}
+                <th>结算金额（元）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view === "channel" ? (
+                settlement.byChannel.map((group) => (
+                  <tr key={group.channel}>
+                    <td>
+                      <strong>{group.channel}</strong>
+                      <small className="muted" style={{ display: "block" }}>
+                        {group.projects.map((p) => `${p.project}（${p.deliveredUnits}课时）`).join(" · ")}
+                      </small>
+                    </td>
+                    <td>{group.studentCount}</td>
+                    <td>{group.newPurchaseUnits}</td>
+                    <td>{group.renewalUnits}</td>
+                    <td>{group.compUnits}</td>
+                    <td>{group.deliveredLessons}</td>
+                    <td>{group.deliveredUnits}</td>
+                    <td><strong>¥{group.settlementAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+                  </tr>
+                ))
+              ) : (
+                settlement.rows.map((r) => (
+                  <tr key={`${r.channel}-${r.project}`}>
+                    <td>{r.channel}</td>
+                    <td><strong>{r.project}</strong></td>
+                    <td>{r.studentCount}</td>
+                    <td>{r.newPurchaseUnits}</td>
+                    <td>{r.renewalUnits}</td>
+                    <td>{r.compUnits}</td>
+                    <td>{r.deliveredLessons}</td>
+                    <td>{r.deliveredUnits}</td>
+                    <td>{r.unitPrice !== null ? `¥${r.unitPrice}/课时` : "按实收"}</td>
+                    <td><strong>¥{r.settlementAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+                  </tr>
+                ))
+              )}
+              {settlement.rows.length > 0 && (
+                <tr className="group-row">
+                  <td>合计</td>
+                  {view === "project" && <td>全部项目</td>}
+                  <td>{settlement.totals.studentCount}</td>
+                  <td>{settlement.totals.newPurchaseUnits}</td>
+                  <td>{settlement.totals.renewalUnits}</td>
+                  <td>{settlement.totals.compUnits}</td>
+                  <td>{settlement.totals.deliveredLessons}</td>
+                  <td>{settlement.totals.deliveredUnits}</td>
+                  {view === "project" && <td>—</td>}
+                  <td><strong>¥{settlement.totals.settlementAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {!settlement.rows.length && <p className="dashboard-empty">当前筛选范围内暂无渠道或项目结算数据</p>}
+        <div className="dashboard-data-note">
+          <DataExplanation title="按渠道 / 项目结算统计">
+            <p>统计周期为 {period}（{from} 至 {to}）。渠道为一级维度，每个项目归属其一级渠道。</p>
+            <p>若项目配置了「结算单价」，按「已消课时 × 结算单价」计算结算金额；未配置单价时汇总周期内新购与续费已登记的实收金额。</p>
+          </DataExplanation>
+        </div>
+      </Panel>
+    </section>
   );
 }

@@ -21,6 +21,12 @@ export function studentMaterials(
     (c) => c.type === "教材" && c.enabled && ids.includes(c.id),
   );
 }
+export function studentActiveMaterial(
+  data: DemoState,
+  student: Pick<Student, "material" | "materialIds">,
+) {
+  return studentMaterials(data, student)[0];
+}
 export function materialMatchIssue(
   data: DemoState,
   student: Student,

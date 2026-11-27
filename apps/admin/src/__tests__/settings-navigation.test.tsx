@@ -492,7 +492,11 @@ describe("资料弹窗标题", () => {
   );
   it.each(["项目", "渠道"])("共享弹窗编辑%s时也展示对应类型", async (type) => {
     mount("/settings?tab=org");
-    fireEvent.click(await screen.findByRole("tab", {name:type}));
+    fireEvent.click(
+      await screen.findByRole("tab", {
+        name: type === "渠道" ? "渠道（一级）" : "项目（课包/课程产品）",
+      }),
+    );
     await screen.findByRole("table");
     const entry = demoRepository
       .read()
@@ -895,20 +899,25 @@ it("个人菜单修改密码校验当前密码并更新演示会话", async () =
  await changeDemoPassword(record.id,"Personal123!","Another123!");
 });
 
-it("项目编辑可关联多个合作渠道并保存月应上课数", async () => {
+it("项目编辑可选择一级所属渠道、月应上课数与结算单价", async () => {
   mount("/settings?tab=org");
-  fireEvent.click(await screen.findByRole("tab", {name:"项目"}));
-  const row = (await screen.findByText("K12", {exact:true})).closest("tr")!;
-  await testAct(async () => { fireEvent.click(within(row).getByRole("button", {name:"编辑"})); });
-  const dialog = await screen.findByRole("dialog", {name:"编辑项目"});
-  const channels = within(dialog).getAllByRole("checkbox").filter(input => input !== within(dialog).getByRole("checkbox", {name:"启用"}));
-  for (const input of channels) if ((input as HTMLInputElement).checked) await testAct(async () => { fireEvent.click(input); });
-  await testAct(async () => { fireEvent.click(within(dialog).getByRole("checkbox", {name:"许老师"})); fireEvent.click(within(dialog).getByRole("checkbox", {name:"ToC"})); });
-  await testAct(async () => { fireEvent.change(within(dialog).getByRole("spinbutton", {name:/月应上课数/}), {target:{value:"12"}}); });
-  await testAct(async () => { fireEvent.click(within(dialog).getByRole("button",{name:"保存"})); });
-  await within(row).findByRole("cell", {name:"许老师、ToC"});
-  expect(within(row).getByRole("cell", {name:"12"})).toBeTruthy();
-  expect(demoRepository.read().catalog.find(p => p.id === "pr0")).toMatchObject({channelIds:["ch0","ch1"],monthlyLessons:12});
+  fireEvent.click(await screen.findByRole("tab", { name: "项目（课包/课程产品）" }));
+  const row = (await screen.findByText("K12", { exact: true })).closest("tr")!;
+  await testAct(async () => { fireEvent.click(within(row).getByRole("button", { name: "编辑" })); });
+  const dialog = await screen.findByRole("dialog", { name: "编辑项目" });
+  await openSelect(within(dialog).getByRole("combobox", { name: "所属一级渠道" }));
+  await selectOption(screen.getByRole("option", { name: "许老师" }));
+  await testAct(async () => { fireEvent.change(within(dialog).getByRole("spinbutton", { name: /月应上课数/ }), { target: { value: "12" } }); });
+  await testAct(async () => { fireEvent.change(within(dialog).getByRole("spinbutton", { name: /结算单价/ }), { target: { value: "150" } }); });
+  await testAct(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "保存" })); });
+  await within(row).findByRole("cell", { name: "许老师" });
+  expect(within(row).getByRole("cell", { name: "12" })).toBeTruthy();
+  expect(demoRepository.read().catalog.find(p => p.id === "pr0")).toMatchObject({
+    parentId: "ch0",
+    channelIds: ["ch0"],
+    monthlyLessons: 12,
+    unitPrice: 150,
+  });
 });
 
 async function openSelect(trigger: HTMLElement) {
@@ -945,15 +954,17 @@ it("新增渠道可选择合作项目，重新编辑回显并可取消配对", a
 it("渠道和项目分 Tab 展示各自字段，新建类型跟随当前 Tab", async () => {
   mount("/settings?tab=org");
   await screen.findByRole("button", {name:"新建渠道"});
-  expect(screen.getByRole("columnheader", {name:"合作项目"})).toBeTruthy();
+  expect(screen.getByRole("columnheader", {name:"下属项目（课包）"})).toBeTruthy();
   expect(screen.queryByRole("columnheader", {name:"月应上课数"})).toBeNull();
   expect(screen.queryByRole("columnheader", {name:"类型"})).toBeNull();
-  fireEvent.click(screen.getByRole("tab", {name:"项目"}));
-  expect(screen.getByRole("columnheader", {name:"合作渠道"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", {name:"项目（课包/课程产品）"}));
+  expect(screen.getByRole("columnheader", {name:"所属一级渠道"})).toBeTruthy();
   expect(screen.getByRole("columnheader", {name:"月应上课数"})).toBeTruthy();
+  expect(screen.getByRole("columnheader", {name:"结算单价"})).toBeTruthy();
   fireEvent.click(screen.getByRole("button", {name:"新建项目"}));
   const dialog = await screen.findByRole("dialog", {name:"新增项目"});
   expect(within(dialog).getByRole("textbox", {name:/名称/})).toBeTruthy();
+  expect(within(dialog).getByRole("combobox", {name:"所属一级渠道"})).toBeTruthy();
   expect(within(dialog).getByRole("spinbutton", {name:/月应上课数/})).toBeTruthy();
 });
 

@@ -459,6 +459,8 @@ export function transition(
       note,
       operator: command.operator || "教务",
       recordedAt,
+      ...(s.channel ? { channel: s.channel } : {}),
+      ...(s.project ? { project: s.project } : {}),
       ...(metadata.lessonId ? { lessonId: metadata.lessonId } : {}),
       ...(metadata.amount !== undefined ? { amount: metadata.amount } : {}),
       ...(metadata.feedbackId ? { feedbackId: metadata.feedbackId } : {}),
@@ -547,9 +549,14 @@ export function transition(
       const chineseName = command.student.chineseName.trim();
       if (!chineseName) throw new Error("请填写学生中文名");
       const profile = studentProfileSchema.parse({ ...command.student, chineseName, name: chineseName });
+      if ((profile.materialIds?.length ?? 0) > 1) throw new Error("每位学员仅支持选择一本学习教材");
       if (profile.materialIds?.some(id => !data.catalog.some(c => c.id === id && c.type === "教材" && c.enabled))) throw new Error("请选择教材目录中启用的教材");
+      const activeBookName = profile.materialIds?.[0]
+        ? data.catalog.find(c => c.id === profile.materialIds![0] && c.type === "教材")?.name || profile.material
+        : profile.material;
       const s = studentSchema.parse({
         ...profile,
+        material: activeBookName,
         id: nextStudentId(data.students),
         createdAt: DEMO_TODAY,
         balance: 0,
@@ -582,12 +589,27 @@ export function transition(
       }
       if (
         data.reports.some((report) => report.studentId === existing.id) &&
-        ("material" in patch || "unit" in patch)
+        ("material" in patch || "unit" in patch) &&
+        !("materialIds" in patch)
       )
         throw new Error("已有课后进度，请更正对应课后记录");
       if (patch.chineseName !== undefined && !patch.chineseName.trim()) throw new Error("请填写学生中文名");
+      if ((patch.materialIds?.length ?? 0) > 1) throw new Error("每位学员仅支持选择一本学习教材");
       if (patch.materialIds?.some(id => !existing.materialIds?.includes(id) && !data.catalog.some(c => c.id === id && c.type === "教材" && c.enabled))) throw new Error("请选择教材目录中启用的教材");
+      const previousBookId = existing.materialIds?.[0] ?? "";
+      const previousBookName = previousBookId
+        ? data.catalog.find(c => c.id === previousBookId && c.type === "教材")?.name || existing.material
+        : existing.material;
       Object.assign(existing, patch);
+      if ("materialIds" in patch) {
+        const nextBookId = patch.materialIds?.[0] ?? "";
+        const nextBookName = nextBookId
+          ? data.catalog.find(c => c.id === nextBookId && c.type === "教材")?.name || ""
+          : "";
+        if (nextBookId !== previousBookId && previousBookId) {
+          event("更换教材", `学习教材由「${previousBookName || "未设置"}」更换为「${nextBookName || "未设置"}」`, existing.id);
+        }
+      }
       existing.name = existing.chineseName || existing.englishName || existing.name;
       event("修改资料", "更新了学员资料", existing.id);
       break;
@@ -1059,7 +1081,10 @@ export function transition(
       const alignmentIssue = accountBalanceAlignmentIssue(data, buyer.id);
       if (alignmentIssue) throw new Error(alignmentIssue);
       const members = [...new Set(data.classInAccounts?.find(account => account.studentIds.includes(buyer.id))?.studentIds ?? command.studentIds)];
-      if (!command.id.trim() || !members.includes(buyer.id) || ![72,144].includes(command.units)) throw new Error("请选择学员和套餐");
+      if (!command.id.trim() || !members.includes(buyer.id)) throw new Error("请选择学员和套餐");
+      const isNewPurchase = ["新购", "购课"].includes(command.kind);
+      if (isNewPurchase ? ![72, 144].includes(command.units) : !Number.isFinite(command.units) || command.units <= 0)
+        throw new Error(isNewPurchase ? "新购请选择 72 或 144 课时套餐" : "请填写大于 0 的有效课时数");
       const date = businessDate(command.date);
       if (members.length > 1) {
         const { account, unbound, issue } = sharedClassIn(data, members);
@@ -1073,7 +1098,13 @@ export function transition(
       const orders = data.orders ??= [];
       if (orders.some(o => o.id === command.id) || data.credits.some(row => row.purchaseId === command.id)) { message = "订单已登记"; break; }
       orders.push({id:command.id,studentIds:members,units:command.units,balance:command.units,date,kind:command.kind,channel:buyer.channel,project:buyer.project});
-      data.credits.unshift({id:id(),studentId:buyer.id,orderId:command.id,purchaseId:command.id,purchaseStudentIds:[...members],date,type:command.kind,units:command.units,balance:command.units,note:command.note,operator:command.operator || "教务",recordedAt});
+      data.credits.unshift({
+        id:id(),studentId:buyer.id,orderId:command.id,purchaseId:command.id,purchaseStudentIds:[...members],
+        date,type:command.kind,units:command.units,balance:command.units,note:command.note,operator:command.operator || "教务",recordedAt,
+        ...(buyer.channel ? { channel: buyer.channel } : {}),
+        ...(buyer.project ? { project: buyer.project } : {}),
+        ...(command.amount !== undefined ? { amount: command.amount } : {}),
+      });
       if (command.kind === "续费") data.credits[0].renewalPayRuleVersion = data.payRuleChanges?.length ?? 0;
       const sources = orders.filter(order => order.studentIds.some(id => members.includes(id)));
       if (sources.length > 1) mergeBalanceSources(data, sources[0], sources, members);
@@ -2142,6 +2173,16 @@ export function transition(
       const scheduleError = availabilityError(parsedTeacher.data);
       if (scheduleError) throw new Error(scheduleError);
       const found = data.teachers.find((t) => t.id === command.teacher.id);
+      const nextTeam = parsedTeacher.data.team?.trim() || undefined;
+      const nextGroup = parsedTeacher.data.group?.trim() || undefined;
+      if (Boolean(nextTeam) !== Boolean(nextGroup)) throw new Error("请同时选择所属队伍和组别");
+      if (nextTeam && (!found || found.team !== nextTeam || found.group !== nextGroup)) {
+        const teamEntry = data.catalog.find(c => c.type === "队伍" && c.name === nextTeam && c.enabled);
+        if (!teamEntry || !data.catalog.some(c => c.type === "组别" && c.parentId === teamEntry.id && c.name === nextGroup && c.enabled))
+          throw new Error("请选择基础资料中启用的队伍与组别");
+      }
+      parsedTeacher.data.team = nextTeam;
+      parsedTeacher.data.group = nextGroup;
       if (found?.classInUid && parsedTeacher.data.classInUid !== undefined && found.classInUid !== parsedTeacher.data.classInUid) throw new Error("老师 ClassIn 账号不能直接改绑，请先核实已有课程与班级");
       for (const tag of parsedTeacher.data.tags) {
         if (found?.tags.includes(tag)) continue;
@@ -2380,17 +2421,27 @@ export function transition(
             if (incoming.type === "队伍" && account.team === previous.name) account.team = incoming.name;
             if (incoming.type === "组别" && account.team === team?.name && account.group === previous.name) account.group = incoming.name;
           }
+          for (const tutor of data.teachers) {
+            if (incoming.type === "队伍" && tutor.team === previous.name) tutor.team = incoming.name;
+            if (incoming.type === "组别" && tutor.team === team?.name && tutor.group === previous.name) tutor.group = incoming.name;
+          }
         }
       }
       if (incoming.type === "项目") {
         incoming.historicalChannelIds = [...new Set([...(previous?.historicalChannelIds || []), ...(previous?.channelIds || [])])];
         incoming.scopeChannelId = previous?.scopeChannelId;
 
-        if (incoming.parentId) {
+        if (incoming.parentId && (!incoming.channelIds || incoming.parentId !== previous?.parentId)) {
           incoming.channelIds = [incoming.parentId];
           incoming.scopeChannelId = incoming.parentId;
+        } else if (incoming.channelIds?.length && (!incoming.parentId || !incoming.channelIds.includes(incoming.parentId))) {
+          incoming.parentId = incoming.channelIds[0];
+          incoming.scopeChannelId = incoming.parentId;
+        } else if (incoming.channelIds && !incoming.channelIds.length) {
           delete incoming.parentId;
         }
+        if (incoming.unitPrice !== undefined && (!Number.isFinite(incoming.unitPrice) || incoming.unitPrice < 0))
+          throw new Error("请填写有效的结算单价");
         for (const channelId of incoming.channelIds || []) {
           if (!data.catalog.some(c => c.id === channelId && c.type === "渠道" && (c.enabled || previous?.channelIds?.includes(channelId))))
             throw new Error("合作渠道不存在");
@@ -2428,6 +2479,8 @@ export function transition(
           project.channelIds = selected
             ? [...(project.channelIds || []), incoming.id]
             : (project.channelIds || []).filter(id => id !== incoming.id);
+          if (selected && !project.parentId) project.parentId = incoming.id;
+          else if (!selected && project.parentId === incoming.id) project.parentId = project.channelIds[0];
         }
       }
       if (command.entry.type === "反馈分类") {

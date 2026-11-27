@@ -11,11 +11,13 @@ import {
   Select,
 } from "@crazytalk/ui";
 import LessonWeekCalendar from "./LessonWeekCalendar";
+import TeacherFixedFreeView from "./TeacherFixedFreeView";
 import { StudentLessonDrawer } from "./StudentLessonDrawer";
 import ListPagination from "./ListPagination";
 export default function TeacherSchedule({ teacherId }: { teacherId: string }) {
   const { data } = useDemo();
   const [view, setView] = useState("list"),
+    [freeScreenshotMode, setFreeScreenshotMode] = useState(false),
     [status, setStatus] = useState(""),
     [from, setFrom] = useState(""),
     [to, setTo] = useState("");
@@ -56,9 +58,23 @@ export default function TeacherSchedule({ teacherId }: { teacherId: string }) {
     <div className="stack">
       <div className="row between wrap">
         <span className="muted">共 {lessons.length} 节课</span>
-        <CourseViewSwitch value={view} onChange={setView} />
+        <div className="row wrap">
+          <label className="select-row">
+            <input
+              type="checkbox"
+              checked={freeScreenshotMode}
+              onChange={(event) => setFreeScreenshotMode(event.target.checked)}
+            />
+            仅看可固定空闲时间（截图模式）
+          </label>
+          {!freeScreenshotMode && <CourseViewSwitch value={view} onChange={setView} />}
+        </div>
       </div>
-      {view === "list" && (
+      {freeScreenshotMode ? (
+        <TeacherFixedFreeView data={data} teacherId={teacherId} />
+      ) : (
+        <>
+          {view === "list" && (
         <div className="sc-filters">
           <Field label="上课日期（起始）">
             <DatePicker
@@ -184,6 +200,8 @@ export default function TeacherSchedule({ teacherId }: { teacherId: string }) {
             page={currentPage}
             onChange={setPage}
           />
+        </>
+      )}
         </>
       )}
       <StudentLessonDrawer

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { teacherFit, type Teacher, type Student } from "@crazytalk/shared";
+import { studentOrganization, teacherFit, type Teacher, type Student } from "@crazytalk/shared";
 import { useDemo } from "@crazytalk/shared/react";
-import { Avatar, Button, Modal } from "@crazytalk/ui";
+import { Avatar, Badge, Button, Modal } from "@crazytalk/ui";
 import { Check } from "lucide-react";
 import { lessonEnd } from "../StudentLessonDrawer";
 import { TeacherSchedulingAccountNotice } from "./SchedulingAccountNotice";
@@ -33,6 +33,9 @@ export function ScheduleTeacherPicker({
   const {data, preview, can} = useDemo();
   const [selectedTeacher, setSelectedTeacher] = useState(initialTeacher);
   const [teacherQuery, setTeacherQuery] = useState("");
+  const studentOrg = student
+    ? studentOrganization(data.accounts, student.owner, student.roster, student.ownerAccountId)
+    : null;
   return (
     <Modal
       open
@@ -86,7 +89,7 @@ export function ScheduleTeacherPicker({
             value={teacherQuery}
             onChange={(e) => setTeacherQuery(e.target.value)}
           />
-          <span className="flex-picker-match-count">可选老师 {editingTeachers.length} 位（教材与时间均匹配）</span>
+          <span className="flex-picker-match-count">可选老师 {editingTeachers.length} 位（推荐老师排在最前，也可自选其他可用老师）</span>
         </div>
         {unboundTeachers.filter(t => t.name.toLowerCase().includes(teacherQuery.toLowerCase())).map(t=><div key={t.id} className="stack"><button type="button" className="flex-teacher-choice" disabled>{t.name} · 未绑定 ClassIn</button><TeacherSchedulingAccountNotice teacher={t}/></div>)}
         {children}
@@ -98,7 +101,17 @@ export function ScheduleTeacherPicker({
                 .toLowerCase()
                 .includes(teacherQuery.trim().toLowerCase()),
             )
-            .map((t) => (
+            .map((t) => {
+              const fit = student ? teacherFit(data, student, t) : null;
+              const sameOrg = Boolean(
+                studentOrg &&
+                  studentOrg.team !== "待分配" &&
+                  t.team === studentOrg.team &&
+                  t.group === studentOrg.group,
+              );
+              const ageOk = !student || student.age == null || student.age >= 16 || t.categories.includes("少儿");
+              const recommended = Boolean(student && sameOrg && ageOk && fit && !fit.blocked.length);
+              return (
               <button
                 type="button"
                 key={t.id}
@@ -110,8 +123,14 @@ export function ScheduleTeacherPicker({
                 <div className="flex-teacher-heading">
                   <Avatar name={t.name} />
                   <strong>{t.name}</strong>
-                  {student && <small>{[...teacherFit(data,student,t).matchedPrimary, ...teacherFit(data,student,t).matchedSecondary].join(" · ") || "教材与时间匹配"}</small>}
-                  {student && [...teacherFit(data,student,t).blocked,...teacherFit(data,student,t).warnings].map(note=><small key={note}>{note}（教务可手动选择）</small>)}
+                  {recommended && <Badge tone="success">推荐</Badge>}
+                  {student && fit && <small>{[...fit.matchedPrimary, ...fit.matchedSecondary].join(" · ") || "教材与时间匹配"}</small>}
+                  {student && !sameOrg && studentOrg && studentOrg.team !== "待分配" && (
+                    <small className="flex-teacher-tag">
+                      队伍 {t.team ? `${t.team}/${t.group}` : "未分配"}（可自选）
+                    </small>
+                  )}
+                  {student && fit && [...fit.blocked,...fit.warnings].map(note=><small key={note}>{note}（教务可手动选择）</small>)}
                   {pastTeachers.includes(t.id) ? (
                     <small className="flex-teacher-tag">曾授课</small>
                   ) : plannedTeachers.includes(t.id) ? (
@@ -128,12 +147,12 @@ export function ScheduleTeacherPicker({
                 </div>
                 <div className="flex-teacher-facts">
                   <span>
-                    <small>SO</small>
-                    {t.so || "未填写"}
+                    <small>队伍 / 组别</small>
+                    {t.team ? `${t.team} / ${t.group}` : "待分配"}
                   </span>
                   <span>
-                    <small>口音等级</small>
-                    {t.accent || "未填写"}
+                    <small>SO · 口音</small>
+                    {t.so || "未填写"} · {t.accent || "未填写"}
                   </span>
                   <span>
                     <small>导师等级</small>
@@ -144,7 +163,8 @@ export function ScheduleTeacherPicker({
                   可教类别：{t.categories.join(" / ") || "未填写"}
                 </div>
               </button>
-            ))}
+              );
+            })}
           {!editingTeachers.length ? (
             <p className="muted">
               没有老师能覆盖本次全部课次，请调整上课时间或重复安排。

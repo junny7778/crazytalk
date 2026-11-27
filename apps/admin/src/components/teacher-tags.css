@@ -1,17 +1,17 @@
-.teacher-tags{display:inline-flex;flex-wrap:wrap;gap:6px}.teacher-tag{padding:3px 8px;border-radius:6px;font-size:12px;background:#f2f3f5;color:#343b43}.teacher-tag-green{background:#eaf4ee;color:#256343}.teacher-tag-yellow{background:#fff4d9;color:#805d16}.teacher-tag-red{background:#fcebea;color:#a43b35}.teacher-tag-purple{background:#f1eafa;color:#705093}
-.teacher-tag-count{font-size:12px;color:#68737f;margin:10px 0 6px}
+.teacher-tags{display:inline-flex;flex-wrap:wrap;gap:6px}.teacher-tag{padding:3px 8px;border-radius:6px;font-size:12px;background:var(--ct-gray-100);color:var(--ct-gray-700)}.teacher-tag-green{background:var(--ct-success-bg);color:var(--ct-success)}.teacher-tag-yellow{background:var(--ct-warning-bg);color:var(--ct-warning)}.teacher-tag-red{background:var(--ct-danger-bg);color:var(--ct-danger)}.teacher-tag-purple{background:var(--ct-purple-bg);color:var(--ct-purple)}
+.teacher-tag-count{font-size:12px;color:var(--ct-gray-500);margin:10px 0 6px}
 .teacher-tag-selected{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
-.teacher-tag-selected button{display:inline-flex;align-items:center;gap:3px;border:1px solid #d3d9df;background:white;border-radius:7px;padding:3px 6px 3px 3px;cursor:pointer}
-.teacher-tag-options fieldset{border:0;border-top:1px solid #e5e7eb;min-width:0;margin:12px 0 0;padding:10px 0 0}
-.teacher-tag-options legend{font-size:12px;font-weight:600;color:#68737f;padding:0 8px 0 0}
+.teacher-tag-selected button{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--ct-gray-300);background:var(--ct-white);border-radius:7px;padding:3px 6px 3px 3px;cursor:pointer}
+.teacher-tag-options fieldset{border:0;border-top:1px solid var(--ct-gray-200);min-width:0;margin:12px 0 0;padding:10px 0 0}
+.teacher-tag-options legend{font-size:12px;font-weight:600;color:var(--ct-gray-500);padding:0 8px 0 0}
 .teacher-tag-chip-list{display:flex;flex-wrap:wrap;gap:7px}
-.teacher-tag-options .teacher-tag-choice{position:relative;display:inline-flex;align-items:center;gap:4px;margin:0;padding:3px;border:1px solid transparent;border-radius:7px;background:#fff;cursor:pointer}
+.teacher-tag-options .teacher-tag-choice{position:relative;display:inline-flex;align-items:center;gap:4px;margin:0;padding:3px;border:1px solid transparent;border-radius:7px;background:var(--ct-white);cursor:pointer}
 .teacher-tag-options .teacher-tag-choice:has(input:focus-visible) .teacher-tag{text-decoration:underline;text-underline-offset:3px}
 .teacher-tag-options .teacher-tag-choice>input{position:absolute;width:1px;height:1px;padding:0;margin:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap}
 .teacher-tag-check{font-size:12px;font-weight:700;padding-right:4px;color:inherit}
-.teacher-tag-empty{font-size:13px;color:#68737f}
+.teacher-tag-empty{font-size:13px;color:var(--ct-gray-500)}
 
-.teacher-tag-tooltip{position:fixed;z-index:2000;padding:12px 14px;border:1px solid var(--ct-gray-200);border-radius:8px;background:var(--ct-white);color:var(--ct-gray-800);box-shadow:0 6px 24px #0002;font-size:13px;line-height:1.6;pointer-events:none;overflow-wrap:anywhere}
+.teacher-tag-tooltip{position:fixed;z-index:2000;padding:12px 14px;border:1px solid var(--ct-gray-200);border-radius:8px;background:var(--ct-white);color:var(--ct-gray-800);box-shadow:0 6px 24px var(--ct-feedback-shadow);font-size:13px;line-height:1.6;pointer-events:none;overflow-wrap:anywhere}
 .teacher-tag-tooltip dl{margin:8px 0 0;display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px}
 .teacher-tag-tooltip dt{color:var(--ct-gray-500)}
 .teacher-tag-tooltip dd{margin:0;white-space:pre-wrap}

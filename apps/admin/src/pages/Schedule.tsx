@@ -68,7 +68,7 @@ export default function Schedule() {
   const [panel, setPanel] = useState(
     params.get("teacher") && !params.get("student") ? "teachers" : "pending",
   );
-  const [flow, setFlow] = useState<"overview" | "auto" | "custom">("overview");
+  const [flow, setFlow] = useState<"overview" | "auto" | "custom" | "temp">("overview");
   const [workflowStage, setWorkflowStage] = useState<"setup" | "preview">(
     "setup",
   );
@@ -594,7 +594,7 @@ export default function Schedule() {
               onStart={(mode) => {
                 setScheduleResult(null);
                 setFlow(mode);
-                if (mode === "custom") {
+                if (mode === "custom" || mode === "temp") {
                   setSelected([]);
                   setModal("schedule");
                 }
@@ -673,8 +673,10 @@ export default function Schedule() {
           {modal === "schedule" && (
             <div className="schedule-summary-card">
               <CustomSchedulingPanel
+                key={`${panel}-${panel === "pending" ? studentId : selectedTeacher}-${flow}`}
                 studentId={panel === "pending" ? studentId : ""}
                 teacherId={panel === "teachers" ? selectedTeacher : ""}
+                defaultKind={flow === "temp" ? "临时课" : "固定课"}
                 initialTime={selected[0]}
                 initialTimes={selected}
                 startDate={base}

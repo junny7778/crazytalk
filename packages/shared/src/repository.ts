@@ -4,7 +4,7 @@ import { finishStudentAccountChange } from "./classInChanges";
 import { initializeTeacherTags } from "./teacherTags";
 import { createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
 import { splitRosterName } from "./studentNames";
-import { assignSampleTeams, migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "./organization";
+import { assignSampleTeams, migrateStudentOwners, migrateTeamCatalog, migrateTeacherTeams, migrateProjectChannels } from "./organization";
 import { finalizeDemoLessonHistory } from "./rosterActivity";
 import { withDemoSchedulingSamples } from "./demoSchedulingSamples";
 import { withDemoPayrollSamples, withErikaSamples } from "./demoPayrollSamples";
@@ -132,6 +132,8 @@ function read(): DemoState {
           upgraded ||= tagsUpdated;
           const teamsUpdated = assignSampleTeams(memory);
           upgraded ||= teamsUpdated;
+          const teacherTeamsUpdated = migrateTeacherTeams(memory);
+          upgraded ||= teacherTeamsUpdated;
           memory.catalog = catalog;
           upgraded = migrateTeamCatalog(memory) || upgraded;
           upgraded = migrateProjectChannels(memory) || upgraded;

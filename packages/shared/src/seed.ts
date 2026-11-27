@@ -78,6 +78,11 @@ export function createSeed(): DemoState {
       "BigBrains",
       "Mellany",
     ][i],
+    ...(i === 7
+      ? {}
+      : i % 3 === 0
+        ? { team: "B队", group: "一组" }
+        : { team: "A队", group: "二组" }),
     accent: ["B+", "A", "B+", "B", "A", "B+", "B", "A"][i],
     level: i % 3 ? "B" : "A",
     categories: i === 6 ? ["成人", "商务"] : ["少儿", "成人", "雅思"],

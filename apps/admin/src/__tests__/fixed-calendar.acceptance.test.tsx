@@ -25,6 +25,8 @@ function setup(windowEnd = "19:25", frequency = 1, weeks = 2, dailyLimit = 1) {
     t.status = "在职";
     t.trained = true;
     t.needConfirm = false;
+    t.team = "B队";
+    t.group = "一组";
     t.categories = ["少儿"];
     t.availabilityFrom = "";
     t.availability = [{ day: 1, start: "19:00", end: "21:00" }];

@@ -43,6 +43,42 @@ export function assignSampleTeams(data: DemoState) {
   return true;
 }
 
+const defaultDemoTeacherTeams: Record<string, readonly [string, string]> = {
+  t1: ["B队", "一组"],
+  t2: ["A队", "二组"],
+  t3: ["A队", "二组"],
+  t4: ["B队", "一组"],
+  t5: ["A队", "二组"],
+  t6: ["A队", "二组"],
+  t7: ["B队", "一组"],
+  "demo-tutor-theo": ["A队", "二组"],
+};
+
+export function migrateTeacherTeams(data: DemoState) {
+  const batch = "sample-teacher-teams-v1";
+  if (data.importedBatches?.includes(batch)) return false;
+  let changed = false;
+  for (const teacher of data.teachers) {
+    if (teacher.team || teacher.group) continue;
+    const preset = defaultDemoTeacherTeams[teacher.id];
+    if (preset) {
+      [teacher.team, teacher.group] = preset;
+      changed = true;
+      continue;
+    }
+    if (teacher.tmAccountId) {
+      const tm = data.accounts.find((a) => a.id === teacher.tmAccountId);
+      if (tm?.team && tm?.group) {
+        teacher.team = tm.team;
+        teacher.group = tm.group;
+        changed = true;
+      }
+    }
+  }
+  (data.importedBatches ??= []).push(batch);
+  return changed || true;
+}
+
 export function studentOrganization(accounts: Account[], owner: string, roster?:Student["roster"], ownerAccountId?: string) {
   if (ownerAccountId) {
     const account = accounts.find(a => a.id === ownerAccountId);
@@ -99,15 +135,19 @@ export function migrateTeamCatalog(data: DemoState) {
   return true;
 }
 
-
 export function migrateProjectChannels(data: DemoState) {
   let changed = false;
-  for (const project of data.catalog.filter(c => c.type === "项目" && !c.channelIds)) {
-    project.channelIds = project.parentId ? [project.parentId] : data.catalog
-      .filter(c => c.type === "渠道" && data.students.some(s => s.project === project.name && s.channel === c.name)).map(c => c.id);
-    project.scopeChannelId = project.parentId;
-    delete project.parentId;
-    changed = true;
+  for (const project of data.catalog.filter(c => c.type === "项目")) {
+    if (!project.channelIds) {
+      project.channelIds = project.parentId ? [project.parentId] : data.catalog
+        .filter(c => c.type === "渠道" && data.students.some(s => s.project === project.name && s.channel === c.name)).map(c => c.id);
+      project.scopeChannelId = project.parentId;
+      changed = true;
+    }
+    if (!project.parentId && project.channelIds.length) {
+      project.parentId = project.channelIds[0];
+      changed = true;
+    }
   }
   return changed;
 }

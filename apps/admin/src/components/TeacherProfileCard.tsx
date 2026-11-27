@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, defaultAvatarSource } from "@crazytalk/ui";
+import { Button, Modal, defaultAvatarSource, tokens } from "@crazytalk/ui";
 import type { ProfileCardContent, TeacherCardFields } from "../../../../packages/shared/src/profileCards";
 import { useTeacherMediaSource } from "../lib/demoTeacherMedia";
 
@@ -42,23 +42,23 @@ export async function renderTeacherCard(fields:TeacherCardFields,photoSource:str
   const height=bodyTop+rowsHeight+(message.length ? 68+message.length*24 : 0)+160;
   canvas.width=1200;canvas.height=Math.ceil(height*2);ctx.scale(2,2);
   ctx.save();ctx.beginPath();ctx.roundRect(16,16,568,height-32,24);
-  ctx.shadowColor="rgba(25,35,45,0.10)";ctx.shadowBlur=16;ctx.shadowOffsetY=4;
-  ctx.fillStyle="#fff";ctx.fill();ctx.restore();
-  ctx.save();ctx.beginPath();ctx.roundRect(16,16,568,height-32,24);ctx.clip();ctx.fillStyle="#fff";ctx.fillRect(16,16,568,height-32);
+  ctx.shadowColor=tokens.canvasShadow;ctx.shadowBlur=16;ctx.shadowOffsetY=4;
+  ctx.fillStyle=tokens.white;ctx.fill();ctx.restore();
+  ctx.save();ctx.beginPath();ctx.roundRect(16,16,568,height-32,24);ctx.clip();ctx.fillStyle=tokens.white;ctx.fillRect(16,16,568,height-32);
   const cropHeight=banner.width*170/568;
   ctx.drawImage(banner,0,(banner.height-cropHeight)/2,banner.width,cropHeight,16,16,568,170);
   ctx.restore();
-  ctx.save();ctx.beginPath();ctx.arc(112,186,66,0,Math.PI*2);ctx.fillStyle="#fff";ctx.fill();ctx.beginPath();ctx.arc(112,186,62,0,Math.PI*2);ctx.clip();
+  ctx.save();ctx.beginPath();ctx.arc(112,186,66,0,Math.PI*2);ctx.fillStyle=tokens.white;ctx.fill();ctx.beginPath();ctx.arc(112,186,62,0,Math.PI*2);ctx.clip();
   const side=Math.min(photo.width,photo.height);ctx.drawImage(photo,(photo.width-side)/2,(photo.height-side)/2,side,side,50,124,124,124);
   ctx.restore();ctx.textAlign="left";ctx.textBaseline="top";
-  function text(lines:string[],x:number,y:number,size:number,weight:number,lineHeight:number){ctx.font=`${weight} ${size}px ${font}`;ctx.fillStyle="#292d31";lines.forEach((line,i)=>ctx.fillText(line,x,y+i*lineHeight));}
+  function text(lines:string[],x:number,y:number,size:number,weight:number,lineHeight:number){ctx.font=`${weight} ${size}px ${font}`;ctx.fillStyle=tokens.gray[800];lines.forEach((line,i)=>ctx.fillText(line,x,y+i*lineHeight));}
   text(nameLines,48,266,24,600,34);
   let y=bodyTop;
   for(const row of rows){text([row.label],48,y,16,500,26);text(row.lines,144,y+1,14,400,24);y+=Math.max(26,row.lines.length*24)+16;}
-  if(message.length){y+=8;ctx.strokeStyle="#e5e7eb";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(48,y);ctx.lineTo(552,y);ctx.stroke();y+=24;text(["教师寄语与教学特色"],48,y,16,500,26);y+=36;text(message,48,y,14,400,24);y+=message.length*24;}
+  if(message.length){y+=8;ctx.strokeStyle=tokens.canvasBorder;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(48,y);ctx.lineTo(552,y);ctx.stroke();y+=24;text(["教师寄语与教学特色"],48,y,16,500,26);y+=36;text(message,48,y,14,400,24);y+=message.length*24;}
   const logoWidth=104,logoHeight=logo.height/logo.width*logoWidth;
   ctx.drawImage(logo,(600-logoWidth)/2,height-44-logoHeight,logoWidth,logoHeight);
-  ctx.beginPath();ctx.roundRect(16,16,568,height-32,24);ctx.strokeStyle="#e5e7eb";ctx.lineWidth=1;ctx.stroke();
+  ctx.beginPath();ctx.roundRect(16,16,568,height-32,24);ctx.strokeStyle=tokens.canvasBorder;ctx.lineWidth=1;ctx.stroke();
   return canvas.toDataURL("image/png");
 }
 

@@ -17,8 +17,12 @@ export const tokens = {
     400: "#86909C",
     500: "#6B7785",
     700: "#4E5969",
+    800: "#292D31",
     900: "#1F2329",
   },
+  white: "#FFFFFF",
+  canvasBorder: "#E5E7EB",
+  canvasShadow: "rgba(25,35,45,0.10)",
   status: {
     success: "#0B7A43",
     successBg: "#E8F7EF",

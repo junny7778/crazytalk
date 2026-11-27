@@ -5,13 +5,14 @@ import { z } from "zod";
 export const scheduleIntentSchema = z
   .object({
     mode: z.enum(["fixed", "flex"]),
+    kind: z.enum(["固定课", "临时课"]).optional(),
     materialIds: z.array(z.string()).optional(),
     priority: z.enum(["teacher", "time"]).optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     weeks: z.number().int().positive(),
     unlimited: z.boolean().optional(),
     targetLessons: z.number().int().positive().optional(),
-    dailyLimit: z.number().int().min(1).max(14).optional(),
+    dailyLimit: z.number().int().min(1).max(12).optional(),
     unitsPerLesson: z.number().min(0.01).finite().optional(),
     planId: z.string().optional(),
     duration: z
@@ -20,7 +21,7 @@ export const scheduleIntentSchema = z
         (value) => [25, 50, 55, 120].includes(value),
         "请选择可用的上课时长",
       ),
-    frequency: z.number().int().min(1).max(14),
+    frequency: z.number().int().min(1).max(12),
     windows: z.array(
       z.object({
         day: z.number().int().min(0).max(6),
@@ -284,6 +285,8 @@ export const teacherSchema = z.preprocess(
     teacherNumber: z.string().regex(/^[1-9]\d{7}$/).optional(),
     name: z.string(),
     so: z.string(),
+    team: z.string().optional(),
+    group: z.string().optional(),
     tmAccountId: z.string().optional(),
     classInAccount: z.string().optional(),
     classInUid: z.string().regex(/^[1-9]\d*$/).optional(),
@@ -508,6 +511,8 @@ export const creditSchema = z.object({
   note: z.string(),
   operator: z.string(),
   amount: z.number().nonnegative().optional(),
+  channel: z.string().optional(),
+  project: z.string().optional(),
   feedbackId: z.string().optional(),
   referralId: z.string().optional(),
   lessonId: z.string().optional(),
@@ -658,6 +663,7 @@ export const catalogSchema = z.object({
   scopeChannelId: z.string().optional(),
   targetHistory: z.array(z.object({ at: z.string(), lessons: z.number().int().positive(), operator: z.string() })).optional(),
   monthlyLessons: z.number().int().positive().optional(),
+  unitPrice: z.number().nonnegative().finite().optional(),
   usedInFeedback: z.boolean().optional(),
   tagCategory: z.string().optional(),
   tagColor: z.enum(["green", "yellow", "red", "purple"]).optional(),
@@ -818,7 +824,7 @@ export type Command = { operator?: string } & (
   | {type:"survey.issue";id:string;token?:string;secret?:string}
   | {type:"survey.submit";token:string;revision?:boolean;submittedAt?:string;nameEdited?:boolean;answers:z.input<typeof studentSurveyAnswers>}
   | { type: "order.join"; orderId: string; studentId: string; bindAccountId?: string }
-  | { type: "order.buy"; id:string; studentId:string; studentIds:string[]; units:72|144; date:string; kind:string; note:string }
+  | { type: "order.buy"; id:string; studentId:string; studentIds:string[]; units:number; date:string; kind:string; note:string; amount?:number }
   | { type: "student.bindClassIn"; id: string; phone: string; uid: string }
   | { type: "student.profile"; id: string; profile: StudentProfileInput }
   | {

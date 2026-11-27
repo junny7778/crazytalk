@@ -124,13 +124,16 @@ describe("学员档案内操作联动", () => {
     const detail = await screen.findByRole("dialog", { name: "反馈详情" });
     expect(within(detail).queryByRole("button", { name: "登记补偿" })).toBeNull();
     await testAct(async () => { fireEvent.click(within(detail).getByRole("button", { name: "关闭" })); });
-    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "登记补偿" })); });
+    expect(screen.queryByRole("button", { name: "登记补偿" })).toBeNull();
+    await testAct(async () => { fireEvent.click(screen.getByRole("tab", { name: "课时与续费" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "加课时" })); });
+    await testAct(async () => { fireEvent.click(screen.getByRole("button", { name: "补偿" })); });
     const trigger = screen.getByRole("combobox", { name: "关联反馈" });
     await testAct(async () => { trigger.focus(); fireEvent.click(trigger); });
     const option = await screen.findByRole("option", { name: `${DEMO_TODAY} · 档案内反馈测试` });
     await testAct(async () => { fireEvent.click(option); });
     const compensation = await screen.findByRole("dialog", {
-      name: "登记补偿课时",
+      name: `给 ${student.name} 加课时`,
     });
     expect(
       within(compensation).getByRole("combobox", { name: "关联反馈" })
@@ -142,7 +145,7 @@ describe("学员档案内操作联动", () => {
       within(compensation).getByRole("button", { name: "确认加 2 课时" }),
     ); });
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "登记补偿课时" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: `给 ${student.name} 加课时` })).toBeNull(),
     );
     expect(demoRepository.read().credits[0]).toMatchObject({
       feedbackId: record?.id,
@@ -150,7 +153,7 @@ describe("学员档案内操作联动", () => {
       units: 2,
     });
     expect(screen.getByTestId("path").textContent).toBe(
-      `/students/${student.id}?tab=service`,
+      `/students/${student.id}?tab=credits`,
     );
   });
   it("隐藏转介绍入口，历史关联流水仍可追溯", async () => {

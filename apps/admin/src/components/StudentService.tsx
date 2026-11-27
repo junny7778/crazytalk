@@ -12,13 +12,11 @@ export default function StudentService({
   onOpen,
   onVisit,
   onFeedback,
-  onCompensate,
 }: {
   student: Student;
   onOpen: (target: StudentActivity["target"]) => void;
   onVisit: () => void;
   onFeedback: () => void;
-  onCompensate: () => void;
 }) {
   const { data, can } = useDemo();
   const [limit, setLimit] = useState(15);
@@ -106,11 +104,6 @@ export default function StudentService({
           {can("feedback.create") && (
             <Button size="sm" onClick={onFeedback}>
               登记反馈
-            </Button>
-          )}
-          {can("credit.compensate") && (
-            <Button size="sm" onClick={onCompensate}>
-              登记补偿
             </Button>
           )}
         </div>

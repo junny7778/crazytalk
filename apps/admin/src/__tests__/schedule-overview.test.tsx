@@ -88,7 +88,7 @@ it("已有排课意向时，概况隐藏计划摘要，一键排课沿用原设�
   expect(screen.getByRole("combobox", {name: "每周节数"}).textContent).toContain("2 节");
   expect(screen.getByRole("combobox", {name: "排课周期"}).textContent).toContain("4 周");
 });
-it("一键排课从旧计划默认选中一本有效教材，教材多时仍无搜索框", async () => {
+it("一键排课从旧计划默认选中一本有效教材且只读带出", async () => {
  const data = demoRepository.read(), student = data.students[0];
  const book = data.catalog.find(c => c.type === "教材" && c.enabled)!;
  const books = Array.from({length:10}, (_,i) => ({...book,id:`test-book-${i}`,name:`测试教材${i}`}));
@@ -97,13 +97,10 @@ it("一键排课从旧计划默认选中一本有效教材，教材多时仍无�
  student.scheduleIntent = {mode:"fixed",startDate:DEMO_TODAY,weeks:2,frequency:1,duration:25,windows:[],
    materialIds:["removed",books[2].id,books[1].id]};
  mount(`/schedule?student=${student.id}`);await click("一键排课");
- const select = screen.getByRole("combobox",{name:"本次教材"});
- expect(select.textContent).toContain(books[2].name);
- fireEvent.click(select);
+ const input = screen.getByLabelText("上课教材") as HTMLInputElement;
+ expect(input.disabled).toBe(true);
+ expect(input.value).toBe(books[0].name);
  expect(screen.queryByPlaceholderText("搜索选项")).toBeNull();
- expect(screen.getAllByRole("option",{selected:true})).toHaveLength(1);
- fireEvent.click(screen.getByRole("option",{name:books[1].name}));
- expect(select.textContent).toContain(books[1].name);
 });
 it("概况余额沿用已有计算，共享余额说明清楚，余额与课程节数分开",()=>{
  const d=demoRepository.read(),s=d.students[0];const order=d.orders!.find(o=>o.studentIds.includes(s.id))!;order.studentIds=[s.id,d.students[1].id];order.balance=20;
@@ -268,7 +265,7 @@ it("两种排课入口统一标题、步骤、字段控件和底部返回",async
   const credits = screen.getByRole("textbox", {name:"剩余待排课时"}) as HTMLInputElement;
   expect(screen.getByRole("heading", {name:"基础信息"})).toBeTruthy();
   const fields = credits.closest(".intent-settings-grid")!;
-  expect(fields.children[1].textContent).toContain("本次教材");
+  expect(fields.children[1].textContent).toContain("上课教材");
   if (entry === "自定义排课") expect(screen.getByRole("heading", {name:/^排课$/})).toBeTruthy();
   expect(credits.value).toBe("70 课时");
   expect(credits.disabled).toBe(true);

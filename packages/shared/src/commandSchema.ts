@@ -149,10 +149,11 @@ export const commandSchema = z.discriminatedUnion("type", [
     id,
     studentId: id,
     studentIds: z.array(id).min(1),
-    units: z.union([z.literal(72), z.literal(144)]),
+    units: positive,
     date,
     kind: id,
     note: text,
+    amount: nonnegative.optional(),
   }),
   z.object({ type: z.literal("student.bindClassIn"), id, phone: z.string(), uid: id }),
   z.object({

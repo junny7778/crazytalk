@@ -44,6 +44,7 @@
   --ct-gray-400: #86909c;
   --ct-gray-500: #6b7785;
   --ct-gray-700: #4e5969;
+  --ct-gray-800: #292d31;
   --ct-gray-900: #1f2329;
   --ct-white: #fff;
   --ct-success: #0b7a43;
@@ -54,6 +55,10 @@
   --ct-danger-bg: #fdecea;
   --ct-info: #2563d9;
   --ct-info-bg: #eaf1fe;
+  --ct-purple: #705093;
+  --ct-purple-bg: #f1eafa;
+  --ct-teal: #16675a;
+  --ct-teal-bg: #def4ef;
   --ct-shadow: 0 24px 80px rgba(31, 35, 41, 0.18);
   --ct-overlay: rgba(31, 35, 41, 0.45);
   --ct-drawer-overlay: rgba(31, 35, 41, 0.12);
@@ -153,6 +158,27 @@ textarea::placeholder {
 input:focus,
 textarea:focus {
   border-color: var(--ct-gray-500);
+}
+input:not([type="checkbox"]):not([type="radio"]):disabled,
+input:not([type="checkbox"]):not([type="radio"])[readonly],
+textarea:disabled,
+textarea[readonly] {
+  background: var(--ct-gray-100);
+  color: var(--ct-gray-500);
+  border-color: var(--ct-gray-200);
+  cursor: not-allowed;
+  opacity: 1;
+}
+input:not([type="checkbox"]):not([type="radio"]):disabled:focus,
+input:not([type="checkbox"]):not([type="radio"])[readonly]:focus,
+textarea:disabled:focus,
+textarea[readonly]:focus {
+  border-color: var(--ct-gray-200);
+}
+.ct-time-picker input[readonly]:not(:disabled) {
+  background: var(--ct-white);
+  color: var(--ct-gray-900);
+  cursor: pointer;
 }
 input[type="checkbox"],
 input[type="radio"] {
@@ -1005,11 +1031,13 @@ th:last-child {
 .ct-select-options {
   overflow: auto;
   max-height: min(
-    288px,
+    444px,
     calc(var(--radix-popover-content-available-height) - 72px)
   );
   outline: none;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ct-gray-300) transparent;
 }
 .ct-select-option {
   display: flex;

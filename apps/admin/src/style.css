@@ -1590,9 +1590,44 @@ input:is([type="checkbox"], [type="radio"]) {
   background: var(--ct-white);
 }
 input[type="radio"] { border-radius: 50%; }
-input:is([type="checkbox"], [type="radio"]):is(:checked, :indeterminate) {
+input:is([type="checkbox"], [type="radio"]):not(:checked):not(:disabled):hover {
+  border-color: var(--ct-brand-500);
+}
+input[type="checkbox"]:is(:checked, :indeterminate),
+input[type="radio"]:checked {
   background: var(--ct-brand-700);
   border-color: var(--ct-brand-700);
+}
+.material-picker-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+.material-picker-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--ct-gray-200);
+  border-radius: 10px;
+  background: var(--ct-white);
+  color: var(--ct-gray-900);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.material-picker-option:not(.is-disabled):hover {
+  border-color: var(--ct-brand-500);
+  background: var(--ct-gray-50);
+}
+.material-picker-option.is-selected {
+  border-color: var(--ct-brand-600);
+  background: var(--ct-brand-50);
+  color: var(--ct-brand-800);
+  font-weight: 500;
+}
+.material-picker-option.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 input[type="checkbox"]:checked::before {
   content: "";

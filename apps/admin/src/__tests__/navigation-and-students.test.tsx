@@ -426,7 +426,9 @@ describe("数据看板概览与下钻", () => {
     ).toBeTruthy();
     for (const name of ["上课趋势", "学员出勤", "课程异常", "服务质量"])
       expect(screen.getByRole("heading", { name })).toBeTruthy();
-    expect(screen.queryByRole("table")).toBeNull();
+    expect(document.querySelector(".students-table")).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "学生名字" })).toBeNull();
+    expect(screen.getByRole("region", { name: "渠道项目结算统计" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "剩余课时分布" })).toBeNull();
     for (const name of ["老师早退", "学员迟到", "学员早退", "待核实"])
       expect(

@@ -117,7 +117,7 @@ it("student overview explains card details and preserves navigation", async () =
   });
   expect(screen.getByRole("heading", { name: "服务记录" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "登记反馈" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "登记补偿" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "登记补偿" })).toBeNull();
   await testAct(async () => {
     fireEvent.click(balance);
   });

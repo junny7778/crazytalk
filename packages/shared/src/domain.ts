@@ -11,11 +11,8 @@ import { isUnstartedBooking, cancelForRebooking } from "./classInChanges";
 import { migrateStudentOwners } from "./organization";
 import { teacherFit } from "./teacherMatch";
 import { accountBalanceAlignmentIssue, accountBalanceReviewIssue, sharedClassIn, mergeBalanceSources, sharedBalanceGroup, createOpeningPackage, migratePackageBalances, refreshPackageBalances } from "./packageBalances";
-import { officePay } from "./officePay";
-import {payTermsSchema} from "./model";
 import {studentSurveyAnswers} from "./model";
 import { getScheduleCredits, scheduleUnits } from "./scheduleCredits";
-import { initializePayroll, payrollBreakdown } from "./payroll";
 import {
   formatMaterialProgress,
   formatStudentProgress,
@@ -161,12 +158,6 @@ export function studentImportMatches(
   return [];
 }
 type StudentProfileInputLike = {importStudentId?: string; roster?:Student["roster"]};
-export function payrollTotal(data: DemoState, payrollId: string) {
-  if (!data.payroll.some((p) => p.id === payrollId))
-    return { base: 0, deductions: 0, total: 0 };
-  const { base, deductions, total } = payrollBreakdown(data, payrollId);
-  return { base, deductions, total };
-}
 
 function required<T>(value: T | undefined, message: string): T {
   if (value === undefined) throw new Error(message);
@@ -177,7 +168,6 @@ export function transition(
   command: Command,
 ): { data: DemoState; message: string } {
   const data = structuredClone(current);
-  initializePayroll(data);
   data.teachers = data.teachers.map((record) => teacherSchema.parse(record));
   data.students = data.students.map((record) => studentSchema.parse(record));
   migrateStudentOwners(data);
@@ -2298,79 +2288,6 @@ export function transition(
     case "halfPay.status":
       applyHalfMonthCommand(data, command, recordedAt);
       break;
-    case "pay.terms": {
-      const t=payTermsSchema.parse(command.terms);teacher(t.teacherId);
-      if(data.settlements?.some(p=>p.teacherId===t.teacherId && p.month===t.month))throw new Error("本周期已确认");
-      if((t.teacherAdjustment || t.soAdjustment) && !t.adjustmentNote.trim())throw new Error("请填写调整依据");
-      for(const c of t.confirmed)if(!isScheduleDate(c.date)||!c.date.startsWith(t.month)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(c.time) || minutes(c.time)+c.minutes>1440)throw new Error("请核对确认课表");
-      if(t.confirmed.some((a,i)=>t.confirmed.slice(i+1).some(b=>a.date===b.date && minutes(a.time)<minutes(b.time)+b.minutes && minutes(b.time)<minutes(a.time)+a.minutes)))throw new Error("确认课表时段重复");
-      data.payTerms=[...(data.payTerms||[]).filter(p=>p.teacherId!==t.teacherId || p.month!==t.month),t];break;
-    }
-    case "pay.freeze": {
-      const t=required(data.payTerms?.find(p=>p.teacherId===command.teacherId && p.month===command.month),"请先登记计薪条件");
-      if (data.halfMonthPayroll?.some(item => item.teacherId === t.teacherId && item.period.startsWith(t.month) && item.snapshot))
-        throw new Error("本月已按半月确认薪资");
-      if(data.settlements?.some(p=>p.teacherId===t.teacherId && p.month===t.month))break;
-      const lines=officePay(data,t);if(!lines.length || lines.some(r=>r.teacher===null || r.office===null))throw new Error("没有可确认明细或仍有待核金额");
-      (data.settlements??=[]).push({teacherId:t.teacherId,month:t.month,so:t.so,at:recordedAt,lines});break;
-    }
-    case "payroll.adjust": {
-      const p = required(
-        data.payroll.find((p) => p.id === command.id),
-        "找不到工资单",
-      );
-      if (p.status !== "待确认")
-        throw new Error("已确认的薪资不能修改，请在下个月调整");
-      if (!Number.isFinite(command.amount) || !command.note.trim())
-        throw new Error("请填写有效金额和调整原因");
-      p.adjustment += command.amount;
-      p.adjustmentNote = command.note;
-      event("薪资调整", `${command.amount}，${command.note}`, "", p.teacherId);
-      message = "薪资调整已记录";
-      break;
-    }
-    case "payroll.status": {
-      if (!command.ids.length) throw new Error("请先选择老师");
-      for (const payId of command.ids) {
-        const p = required(
-          data.payroll.find((p) => p.id === payId),
-          "找不到工资单",
-        );
-        if (command.status === "已确认" && data.halfMonthPayroll?.some(item =>
-          item.teacherId === p.teacherId && item.period.startsWith(p.month) && item.snapshot))
-          throw new Error("本月已按半月确认薪资");
-        if (command.status === "已确认" && p.status !== "待确认")
-          throw new Error("只能确认待确认的工资单");
-        if (command.status === "已发放" && p.status !== "已确认")
-          throw new Error("请先确认薪资，再标记发放");
-        if (
-          command.status === "已确认" &&
-          data.actions.some(
-            (a) => a.teacherId === p.teacherId && a.status === "待确认",
-          )
-        )
-          throw new Error("请先处理这位老师的待确认扣款");
-        if (command.status === "已确认") {
-          const breakdown = payrollBreakdown(data, p.id);
-          p.breakdownSnapshot = { ...breakdown, frozen: true };
-          p.lessons = breakdown.units;
-          p.snapshot = {
-            base: breakdown.base,
-            deductions: breakdown.deductions,
-            total: breakdown.total,
-          };
-        }
-        p.status = command.status;
-        event(
-          command.status,
-          `${p.month} 薪资${command.status}`,
-          "",
-          p.teacherId,
-        );
-      }
-      message = `${command.ids.length} 位老师薪资${command.status}`;
-      break;
-    }
     case "role.save": {
       if (command.role.id === "admin")
         throw new Error("超级管理员角色不能修改");

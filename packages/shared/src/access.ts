@@ -52,8 +52,6 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "halfPay.review": "payroll.adjust",
   "halfPay.serious": "payroll.adjust",
   "halfPay.status": "payroll.confirm",
-  "pay.terms": "pay_rate.edit",
-  "pay.freeze": "payroll.confirm",
   "survey.issue": "student.edit",
   "order.join": "credit.add",
   "order.buy": "credit.add",
@@ -87,8 +85,6 @@ const commandPermissions: Partial<Record<Command["type"], string>> = {
   "teacher.save": "teacher.edit",
   "teacher.leave": "teacher.leave",
   "teacher.offboard": "teacher.offboard",
-  "payroll.adjust": "payroll.adjust",
-  "payroll.status": "payroll.confirm",
   "role.save": "role.manage",
   "role.delete": "role.manage",
   "account.save": "account.manage",
@@ -180,7 +176,7 @@ export function assertCommandAccess(
   )
     permission = "org.manage";
   if (command.type === "report.save") permission = "lesson.confirm";
-  if ((command.type === "payroll.status" || command.type === "halfPay.status") && command.status === "已发放")
+  if (command.type === "halfPay.status" && command.status === "已发放")
     permission = "payroll.mark_paid";
   if (
     command.type === "teacher.save" &&
@@ -391,13 +387,8 @@ export function assertCommandAccess(
     let teacherId: string | undefined;
     if ("teacherId" in command) teacherId = command.teacherId;
     if (command.type === "teacher.save") teacherId = command.teacher.id;
-    if (command.type === "pay.terms") teacherId = command.terms.teacherId;
     if (command.type === "action.confirm")
       teacherId = state.actions.find(
-        (item) => item.id === command.id,
-      )?.teacherId;
-    if (command.type === "payroll.adjust")
-      teacherId = state.payroll.find(
         (item) => item.id === command.id,
       )?.teacherId;
     if (command.type === "report.correct")
@@ -409,15 +400,6 @@ export function assertCommandAccess(
       teacherId = state.lessons.find(
         (item) => item.id === command.id,
       )?.teacherId;
-    if (command.type === "payroll.status")
-      for (const id of command.ids) {
-        const payroll = state.payroll.find((item) => item.id === id);
-        if (
-          state.teachers.find((item) => item.id === payroll?.teacherId)
-            ?.tmAccountId !== account.id
-        )
-          throw new Error("只能操作本人负责的老师");
-      }
     if (command.type === "lesson.resolve")
       for (const id of command.ids) {
         const lesson = state.lessons.find((item) => item.id === id);

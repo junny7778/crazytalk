@@ -19,13 +19,10 @@ export * from "./studentProgress";
 
 export * from "./lessonAttendance";
 
-export * from "./payroll";
-
 export * from "./scheduleCredits";
 
 export * from "./organization";
 export * from "./teacherMatch";
-export * from "./officePay";
 export * from "./projectMetrics";
 
 export * from "./studentSurvey";

@@ -14,8 +14,6 @@ import {
 } from "@nestjs/common";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { NestFactory } from "@nestjs/core";
-import { LocalBusinessLog } from "./localBusinessLog";
-import { writeBusinessLog } from "../../../scripts/local-business-log";
 import { processClassInJob } from "./integrations/worker";
 import { settleCompletedLessons } from "./settlement";
 import { database, ensureStaffRoles } from "./store";
@@ -84,17 +82,10 @@ async function start() {
   await database.$connect();
   await ensureStaffRoles();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
-    app.useGlobalFilters(new LocalBusinessLog(app.getHttpAdapter()));
-  }
   app.useBodyParser("json", { limit: "15mb" });
   app.setGlobalPrefix("api");
   app.enableShutdownHooks();
   await app.listen(API_PORT, "127.0.0.1");
-  if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
-    void writeBusinessLog("api", { event: "started", port: API_PORT, pid: process.pid })
-      .catch(() => process.stderr.write("Could not write local API diagnostic log.\n"));
-  }
   settlementTimer = setInterval(() => {
     if (settlementWork) return;
     settlementWork = settleCompletedLessons()

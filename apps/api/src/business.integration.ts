@@ -345,34 +345,6 @@ async function main() {
       date: "2026-11-18",
       note: "TM核实",
     });
-    const terms = {
-      teacherId: teacher.id,
-      month: "2026-11",
-      so: teacher.so,
-      mode: "OP",
-      hourly: 90,
-      soHourly: 30,
-      paidMinutes: 30,
-      praise: 10,
-      complaint: 15,
-      renewal: null,
-      fullAttendance: 0,
-      confirmed: [{ date: "2026-11-18", time: "09:00", minutes: 30 }],
-      soAdjustment: 0,
-      teacherAdjustment: 0,
-      adjustmentNote: "",
-    };
-    await invoke({ type: "pay.terms", terms });
-    await invoke({
-      type: "pay.freeze",
-      teacherId: teacher.id,
-      month: terms.month,
-    });
-    assert.ok(
-      await verification.settlement.findUnique({
-        where: { id: teacher.id + "|" + terms.month },
-      }),
-    );
     const lesson = state.lessons.find(
       (item) => item.status === "待确认" && item.attendance === "正常",
     )!;

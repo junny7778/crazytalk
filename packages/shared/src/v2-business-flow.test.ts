@@ -3,9 +3,8 @@ import { describe, it, expect } from "vitest";
 import { createSeed } from "./seed";
 import { transition } from "./domain";
 import { getScheduleCredits } from "./scheduleCredits";
-import { officePay } from "./officePay";
 import { projectMetrics } from "./projectMetrics";
-import type { Command, PayTerms } from "./model";
+import type { Command } from "./model";
 function scenario() {
   let data = bindSchedulingStaff(createSeed());
   const [a, b] = data.students.slice(0, 2).map((student, i) => ({
@@ -129,23 +128,6 @@ describe("新版跨模块业务验收", () => {
       cancelledAt: "2026-11-24T08:40:00+08:00",
     });
     expect(s.data.orders!.find(order => order.id === "family-order")!.balance).toBe(142);
-    const terms: PayTerms = {
-      teacherId: s.t.id,
-      month: "2026-11",
-      so: s.t.so,
-      mode: "NP",
-      hourly: 90,
-      soHourly: 30,
-      paidMinutes: 30,
-      praise: 10,
-      complaint: 15,
-      renewal: null,
-      fullAttendance: null,
-      confirmed: [],
-      soAdjustment: 0,
-      teacherAdjustment: 0,
-      adjustmentNote: "",
-    };
     const f = s.data.feedback[0];
     f.teacherId = s.t.id;
     f.rating = "差评";
@@ -157,7 +139,6 @@ describe("新版跨模块业务验收", () => {
       result: "处理成功",
       note: "客服核实",
     });
-    expect(officePay(s.data, terms)).toHaveLength(1);
     s.run({
       type: "feedback.tm",
       id: f.id,
@@ -166,13 +147,6 @@ describe("新版跨模块业务验收", () => {
       date: "2026-11-25",
       note: "TM 已核实",
     });
-    s.run({ type: "pay.terms", terms });
-    s.run({ type: "pay.freeze", teacherId: s.t.id, month: terms.month });
-    const lines = s.data.settlements![0].lines;
-    expect(lines.map((r) => [r.teacher, r.office])).toEqual([
-      [22.5, 7.5],
-      [-15, 0],
-    ]);
     const metrics = projectMetrics(s.data, s.a, "2026-11");
     expect(metrics.used).toBeGreaterThanOrEqual(1);
     expect(metrics.present).toBe(0);

@@ -1,4 +1,3 @@
-import { ZodError } from "zod";
 import { createContext, useContext, useEffect, useState, type ComponentType, type FormEventHandler, type ReactNode } from "react";
 import { stateSchema, configureBusinessClock, type Command, type DemoState } from "./model";
 import { BusinessRequestError, businessRequest, executeBusinessCommand, identitySchema, setBusinessIdentity, type Identity } from "./businessClient";
@@ -45,15 +44,12 @@ export function BusinessProvider({ children, loadingScreen, failureScreen: Failu
     setError("");
     const timeout = AbortSignal.timeout(15000);
     const signal = cancel ? AbortSignal.any([cancel, timeout]) : timeout;
-    const started = performance.now();
     const requestId = crypto.randomUUID();
-    let endpoint: "/me" | "/state" = "/me";
     try {
       configureBusinessClock();
-      const account = identitySchema.parse(await businessRequest(endpoint, "GET", undefined, signal, requestId));
+      const account = identitySchema.parse(await businessRequest("/me", "GET", undefined, signal, requestId));
       setBusinessIdentity(account);
-      endpoint = "/state";
-      const next = stateSchema.parse(await businessRequest(endpoint, "GET", undefined, signal, requestId));
+      const next = stateSchema.parse(await businessRequest("/state", "GET", undefined, signal, requestId));
       setIdentity(account);
       setData(next);
       setStartup("ready");
@@ -65,21 +61,6 @@ export function BusinessProvider({ children, loadingScreen, failureScreen: Failu
         return;
       }
       setStartup("failed");
-      if ((import.meta as ImportMeta & { env?: { DEV: boolean } }).env?.DEV) {
-        const kind = timeout.aborted ? "timeout"
-          : status && status >= 400 ? "http"
-          : cause instanceof ZodError || status ? "invalid-response"
-          : cause instanceof TypeError ? "network" : "unexpected";
-        const entry = { requestId, endpoint, status, kind, elapsedMs: Math.round(performance.now() - started) };
-        void fetch("/__business-load-log", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(entry),
-          keepalive: true,
-        }).then(response => {
-          if (!response.ok) console.warn("Could not save business load diagnostic", entry);
-        }).catch(() => console.warn("Could not save business load diagnostic", entry));
-      }
     }
   }
   useEffect(() => {

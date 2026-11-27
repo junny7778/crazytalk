@@ -1,7 +1,6 @@
 import { initializeTeacherNumbers } from "./teacherNumbers";
 import { initializeTeacherTags } from "./teacherTags";
 import { assignSampleTeams, migrateStudentOwners, migrateTeamCatalog, migrateProjectChannels } from "./organization";
-import { initializePayroll } from "./payroll";
 import { migrateFeedbackCatalog } from "./feedbackCatalog";
 import { emptyStudentProfile } from "./model";
 import {
@@ -683,7 +682,6 @@ export function createSeed(): DemoState {
           ?.name || "";
   }
   seed.catalog = migrateFeedbackCatalog(seed.catalog);
-  initializePayroll(seed);
   for (const payroll of seed.payroll) {
     if (payroll.status === "待确认" && payroll.opening) {
       payroll.opening.source = "按汇总金额扣除可追溯课酬后计入期初。";

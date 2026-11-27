@@ -9,7 +9,6 @@ import {
   teacherSchema,
   scheduleIntentSchema,
   studentSurveyAnswers,
-  payTermsSchema,
   feedbackSchema,
   feedbackDetailsInputSchema,
   lessonSchema,
@@ -125,12 +124,6 @@ export const commandSchema = z.discriminatedUnion("type", [
     error: text,
   }),
   ...halfMonthCommand.options,
-  z.object({ type: z.literal("pay.terms"), terms: payTermsSchema }),
-  z.object({
-    type: z.literal("pay.freeze"),
-    teacherId: id,
-    month: text.regex(/^\d{4}-(0[1-9]|1[0-2])$/),
-  }),
   z.object({
     type: z.literal("survey.issue"),
     id,
@@ -381,12 +374,6 @@ export const commandSchema = z.discriminatedUnion("type", [
     teacherId: id,
     reason: id,
     payrollEndDate: z.string().date().optional(),
-  }),
-  z.object({ type: z.literal("payroll.adjust"), id, amount: number, note: id }),
-  z.object({
-    type: z.literal("payroll.status"),
-    ids: z.array(id).min(1),
-    status: z.enum(["已确认", "已发放"]),
   }),
   z.object({ type: z.literal("role.save"), role: roleSchema }),
   z.object({ type: z.literal("role.delete"), id }),

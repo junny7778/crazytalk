@@ -1,7 +1,7 @@
 import { bindSchedulingStaff } from "../../../tests/fixtures/scheduling";
 import { describe, expect, it } from "vitest";
 import { createSeed as originalSeed } from "./seed";
-import { transition, payrollTotal, isAvailable } from "./domain";
+import { transition, isAvailable } from "./domain";
 import { demoRepository } from "./repository";
 import type { Command, DemoState } from "./model";
 
@@ -241,9 +241,8 @@ describe("运营业务闭环", () => {
     });
   });
 
-  it("反馈处理、责任判定与待确认扣款进入工资，重复判定被拒绝", () => {
+  it("反馈处理、责任判定与待确认扣款确认，重复判定被拒绝", () => {
     let data = createSeed();
-    const before = payrollTotal(data, "p4").total;
     data = transition(data, {
       type: "feedback.process",
       id: "FB20261030-0001",
@@ -259,17 +258,19 @@ describe("运营业务闭环", () => {
       amount: 80,
       deductionConfirmed: false,
     }).data;
-    expect(payrollTotal(data, "p4").total).toBe(before);
     const deduction = data.actions.find(
       (a) => a.feedbackId === "FB20261030-0001" && a.type === "扣款",
     );
     if (!deduction) throw new Error("Verdict lacks deduction");
+    expect(deduction.status).toBe("待确认");
     data = transition(data, {
       type: "action.confirm",
       id: deduction.id,
       approve: true,
     }).data;
-    expect(payrollTotal(data, "p4").total).toBe(before - 80);
+    expect(
+      data.actions.find((a) => a.id === deduction.id)?.status,
+    ).toBe("已确认");
     expect(() =>
       transition(data, {
         type: "feedback.verdict",
@@ -281,32 +282,6 @@ describe("运营业务闭环", () => {
         deductionConfirmed: true,
       }),
     ).toThrow("已完成");
-  });
-
-  it("已确认薪资不允许调整，待确认扣款会阻断薪资确认", () => {
-    const data = createSeed();
-    expect(() =>
-      transition(data, {
-        type: "payroll.adjust",
-        id: "p3",
-        amount: 100,
-        note: "不允许的调整",
-      }),
-    ).toThrow("不能修改");
-    expect(() =>
-      transition(data, {
-        type: "payroll.status",
-        ids: ["p4"],
-        status: "已确认",
-      }),
-    ).toThrow("待确认扣款");
-    expect(() =>
-      transition(data, {
-        type: "payroll.status",
-        ids: ["p1"],
-        status: "已发放",
-      }),
-    ).toThrow("先确认");
   });
 
   it("停用负责人需要转交，系统管理员不能停用", () => {
@@ -373,18 +348,6 @@ describe("跨模块边界回归", () => {
     const changed = transition(data,{type:"lesson.changeTeacher",studentId:student.id,originalTeacherId:student.teacherId,reason:"家长要求"}).data;
     expect(changed.lessons.filter(l => l.studentId !== student.id || l.teacherId !== student.teacherId)).toEqual(data.lessons.filter(l => l.studentId !== student.id || l.teacherId !== student.teacherId));
     expect(changed.students[0].teacherId).toBe("");
-  });
-
-  it("老师单价变更不回写已经确认的历史工资", () => {
-    const data = createSeed();
-    const before = payrollTotal(data, "p-sep-t1").total;
-    const teacher = data.teachers.find((t) => t.id === "t1");
-    if (!teacher) throw new Error("Seed lacks teacher");
-    const changed = transition(data, {
-      type: "teacher.save",
-      teacher: { ...teacher, rate: teacher.rate + 100 },
-    }).data;
-    expect(payrollTotal(changed, "p-sep-t1").total).toBe(before);
   });
 
   it("部分时段请假不会封锁同一天其他上课时间", () => {

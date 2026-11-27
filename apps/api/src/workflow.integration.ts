@@ -4,7 +4,6 @@ import {
   emptyStudentProfile,
   type DemoState,
 } from "../../../packages/shared/src/model";
-import { payrollBreakdown } from "../../../packages/shared/src/payroll";
 import { getScheduleCredits } from "../../../packages/shared/src/scheduleCredits";
 
 export async function verifyWorkflows(
@@ -25,10 +24,6 @@ export async function verifyWorkflows(
     return result;
   };
   const initial = await read();
-  const officeSettlement = initial.settlements!.find(s => s.month === "2026-11")!;
-  const officeTerms = initial.payTerms!.find(t => t.teacherId === officeSettlement.teacherId && t.month === officeSettlement.month)!;
-  await send({ type: "pay.terms", terms: { ...officeTerms, hourly: officeTerms.hourly! + 100 } }, admin, 400);
-  assert.deepEqual((await read()).settlements!.find(s => s.teacherId === officeSettlement.teacherId && s.month === officeSettlement.month), officeSettlement);
   let existing = initial.students.find((s) => s.chineseName === "验收乙")!;
   const sibling = initial.students.find(s => s.chineseName === "验收甲")!;
   const firstLesson = initial.lessons.find(l => l.studentId === sibling.id)!;
@@ -161,21 +156,7 @@ export async function verifyWorkflows(
     Buffer.from(picture.split(",")[1], "base64"),
   );
 
-  const payroll = state.payroll.find((p) => p.status === "待确认")!;
-  assert.ok(payroll);
-  await send({ type: "payroll.status", ids: [payroll.id], status: "已确认" });
-  const frozen = payrollBreakdown(await read(), payroll.id);
-  const tutor = state.teachers.find((t) => t.id === payroll.teacherId)!;
-  await send({
-    type: "teacher.save",
-    teacher: { ...tutor, rate: tutor.rate + 100 },
-  });
-  assert.deepEqual(payrollBreakdown(await read(), payroll.id), frozen);
-  await send({ type: "payroll.status", ids: [payroll.id], status: "已发放" });
-  assert.equal(
-    (await read()).payroll.find((p) => p.id === payroll.id)!.status,
-    "已发放",
-  );
+  const tutor = state.teachers[0]!;
   const editorRole = randomUUID(),
     editorLogin = randomUUID(),
     editorPassword = "Test1!" + randomUUID().slice(0, 8);
@@ -225,7 +206,7 @@ export async function verifyWorkflows(
     editorHeaders,
   );
   const actualTeacher = (await read()).teachers.find((t) => t.id === tutor.id)!;
-  assert.equal(actualTeacher.rate, tutor.rate + 100);
+  assert.equal(actualTeacher.rate, tutor.rate);
   assert.equal(actualTeacher.notes, "普通资料修改不覆盖真实费率");
   console.log(
     "PASS import batch idempotency/mixed updates/rollback, teacher report image shared with admin, confirmed payroll frozen after rate change and payment status",

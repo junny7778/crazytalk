@@ -9,7 +9,6 @@ import { finalizeDemoLessonHistory } from "./rosterActivity";
 import { withDemoSchedulingSamples } from "./demoSchedulingSamples";
 import { withDemoPayrollSamples, withErikaSamples } from "./demoPayrollSamples";
 import LZString from "lz-string";
-import { initializePayroll } from "./payroll";
 import { autoSettleLessons } from "./autoLessonSettlement";
 import { restoreLessonSyncNotice } from "./restoreLessonSyncNotice";
 import { migrateFeedbackCatalog } from "./feedbackCatalog";
@@ -22,7 +21,7 @@ import {
   DEMO_TODAY,
 } from "./model";
 import { createSeed } from "./seed";
-import { transition, payrollTotal } from "./domain";
+import { transition } from "./domain";
 import { migrateStudentIds, resolveStudentCommand } from "./studentIds";
 const storageKey = "crazytalk-demo-standard-v1";
 export const STUDENT_ID_BACKUP_KEY = `${storageKey}:before-student-id-v2`;
@@ -118,13 +117,11 @@ function read(): DemoState {
         const result = stateSchema.safeParse(input);
         if (result.success) {
           memory = result.data;
-          const payrollUpgrade = memory.payroll.some((p) => p.status === "待确认" ? !p.opening : !p.breakdownSnapshot);
-          initializePayroll(memory);
           const original = storedFeedbackPresenceSchema.parse(input);
           const catalog = migrateFeedbackCatalog(memory.catalog);
           const copyUpdated = updateStoredCopy(memory);
           let upgraded = initializeTeacherNumbers(memory) || balancesMigrated;
-          upgraded = catalog !== memory.catalog || payrollUpgrade || copyUpdated || upgraded;
+          upgraded = catalog !== memory.catalog || copyUpdated || upgraded;
           for (const student of memory.students) {
             if (!student.surveySubmittedAt && student.surveyOriginal && student.surveyPreviousSubmittedAt) {
               student.surveySubmittedAt = student.surveyPreviousSubmittedAt;
@@ -208,9 +205,6 @@ function read(): DemoState {
               upgraded = true;
             }
           }
-          for (const p of memory.payroll)
-            if (p.status !== "待确认" && !p.snapshot)
-              p.snapshot = payrollTotal(memory, p.id);
           const migrated = migrateStudentIds(memory);
           if (migrated.changed) {
             if (!localStorage.getItem(STUDENT_ID_BACKUP_KEY))
@@ -244,14 +238,12 @@ function read(): DemoState {
 function createDemoBase() {
   const base = migrateStudentIds(createSeed()).data;
   migratePackageBalances(base);
-  initializePayroll(base);
   return base;
 }
 
 function save(data: DemoState) {
   migratePackageBalances(data);
   refreshPackageBalances(data);
-  initializePayroll(data);
   if (typeof localStorage !== "undefined") writeSnapshot(data);
   memory = data;
   if (typeof window !== "undefined")

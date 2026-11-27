@@ -814,8 +814,6 @@ export type Command = { operator?: string } & (
   | {type:"lesson.attendance";id:string;person:"学员"|"老师";result:"未到堂"|"到堂"|"缺席";at:string;operator?:string}
   | {type:"lesson.notice";id:string;sent:boolean;error:string}
   | HalfMonthCommand
-  | {type:"pay.terms";terms:PayTerms}
-  | {type:"pay.freeze";teacherId:string;month:string}
   | {type:"slot.release";studentId:string}
   | {type:"survey.issue";id:string;token?:string;secret?:string}
   | {type:"survey.submit";token:string;revision?:boolean;submittedAt?:string;nameEdited?:boolean;answers:z.input<typeof studentSurveyAnswers>}
@@ -1031,8 +1029,6 @@ export type Command = { operator?: string } & (
       reason: string;
       payrollEndDate?: string;
     }
-  | { type: "payroll.adjust"; id: string; amount: number; note: string }
-  | { type: "payroll.status"; ids: string[]; status: "已确认" | "已发放" }
   | { type: "role.save"; role: Role }
   | { type: "role.delete"; id: string }
   | { type: "account.save"; account: Account; handoverTo?: string; initialPassword?: string }

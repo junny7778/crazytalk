@@ -10,13 +10,6 @@ import "@crazytalk/ui/styles.css";
 import "./style.css";
 import StudentSurvey from "./components/StudentSurvey";
 import BusinessLogin from "./components/BusinessLogin";
-import {
-  browserDiagnosticsEnabled,
-  noteReactCommit,
-  noteReactMount,
-  noteReactUnmount,
-  pulseBrowserDiagnostics,
-} from "./lib/browserDiagnostics";
 import App from "./App";
 const previousCleanup: (() => void) | undefined = import.meta.hot?.data.cleanupApp;
 previousCleanup?.();
@@ -47,21 +40,15 @@ function DemoStartup({children}:{children:React.ReactNode}){
   return <>{children}</>;
 }
 const routerView = <RouterProvider router={router} />;
-if (browserDiagnosticsEnabled) {
-  router.subscribe(pulseBrowserDiagnostics);
-  noteReactMount();
-}
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 if (import.meta.hot) {
   const hot = import.meta.hot;
   const cleanup = () => {
     if (hot.data.cleanupApp !== cleanup) return;
     delete hot.data.cleanupApp;
-    noteReactUnmount("unmounting");
     router.dispose();
     root.unmount();
     client.clear();
-    noteReactUnmount("unmounted");
   };
   hot.data.cleanupApp = cleanup;
   hot.dispose(cleanup);
@@ -71,9 +58,7 @@ root.render(
     <QueryClientProvider client={client}>
       <DemoStartup>
         <ToastProvider>
-          {browserDiagnosticsEnabled
-            ? <React.Profiler id="admin" onRender={noteReactCommit}>{routerView}</React.Profiler>
-            : routerView}
+          {routerView}
         </ToastProvider>
       </DemoStartup>
     </QueryClientProvider>
